@@ -36,6 +36,7 @@ import {
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { MeetingCard } from "@/components/MeetingCard";
+import { MeetingsList } from "@/components/MeetingsList";
 
 // Mock Data
 const RECORDINGS = [
@@ -238,38 +239,38 @@ export default function Dashboard() {
         </Dialog>
 
         {/* Recordings Section */}
-        <div className="mt-12 md:mt-20">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h2 className="text-xl font-semibold text-foreground">Past Recordings</h2>
-                    <p className="text-sm text-muted-foreground">Access your AI-analyzed meeting history</p>
+        <div className="mt-12 md:mt-16 grid lg:grid-cols-3 gap-8 lg:gap-12">
+            {/* Left Column: Recordings Grid (Takes up 2/3 space on large screens) */}
+            <div className="lg:col-span-2">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-xl font-semibold text-foreground">Past Recordings</h2>
+                        <p className="text-sm text-muted-foreground">Access your AI-analyzed meeting history</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="relative hidden sm:block">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input placeholder="Search recordings..." className="pl-9 w-48 h-9 text-sm bg-card border-border" />
+                        </div>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="relative hidden sm:block">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input placeholder="Search recordings..." className="pl-9 w-64 h-9 text-sm bg-card border-border" />
-                    </div>
-                    <div className="flex items-center border border-border rounded-md p-1 bg-card">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 rounded-sm hover:bg-muted">
-                            <Grid className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 rounded-sm hover:bg-muted text-muted-foreground">
-                            <List className="w-4 h-4" />
-                        </Button>
-                    </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {RECORDINGS.map(rec => (
+                        <MeetingCard key={rec.id} recording={rec} />
+                    ))}
+                </div>
+                
+                <div className="mt-8 flex justify-center">
+                    <Button variant="outline" className="text-muted-foreground border-border hover:bg-muted">
+                        View older recordings
+                    </Button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {RECORDINGS.map(rec => (
-                    <MeetingCard key={rec.id} recording={rec} />
-                ))}
-            </div>
-            
-            <div className="mt-8 flex justify-center">
-                 <Button variant="outline" className="text-muted-foreground border-border hover:bg-muted">
-                    View older recordings
-                 </Button>
+            {/* Right Column: Meetings List (Takes up 1/3 space on large screens) */}
+            <div className="lg:col-span-1 lg:pl-8 lg:border-l border-border/50">
+                <MeetingsList />
             </div>
         </div>
       </main>
