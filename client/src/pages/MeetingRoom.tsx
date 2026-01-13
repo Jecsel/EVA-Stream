@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
+import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { simulateGeminiAnalysis } from "@/lib/gemini";
 import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph } from "lucide-react";

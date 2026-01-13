@@ -72,7 +72,7 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
         const newEdges = [];
         
         let yPos = 50;
-        let lastNodeId = null;
+        let lastNodeId: string | null = null;
         let idCounter = 1;
 
         // Always start with "Start"
