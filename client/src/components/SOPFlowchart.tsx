@@ -1,18 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { 
-  ReactFlow, 
-  Controls, 
-  Background, 
-  useNodesState, 
-  useEdgesState, 
-  addEdge,
-  Connection,
-  Edge,
-  MarkerType,
-  Position,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { GitGraph, RefreshCw, ZoomIn, ZoomOut, Maximize, Share2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import mermaid from 'mermaid';
+import { GitGraph, RefreshCw, Maximize, Share2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 interface SOPFlowchartProps {
@@ -20,163 +8,102 @@ interface SOPFlowchartProps {
   className?: string;
 }
 
-// Initial mock nodes
-const initialNodes = [
-  { 
-    id: '1', 
-    position: { x: 100, y: 50 }, 
-    data: { label: 'Start Meeting' },
-    type: 'input',
-    style: { 
-        background: 'hsl(var(--primary))', 
-        color: 'white', 
-        border: 'none', 
-        borderRadius: '8px',
-        width: 150,
-        fontSize: '12px',
-        fontWeight: 'bold'
-    }
-  },
-  { 
-    id: '2', 
-    position: { x: 100, y: 150 }, 
-    data: { label: 'Define Objectives' },
-    style: { 
-        background: 'hsl(var(--card))', 
-        color: 'hsl(var(--foreground))', 
-        border: '1px solid hsl(var(--border))', 
-        borderRadius: '8px',
-        width: 150,
-        fontSize: '12px'
-    }
-  },
-];
-
-const initialEdges = [
-  { id: 'e1-2', source: '1', target: '2', animated: true, style: { stroke: 'hsl(var(--muted-foreground))' } },
-];
-
 export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [svgContent, setSvgContent] = useState<string>('');
 
-  // Parse SOP content to generate nodes (Simple Mock Parser)
+  // Initialize mermaid
   useEffect(() => {
-    if (!sopContent) return;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'loose',
+      fontFamily: 'Google Sans, Roboto, sans-serif',
+      flowchart: {
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 50,
+        rankSpacing: 50,
+        htmlLabels: true,
+        useMaxWidth: true,
+      }
+    });
+  }, []);
+
+  // Convert SOP markdown to Mermaid syntax
+  const generateMermaidSyntax = (content: string): string => {
+    if (!content) return 'graph TD\nStart[Start]';
+
+    const lines = content.split('\n');
+    let graphDefinition = 'graph TD\n';
     
-    setIsUpdating(true);
-    const timeout = setTimeout(() => {
-        const lines = sopContent.split('\n');
-        const newNodes = [];
-        const newEdges = [];
+    // Add Start Node
+    graphDefinition += `    Start(("Start Meeting"))\n`;
+    graphDefinition += `    style Start fill:#1967D2,stroke:none,color:#fff\n`;
+    
+    let previousNodeId = 'Start';
+    let idCounter = 1;
+
+    lines.forEach(line => {
+      // Look for H2 headers as main process steps
+      if (line.trim().startsWith('## ')) {
+        const label = line.replace('## ', '').trim();
+        // Sanitize label for mermaid (remove special chars)
+        const safeLabel = label.replace(/["'()]/g, '');
+        const nodeId = `Step${idCounter}`;
         
-        let yPos = 50;
-        let lastNodeId: string | null = null;
-        let idCounter = 1;
+        graphDefinition += `    ${nodeId}["${safeLabel}"]\n`;
+        graphDefinition += `    ${previousNodeId} --> ${nodeId}\n`;
+        
+        // Add styling for standard nodes
+        graphDefinition += `    style ${nodeId} fill:#292A2D,stroke:#3c4043,color:#E8EAED\n`;
+        
+        previousNodeId = nodeId;
+        idCounter++;
+      }
+      // Look for bullet points as sub-actions or decisions
+      else if (line.trim().startsWith('- ')) {
+         const itemLabel = line.replace('- ', '').trim();
+         // Optionally add these as sub-nodes or notes, keeping it simple for now as notes on the previous node would be complex
+         // For a flowchart, let's keep it high-level based on headers to avoid clutter
+      }
+    });
 
-        // Always start with "Start"
-        newNodes.push({
-            id: 'start',
-            position: { x: 100, y: yPos },
-            data: { label: 'Start Meeting' },
-            type: 'input',
-            style: { 
-                background: 'hsl(var(--primary))', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '8px',
-                width: 150,
-                fontSize: '12px',
-                fontWeight: 'bold'
-            }
-        });
-        lastNodeId = 'start';
-        yPos += 100;
+    // Add End Node
+    graphDefinition += `    End(("End"))\n`;
+    graphDefinition += `    style End fill:#34A853,stroke:none,color:#fff\n`;
+    graphDefinition += `    ${previousNodeId} --> End\n`;
 
-        // Parse headers as major steps
-        lines.forEach(line => {
-            if (line.startsWith('## ')) {
-                const label = line.replace('## ', '').trim();
-                const id = `node-${idCounter++}`;
-                
-                newNodes.push({
-                    id,
-                    position: { x: 100, y: yPos },
-                    data: { label },
-                    style: { 
-                        background: 'hsl(var(--card))', 
-                        color: 'hsl(var(--foreground))', 
-                        border: '1px solid hsl(var(--border))', 
-                        borderRadius: '8px',
-                        width: 150,
-                        fontSize: '12px'
-                    }
-                });
+    return graphDefinition;
+  };
 
-                if (lastNodeId) {
-                    newEdges.push({
-                        id: `e${lastNodeId}-${id}`,
-                        source: lastNodeId,
-                        target: id,
-                        animated: true,
-                        style: { stroke: 'hsl(var(--muted-foreground))' },
-                        markerEnd: {
-                            type: MarkerType.ArrowClosed,
-                            color: 'hsl(var(--muted-foreground))',
-                        },
-                    });
-                }
+  useEffect(() => {
+    if (!sopContent || !containerRef.current) return;
 
-                lastNodeId = id;
-                yPos += 100;
-            }
-        });
-
-        // Add "End" node
-        const endId = 'end';
-        newNodes.push({
-            id: endId,
-            position: { x: 100, y: yPos },
-            data: { label: 'Next Steps' },
-            type: 'output',
-            style: { 
-                background: 'hsl(var(--secondary))', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '8px',
-                width: 150,
-                fontSize: '12px',
-                fontWeight: 'bold'
-            }
-        });
-
-        if (lastNodeId) {
-            newEdges.push({
-                id: `e${lastNodeId}-${endId}`,
-                source: lastNodeId,
-                target: endId,
-                animated: true,
-                style: { stroke: 'hsl(var(--muted-foreground))' },
-                markerEnd: {
-                    type: MarkerType.ArrowClosed,
-                    color: 'hsl(var(--muted-foreground))',
-                },
-            });
-        }
-
-        setNodes(newNodes);
-        setEdges(newEdges);
+    const renderChart = async () => {
+      setIsUpdating(true);
+      try {
+        const syntax = generateMermaidSyntax(sopContent);
+        // Generate a unique ID for the SVG
+        const id = `mermaid-${Date.now()}`;
+        
+        // Render the diagram
+        const { svg } = await mermaid.render(id, syntax);
+        setSvgContent(svg);
+      } catch (error) {
+        console.error('Failed to render mermaid chart:', error);
+        // In case of error, we could show a fallback or retry
+      } finally {
         setIsUpdating(false);
-    }, 1000); // Delay to visualize update
+      }
+    };
 
-    return () => clearTimeout(timeout);
-  }, [sopContent, setNodes, setEdges]);
+    // Debounce the rendering slightly to avoid flicker on fast typing
+    const timeoutId = setTimeout(renderChart, 500);
+    return () => clearTimeout(timeoutId);
 
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
-  );
+  }, [sopContent]);
 
   return (
     <div className={`flex flex-col h-full bg-card border-l border-border ${className}`}>
@@ -192,10 +119,10 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
                 {isUpdating ? (
                     <>
                     <RefreshCw className="w-3 h-3 text-orange-500 animate-spin" />
-                    <p className="text-xs text-orange-500">Syncing...</p>
+                    <p className="text-xs text-orange-500">Rendering...</p>
                     </>
                 ) : (
-                    <p className="text-xs text-muted-foreground">Live View</p>
+                    <p className="text-xs text-muted-foreground">Mermaid.js</p>
                 )}
             </div>
           </div>
@@ -211,19 +138,16 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
       </div>
 
       {/* Flowchart Area */}
-      <div className="flex-1 bg-background/50 relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          fitView
-          attributionPosition="bottom-left"
-        >
-          <Background color="hsl(var(--muted-foreground))" gap={16} size={1} className="opacity-10" />
-          <Controls className="bg-card border border-border text-foreground fill-foreground" />
-        </ReactFlow>
+      <div 
+        ref={containerRef}
+        className="flex-1 bg-background/50 relative overflow-auto p-4 flex items-center justify-center"
+      >
+        {svgContent && (
+            <div 
+                className="w-full h-full flex items-center justify-center opacity-90 hover:opacity-100 transition-opacity"
+                dangerouslySetInnerHTML={{ __html: svgContent }} 
+            />
+        )}
       </div>
     </div>
   );
