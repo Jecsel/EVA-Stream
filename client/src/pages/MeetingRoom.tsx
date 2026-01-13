@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { useRoute } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { simulateGeminiAnalysis } from "@/lib/gemini";
-import { MessageSquare, Layout, Settings, Users, Video, Mic, MonitorUp } from "lucide-react";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +22,8 @@ interface Message {
 }
 
 export default function MeetingRoom() {
+  const [, params] = useRoute("/meeting/:id");
+  const roomId = params?.id || "demo-room";
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -106,12 +110,17 @@ export default function MeetingRoom() {
         {/* Top Bar */}
         <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-background z-10">
           <div className="flex items-center gap-3">
+            <Link href="/">
+              <Button variant="ghost" size="icon" className="mr-2 text-muted-foreground hover:text-foreground">
+                <ChevronLeft className="w-5 h-5" />
+              </Button>
+            </Link>
             <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
               <Video className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="font-semibold text-lg leading-tight">Project Kickoff</h1>
-              <p className="text-xs text-muted-foreground">room-839-212</p>
+              <h1 className="font-semibold text-lg leading-tight">Meeting</h1>
+              <p className="text-xs text-muted-foreground">{roomId}</p>
             </div>
           </div>
           
@@ -127,7 +136,7 @@ export default function MeetingRoom() {
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${isChatOpen ? 'mr-0' : 'mr-0'}`}>
              <JitsiMeeting 
-               roomName="ReplitAIProjectKickoff" 
+               roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
                className="bg-zinc-900"
