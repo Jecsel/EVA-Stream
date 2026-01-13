@@ -58,7 +58,7 @@ export function AIChatPanel({ messages, onSendMessage, isScreenSharing, classNam
             <Sparkles className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="font-semibold text-foreground">Gemini Assistant</h2>
+            <h2 className="font-semibold text-foreground">EVA SOP Assistant</h2>
             <div className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isScreenSharing ? "bg-green-500 animate-pulse" : "bg-muted-foreground"}`} />
               <p className="text-xs text-muted-foreground">
@@ -89,7 +89,7 @@ export function AIChatPanel({ messages, onSendMessage, isScreenSharing, classNam
               <div className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-medium text-foreground">
-                    {msg.role === "ai" ? "Gemini" : "You"}
+                    {msg.role === "ai" ? "EVA" : "You"}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -154,7 +154,7 @@ export function AIChatPanel({ messages, onSendMessage, isScreenSharing, classNam
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Gemini about the meeting..."
+            placeholder="Ask EVA about the meeting..."
             className="pr-12 bg-background border-input focus-visible:ring-primary/50 h-12 rounded-full pl-5"
           />
           <Button 
@@ -168,7 +168,7 @@ export function AIChatPanel({ messages, onSendMessage, isScreenSharing, classNam
           </Button>
         </div>
         <p className="text-[10px] text-center text-muted-foreground mt-2">
-          Gemini can see shared screens and answer questions in real-time.
+          EVA can see shared screens and answer questions in real-time.
         </p>
       </div>
     </div>

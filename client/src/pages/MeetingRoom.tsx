@@ -33,7 +33,7 @@ export default function MeetingRoom() {
     {
       id: "1",
       role: "ai",
-      content: "Hello! I'm your Gemini meeting assistant. I'm ready to transcribe, analyze shared screens, and answer questions about the meeting context.",
+      content: "Hello! I'm your EVA SOP assistant. I'm ready to transcribe, analyze shared screens, and answer questions about the meeting context.",
       timestamp: new Date(),
     }
   ]);
@@ -276,7 +276,7 @@ export default function MeetingRoom() {
                     <MessageSquare className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Toggle Gemini Assistant</TooltipContent>
+                <TooltipContent>Toggle EVA SOP Assistant</TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
