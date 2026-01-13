@@ -7,10 +7,26 @@ interface JitsiMeetingProps {
   displayName: string;
   onApiReady?: (api: any) => void;
   className?: string;
+  // Optional JaaS properties for future integration
+  jwt?: string;
+  appId?: string;
 }
 
-export function JitsiMeeting({ roomName, displayName, onApiReady, className }: JitsiMeetingProps) {
+export function JitsiMeeting({ 
+  roomName, 
+  displayName, 
+  onApiReady, 
+  className,
+  jwt,
+  appId
+}: JitsiMeetingProps) {
   const [loading, setLoading] = useState(true);
+
+  // If using JaaS (appId provided), the room name format is typically "vpaas-magic-cookie-id/roomName"
+  const formattedRoomName = appId ? `${appId}/${roomName}` : roomName;
+  
+  // Use 8x8.vc if a JWT is provided (indicating JaaS), otherwise fallback to the free community server
+  const domain = jwt ? "8x8.vc" : "meet.jit.si";
 
   return (
     <div className={`relative w-full h-full overflow-hidden rounded-xl bg-background ${className}`}>
@@ -24,8 +40,9 @@ export function JitsiMeeting({ roomName, displayName, onApiReady, className }: J
       )}
       
       <JitsiReactMeeting
-        domain="meet.jit.si"
-        roomName={roomName}
+        domain={domain}
+        roomName={formattedRoomName}
+        jwt={jwt}
         configOverwrite={{
           startWithAudioMuted: true,
           startWithVideoMuted: true,
