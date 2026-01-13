@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
-import { SOPDocument } from "@/components/SOPDocument";
+import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { simulateGeminiAnalysis } from "@/lib/gemini";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText } from "lucide-react";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -27,6 +27,7 @@ export default function MeetingRoom() {
   const roomId = params?.id || "demo-room";
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
+  const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -199,6 +200,20 @@ export default function MeetingRoom() {
                 className="h-full"
             />
           </div>
+
+          {/* New Column: SOP Flowchart */}
+          <div 
+            className={`
+              transition-all duration-500 ease-in-out transform origin-right
+              ${isFlowchartOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+              rounded-2xl overflow-hidden shadow-xl border border-border
+            `}
+          >
+            <SOPFlowchart 
+                sopContent={sopContent}
+                className="h-full"
+            />
+          </div>
         </div>
 
         {/* Bottom Controls */}
@@ -277,6 +292,22 @@ export default function MeetingRoom() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Toggle SOP Document</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={isFlowchartOpen ? "default" : "outline"} 
+                    size="icon" 
+                    className={`h-12 w-12 rounded-full border-2 ${isFlowchartOpen ? 'bg-orange-500 border-orange-500 hover:bg-orange-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                    onClick={() => setIsFlowchartOpen(!isFlowchartOpen)}
+                  >
+                    <GitGraph className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Toggle SOP Flowchart</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             
