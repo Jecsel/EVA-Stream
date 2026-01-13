@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
+import { SOPDocument } from "@/components/SOPDocument";
 import { simulateGeminiAnalysis } from "@/lib/gemini";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft } from "lucide-react";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -25,6 +26,7 @@ export default function MeetingRoom() {
   const [, params] = useRoute("/meeting/:id");
   const roomId = params?.id || "demo-room";
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -35,6 +37,18 @@ export default function MeetingRoom() {
   ]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
+  const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
+
+## 1. Meeting Objective
+- Define core goals for Q3
+- Assign roles and responsibilities
+
+## 2. Attendees
+- Project Manager
+- Design Lead
+- Lead Developer
+`);
+  const [isSopUpdating, setIsSopUpdating] = useState(false);
 
   // Simulate random screen sharing events if we don't have real hooks from Jitsi yet
   useEffect(() => {
@@ -87,17 +101,29 @@ export default function MeetingRoom() {
 
     // Get AI response
     try {
+      setIsSopUpdating(true);
       const response = await simulateGeminiAnalysis(content, isScreenSharing);
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "ai",
-        content: response,
+        content: response.message,
         timestamp: new Date(),
         context: isScreenSharing ? "Screen Analysis" : undefined
       };
       setMessages(prev => [...prev, aiMsg]);
+      
+      if (response.sopUpdate && !sopContent.includes(response.sopUpdate.trim())) {
+          // Simulate appending new content to SOP
+          setTimeout(() => {
+            setSopContent(prev => prev + "\n" + response.sopUpdate);
+            setIsSopUpdating(false);
+          }, 1000);
+      } else {
+          setIsSopUpdating(false);
+      }
     } catch (error) {
       console.error("Failed to get AI response", error);
+      setIsSopUpdating(false);
     }
   };
 
@@ -134,7 +160,7 @@ export default function MeetingRoom() {
 
         {/* Video Area */}
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
-          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${isChatOpen ? 'mr-0' : 'mr-0'}`}>
+          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
              <JitsiMeeting 
                roomName={`VideoAI-${roomId}`}
                displayName="User"
@@ -147,7 +173,7 @@ export default function MeetingRoom() {
           <div 
             className={`
               transition-all duration-500 ease-in-out transform origin-right
-              ${isChatOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden'}
+              ${isChatOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
               rounded-2xl overflow-hidden shadow-xl border border-border
             `}
           >
@@ -158,9 +184,24 @@ export default function MeetingRoom() {
               className="h-full"
             />
           </div>
+
+          {/* New Column: SOP Document */}
+          <div 
+            className={`
+              transition-all duration-500 ease-in-out transform origin-right
+              ${isSOPOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+              rounded-2xl overflow-hidden shadow-xl border border-border
+            `}
+          >
+            <SOPDocument 
+                content={sopContent}
+                isUpdating={isSopUpdating}
+                className="h-full"
+            />
+          </div>
         </div>
 
-        {/* Bottom Controls (Simulated global controls or toggles for UI) */}
+        {/* Bottom Controls */}
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
             <TooltipProvider>
               <Tooltip>
@@ -220,6 +261,22 @@ export default function MeetingRoom() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Toggle Gemini Assistant</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={isSOPOpen ? "default" : "outline"} 
+                    size="icon" 
+                    className={`h-12 w-12 rounded-full border-2 ${isSOPOpen ? 'bg-secondary border-secondary hover:bg-secondary/90' : 'border-border bg-card hover:bg-muted'}`}
+                    onClick={() => setIsSOPOpen(!isSOPOpen)}
+                  >
+                    <FileText className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Toggle SOP Document</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             

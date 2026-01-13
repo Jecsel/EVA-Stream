@@ -17,25 +17,55 @@ export const MOCK_GEMINI_RESPONSES = {
   ]
 };
 
-export function simulateGeminiAnalysis(content: string, isScreenSharing: boolean): Promise<string> {
+const MOCK_SOP_TEMPLATES = {
+    initial: `# Project Kickoff SOP
+
+## 1. Meeting Objective
+- Define core goals for Q3
+- Assign roles and responsibilities
+
+## 2. Attendees
+- Project Manager
+- Design Lead
+- Lead Developer
+`,
+    update1: `
+## 3. Key Decisions
+- **Technology Stack**: React + Node.js selected for the MVP.
+- **Design System**: Material UI will be used as the base.
+
+## 4. Action Items
+- [ ] Setup repo (Dev)
+- [ ] Create Figma mockups (Design)
+`
+};
+
+export function simulateGeminiAnalysis(content: string, isScreenSharing: boolean): Promise<{ message: string, sopUpdate?: string }> {
   return new Promise((resolve) => {
     setTimeout(() => {
+      const keywords = content.toLowerCase();
+      let message = MOCK_GEMINI_RESPONSES.default[Math.floor(Math.random() * MOCK_GEMINI_RESPONSES.default.length)];
+      let sopUpdate = undefined;
+
       if (!isScreenSharing) {
-        resolve("I'm listening. Since no screen is shared currently, I can only help with general questions or meeting notes.");
+        resolve({ 
+            message: "I'm listening. Since no screen is shared currently, I can only help with general questions or meeting notes." 
+        });
         return;
       }
 
-      const keywords = content.toLowerCase();
-      let responses = MOCK_GEMINI_RESPONSES.default;
-      
       if (keywords.includes("code") || keywords.includes("bug") || keywords.includes("function")) {
-        responses = MOCK_GEMINI_RESPONSES.code;
+        message = MOCK_GEMINI_RESPONSES.code[Math.floor(Math.random() * MOCK_GEMINI_RESPONSES.code.length)];
       } else if (keywords.includes("design") || keywords.includes("color") || keywords.includes("layout")) {
-        responses = MOCK_GEMINI_RESPONSES.design;
+        message = MOCK_GEMINI_RESPONSES.design[Math.floor(Math.random() * MOCK_GEMINI_RESPONSES.design.length)];
       }
 
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-      resolve(randomResponse);
+      // Simulate SOP updates based on "trigger" words or random chance for demo
+      if (keywords.includes("record") || keywords.includes("note") || Math.random() > 0.7) {
+          sopUpdate = MOCK_SOP_TEMPLATES.update1;
+      }
+
+      resolve({ message, sopUpdate });
     }, 1500);
   });
 }
