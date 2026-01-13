@@ -1,11 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { JitsiMeeting as JitsiReactMeeting } from '@jitsi/react-sdk';
 import { Loader2 } from "lucide-react";
-
-declare global {
-  interface Window {
-    JitsiMeetExternalAPI: any;
-  }
-}
+import { useState } from 'react';
 
 interface JitsiMeetingProps {
   roomName: string;
@@ -15,89 +10,7 @@ interface JitsiMeetingProps {
 }
 
 export function JitsiMeeting({ roomName, displayName, onApiReady, className }: JitsiMeetingProps) {
-  const jitsiContainerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
-  const apiRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (!jitsiContainerRef.current || !window.JitsiMeetExternalAPI) return;
-
-    const domain = "meet.jit.si";
-    const options = {
-      roomName: roomName,
-      width: "100%",
-      height: "100%",
-      parentNode: jitsiContainerRef.current,
-      userInfo: {
-        displayName: displayName,
-      },
-      configOverwrite: {
-        startWithAudioMuted: true,
-        startWithVideoMuted: true,
-        theme: {
-          default: 'dark',
-        },
-        toolbarButtons: [
-          'camera',
-          'chat',
-          'closedcaptions',
-          'desktop',
-          'download',
-          'embedmeeting',
-          'etherpad',
-          'feedback',
-          'filmstrip',
-          'fullscreen',
-          'hangup',
-          'help',
-          'highlight',
-          'invite',
-          'linktosalesforce',
-          'livestreaming',
-          'microphone',
-          'noisesuppression',
-          'participants-pane',
-          'profile',
-          'raisehand',
-          'recording',
-          'security',
-          'select-background',
-          'settings',
-          'shareaudio',
-          'sharedvideo',
-          'shortcuts',
-          'stats',
-          'tileview',
-          'toggle-camera',
-          'videoquality',
-          'whiteboard',
-        ],
-      },
-      interfaceConfigOverwrite: {
-        SHOW_JITSI_WATERMARK: false,
-        SHOW_WATERMARK_FOR_GUESTS: false,
-        DEFAULT_BACKGROUND: '#202124',
-        TOOLBAR_ALWAYS_VISIBLE: true,
-      },
-    };
-
-    const api = new window.JitsiMeetExternalAPI(domain, options);
-    apiRef.current = api;
-
-    api.addEventListeners({
-      videoConferenceJoined: () => {
-        setLoading(false);
-        if (onApiReady) onApiReady(api);
-      },
-      readyToClose: () => {
-        // Handle meeting end
-      },
-    });
-
-    return () => {
-      api.dispose();
-    };
-  }, [roomName, displayName, onApiReady]);
 
   return (
     <div className={`relative w-full h-full overflow-hidden rounded-xl bg-background ${className}`}>
@@ -109,7 +22,72 @@ export function JitsiMeeting({ roomName, displayName, onApiReady, className }: J
           </div>
         </div>
       )}
-      <div ref={jitsiContainerRef} className="w-full h-full" />
+      
+      <JitsiReactMeeting
+        domain="meet.jit.si"
+        roomName={roomName}
+        configOverwrite={{
+          startWithAudioMuted: true,
+          startWithVideoMuted: true,
+          theme: {
+            default: 'dark',
+          },
+          toolbarButtons: [
+            'camera',
+            'chat',
+            'closedcaptions',
+            'desktop',
+            'download',
+            'embedmeeting',
+            'etherpad',
+            'feedback',
+            'filmstrip',
+            'fullscreen',
+            'hangup',
+            'help',
+            'highlight',
+            'invite',
+            'linktosalesforce',
+            'livestreaming',
+            'microphone',
+            'noisesuppression',
+            'participants-pane',
+            'profile',
+            'raisehand',
+            'recording',
+            'security',
+            'select-background',
+            'settings',
+            'shareaudio',
+            'sharedvideo',
+            'shortcuts',
+            'stats',
+            'tileview',
+            'toggle-camera',
+            'videoquality',
+            'whiteboard',
+          ],
+        }}
+        interfaceConfigOverwrite={{
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          DEFAULT_BACKGROUND: '#202124',
+          TOOLBAR_ALWAYS_VISIBLE: true,
+        }}
+        userInfo={{
+          displayName: displayName,
+          email: `${displayName.replace(/\s+/g, '.').toLowerCase()}@example.com`
+        }}
+        onApiReady={(externalApi) => {
+          setLoading(false);
+          if (onApiReady) onApiReady(externalApi);
+        }}
+        getIFrameRef={(iframeRef) => {
+          iframeRef.style.height = '100%';
+          iframeRef.style.width = '100%';
+          iframeRef.style.background = '#202124';
+        }}
+      />
     </div>
   );
 }
