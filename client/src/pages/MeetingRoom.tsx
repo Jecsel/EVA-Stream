@@ -6,7 +6,6 @@ import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
 import {
   Tooltip,
   TooltipContent,
@@ -65,11 +64,11 @@ export default function MeetingRoom() {
     sopContentRef.current = sopContent;
   }, [sopContent]);
 
-  // Mark meeting as active after 5 seconds (meaningful session)
+  // Mark meeting as active after 2 seconds (meaningful session)
   useEffect(() => {
     const timer = setTimeout(() => {
       meetingActiveRef.current = true;
-    }, 5000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -104,31 +103,48 @@ export default function MeetingRoom() {
     return () => clearInterval(timer);
   }, []);
 
-  // Warn user before leaving without ending meeting
+  // Auto-save meeting on page navigation or tab close
+  const autoSaveMeeting = useCallback(() => {
+    if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
+      const duration = formatDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
+      const params = new URLSearchParams();
+      params.append('sopContent', sopContentRef.current);
+      params.append('duration', duration);
+      navigator.sendBeacon(
+        `/api/meetings/${meetingIdRef.current}/end-beacon`, 
+        new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' })
+      );
+      hasEndedMeetingRef.current = true; // Prevent duplicate saves
+    }
+  }, []);
+
+  // Warn user before leaving and auto-save
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Only auto-save if meeting was active and not already ended
       if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
-        // Try to save meeting using sendBeacon with URLSearchParams for reliable parsing
-        const duration = formatDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
-        const params = new URLSearchParams();
-        params.append('sopContent', sopContentRef.current);
-        params.append('duration', duration);
-        navigator.sendBeacon(
-          `/api/meetings/${meetingIdRef.current}/end-beacon`, 
-          new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' })
-        );
-        
-        // Show browser warning
+        autoSaveMeeting();
         e.preventDefault();
         e.returnValue = 'Your meeting recording may not be saved. Click "End Call" to save properly.';
         return e.returnValue;
       }
     };
 
+    // pagehide fires when navigating away (more reliable than beforeunload for some browsers)
+    const handlePageHide = (e: PageTransitionEvent) => {
+      // Only save if this is a real navigation (not just back-forward cache)
+      if (!e.persisted) {
+        autoSaveMeeting();
+      }
+    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+    window.addEventListener('pagehide', handlePageHide);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [autoSaveMeeting]);
 
   // End meeting and create recording
   const handleEndMeeting = async () => {
@@ -325,11 +341,21 @@ export default function MeetingRoom() {
         {/* Top Bar */}
         <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-background z-10">
           <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="mr-2 text-muted-foreground hover:text-foreground">
-                <ChevronLeft className="w-5 h-5" />
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="mr-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (meetingActiveRef.current && !hasEndedMeetingRef.current) {
+                  handleEndMeeting();
+                } else {
+                  setLocation("/");
+                }
+              }}
+              data-testid="button-back-to-dashboard"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
             <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
               <Video className="w-6 h-6" />
             </div>
