@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -62,6 +62,13 @@ export default function RecordingDetail() {
     queryKey: ["recording", recordingId],
     queryFn: () => api.getRecording(recordingId),
     enabled: !!recordingId,
+  });
+
+  const meetingId = recording?.meetingId;
+  const { data: chatMessages = [] } = useQuery({
+    queryKey: ["chatMessages", meetingId],
+    queryFn: () => api.getChatMessages(meetingId!),
+    enabled: !!meetingId,
   });
 
   const updateMutation = useMutation({
@@ -345,6 +352,10 @@ export default function RecordingDetail() {
               <GitBranch className="w-4 h-4" />
               Flowchart
             </TabsTrigger>
+            <TabsTrigger value="transcript" className="flex items-center gap-2" data-testid="tab-transcript">
+              <MessageSquare className="w-4 h-4" />
+              Transcript
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="sop" className="mt-0">
@@ -432,6 +443,62 @@ export default function RecordingDetail() {
               <div className="p-6 min-h-[400px] flex items-center justify-center" data-testid="content-flowchart">
                 <div ref={flowchartRef} className="w-full overflow-x-auto flex justify-center" />
               </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="transcript" className="mt-0">
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/30">
+                <h2 className="text-sm font-medium flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-primary" />
+                  Meeting Transcript
+                  {chatMessages.length > 0 && (
+                    <span className="text-xs text-muted-foreground">({chatMessages.length} messages)</span>
+                  )}
+                </h2>
+              </div>
+              <ScrollArea className="h-[calc(100vh-350px)]">
+                <div className="p-4 space-y-4" data-testid="content-transcript">
+                  {chatMessages.length === 0 ? (
+                    <p className="text-muted-foreground italic text-center py-8">No transcript available for this meeting.</p>
+                  ) : (
+                    chatMessages.map((message) => (
+                      <div 
+                        key={message.id} 
+                        className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        {message.role === 'ai' && (
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
+                            <Bot className="w-4 h-4 text-white" />
+                          </div>
+                        )}
+                        <div 
+                          className={`max-w-[80%] rounded-xl p-3 ${
+                            message.role === 'user' 
+                              ? 'bg-primary text-primary-foreground' 
+                              : 'bg-muted/50 border border-border'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-medium">
+                              {message.role === 'user' ? 'You' : 'EVA'}
+                            </span>
+                            <span className="text-xs opacity-60">
+                              {format(new Date(message.createdAt), "h:mm a")}
+                            </span>
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                        </div>
+                        {message.role === 'user' && (
+                          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                            <User className="w-4 h-4 text-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
             </div>
           </TabsContent>
         </Tabs>
