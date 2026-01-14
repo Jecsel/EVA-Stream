@@ -23,22 +23,25 @@ interface LiveSession {
   isActive: boolean;
   sessionId: string;
   lastActivity: number;
+  isTranscribing?: boolean;
 }
 
 const activeSessions = new Map<string, LiveSession>();
 
 export interface GeminiLiveMessage {
-  type: "audio" | "video" | "text" | "control";
+  type: "audio" | "video" | "text" | "control" | "audio_transcribe";
   data?: string; // base64 for audio/video, text for messages
   mimeType?: string;
-  command?: "start" | "stop" | "ping";
+  command?: "start" | "stop" | "ping" | "start_transcription" | "stop_transcription";
   meetingId?: string;
 }
 
 export interface GeminiLiveResponse {
-  type: "text" | "audio" | "sop_update" | "error" | "status";
+  type: "text" | "audio" | "sop_update" | "error" | "status" | "transcript";
   content: string;
   audioData?: string; // base64 audio
+  isFinal?: boolean;
+  speaker?: string;
 }
 
 export async function processLiveInput(
@@ -71,6 +74,33 @@ export async function processLiveInput(
         return {
           type: "status",
           content: "EVA has stopped observing",
+        };
+      }
+      if (message.command === "start_transcription") {
+        const session = activeSessions.get(meetingId);
+        if (session) {
+          session.isTranscribing = true;
+        } else {
+          activeSessions.set(meetingId, {
+            isActive: true,
+            sessionId: meetingId,
+            lastActivity: Date.now(),
+            isTranscribing: true,
+          });
+        }
+        return {
+          type: "status",
+          content: "Live transcription started",
+        };
+      }
+      if (message.command === "stop_transcription") {
+        const session = activeSessions.get(meetingId);
+        if (session) {
+          session.isTranscribing = false;
+        }
+        return {
+          type: "status",
+          content: "Live transcription stopped",
         };
       }
       if (message.command === "ping") {
@@ -146,6 +176,51 @@ If it's just a video call interface with no shared content, respond with just: "
         type: "text",
         content: response.text || "I couldn't process that message.",
       };
+    }
+
+    // Process audio for transcription
+    if (message.type === "audio_transcribe" && message.data) {
+      console.log(`[EVA] Processing audio for transcription (${message.data.length} bytes)`);
+      
+      try {
+        const contents = [
+          {
+            inlineData: {
+              data: message.data,
+              mimeType: message.mimeType || "audio/webm",
+            },
+          },
+          `Transcribe this audio exactly as spoken. Output ONLY the transcribed text with no additional formatting, commentary, or explanations. If the audio is unclear or silent, respond with "[inaudible]".`,
+        ];
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: contents,
+        });
+
+        const transcript = response.text || "";
+        
+        // Skip empty or trivial transcripts
+        if (!transcript || transcript.trim() === "" || transcript === "[inaudible]") {
+          return {
+            type: "status",
+            content: "No speech detected",
+          };
+        }
+
+        return {
+          type: "transcript",
+          content: transcript.trim(),
+          isFinal: true,
+          speaker: "User",
+        };
+      } catch (error) {
+        console.error("Audio transcription error:", error);
+        return {
+          type: "error",
+          content: "Failed to transcribe audio",
+        };
+      }
     }
 
     return {
