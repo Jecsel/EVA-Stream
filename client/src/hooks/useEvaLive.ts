@@ -22,6 +22,7 @@ export function useEvaLive({
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isObserving, setIsObserving] = useState(false);
+  const observingRef = useRef(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -98,11 +99,13 @@ export function useEvaLive({
   const startObserving = useCallback(() => {
     sendMessage("control", undefined, undefined);
     wsRef.current?.send(JSON.stringify({ type: "control", command: "start" }));
+    observingRef.current = true;
     setIsObserving(true);
   }, [sendMessage]);
 
   const stopObserving = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "control", command: "stop" }));
+    observingRef.current = false;
     setIsObserving(false);
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
@@ -128,6 +131,11 @@ export function useEvaLive({
     const video = videoRef.current;
     const ctx = canvas.getContext("2d");
 
+    // Clear any existing interval
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+    }
+
     // Capture frame every 2 seconds (Gemini processes at 1 FPS, so 2s is reasonable)
     frameIntervalRef.current = setInterval(() => {
       if (!ctx || !video.videoWidth) return;
@@ -143,7 +151,9 @@ export function useEvaLive({
       const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
       const base64Data = dataUrl.split(",")[1];
       
-      if (wsRef.current?.readyState === WebSocket.OPEN && isObserving) {
+      // Use ref to check observing state (avoids stale closure)
+      if (wsRef.current?.readyState === WebSocket.OPEN && observingRef.current) {
+        console.log("Sending screen frame to EVA...");
         wsRef.current.send(JSON.stringify({
           type: "video",
           data: base64Data,
@@ -151,7 +161,7 @@ export function useEvaLive({
         }));
       }
     }, 2000);
-  }, [isObserving]);
+  }, []);
 
   const stopScreenCapture = useCallback(() => {
     if (frameIntervalRef.current) {

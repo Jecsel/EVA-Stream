@@ -199,20 +199,17 @@ export default function MeetingRoom() {
     } else {
       startObserving();
       
-      // If already screen sharing, prompt for screen capture
-      if (isScreenSharing) {
-        try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({ 
-            video: { frameRate: 1 } 
-          });
-          startScreenCapture(stream);
-          addSystemMessage("EVA is now observing your shared screen in real-time.");
-        } catch (e) {
-          console.log("Could not start screen capture:", e);
-          addSystemMessage("EVA is ready to observe. Please share your screen to enable real-time analysis.");
-        }
-      } else {
-        addSystemMessage("EVA is ready to observe. Share your screen to enable real-time analysis.");
+      // Always prompt for screen capture when starting observation
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { frameRate: 1 } 
+        });
+        startScreenCapture(stream);
+        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
+      } catch (e) {
+        console.log("Could not start screen capture:", e);
+        addSystemMessage("Screen capture was cancelled. Click the eye icon again to try sharing your screen.");
+        stopObserving();
       }
     }
   };

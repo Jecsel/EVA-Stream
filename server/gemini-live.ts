@@ -87,6 +87,7 @@ export async function processLiveInput(
 
     // Process video frame (screen capture)
     if (message.type === "video" && message.data) {
+      console.log(`[EVA] Processing video frame for meeting ${meetingId} (${message.data.length} bytes)`);
       const contents = [
         {
           inlineData: {
