@@ -1,7 +1,7 @@
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema } from "@shared/schema";
+import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat } from "./gemini";
@@ -179,6 +179,33 @@ export async function registerRoutes(
       res.json(messages);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  // Transcript Segments
+  app.post("/api/meetings/:meetingId/transcripts", async (req, res) => {
+    try {
+      const validated = insertTranscriptSegmentSchema.parse({
+        ...req.body,
+        meetingId: req.params.meetingId,
+      });
+      const segment = await storage.createTranscriptSegment(validated);
+      res.json(segment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        res.status(500).json({ error: "Failed to create transcript segment" });
+      }
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/transcripts", async (req, res) => {
+    try {
+      const segments = await storage.getTranscriptsByMeeting(req.params.meetingId);
+      res.json(segments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch transcripts" });
     }
   });
 

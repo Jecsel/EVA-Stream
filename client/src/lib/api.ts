@@ -1,4 +1,4 @@
-import type { Meeting, Recording, ChatMessage, InsertMeeting, InsertRecording, InsertChatMessage } from "@shared/schema";
+import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -131,6 +131,23 @@ export const api = {
       body: JSON.stringify({ sopContent, duration }),
     });
     if (!response.ok) throw new Error("Failed to end meeting");
+    return response.json();
+  },
+
+  // Transcript Segments
+  async createTranscriptSegment(meetingId: string, data: Omit<InsertTranscriptSegment, "meetingId">): Promise<TranscriptSegment> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/transcripts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to create transcript segment");
+    return response.json();
+  },
+
+  async getTranscripts(meetingId: string): Promise<TranscriptSegment[]> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/transcripts`);
+    if (!response.ok) throw new Error("Failed to fetch transcripts");
     return response.json();
   },
 };
