@@ -107,9 +107,10 @@ export function useAudioTranscript({
           reader.onloadend = () => {
             const base64 = (reader.result as string).split(",")[1];
             if (base64 && wsRef.current?.readyState === WebSocket.OPEN) {
+              const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
               wsRef.current.send(JSON.stringify({
                 type: "audio_transcribe",
-                data: base64,
+                data: base64url,
                 mimeType: "audio/webm",
               }));
             }

@@ -183,10 +183,17 @@ If it's just a video call interface with no shared content, respond with just: "
       console.log(`[EVA] Processing audio for transcription (${message.data.length} bytes)`);
       
       try {
+        // Convert base64url back to standard base64
+        let base64Data = message.data.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        while (base64Data.length % 4) {
+          base64Data += '=';
+        }
+
         const contents = [
           {
             inlineData: {
-              data: message.data,
+              data: base64Data,
               mimeType: message.mimeType || "audio/webm",
             },
           },

@@ -4,7 +4,8 @@ import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff } from "lucide-react";
+import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -15,6 +16,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useEvaLive } from "@/hooks/useEvaLive";
+import { useAudioTranscript } from "@/hooks/useAudioTranscript";
 import type { ChatMessage } from "@shared/schema";
 
 interface Message {
@@ -34,7 +36,10 @@ export default function MeetingRoom() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
+  const [transcripts, setTranscripts] = useState<Array<{id: string; text: string; speaker: string; timestamp: Date; isFinal: boolean;}>>([]);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
@@ -216,6 +221,48 @@ export default function MeetingRoom() {
     onSopUpdate: handleSopUpdate,
     onStatusChange: setEvaStatus,
   });
+
+  const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
+    if (message.type === "transcript" && message.content) {
+      const newEntry = {
+        id: `transcript-${Date.now()}`,
+        text: message.content,
+        speaker: message.speaker || "User",
+        timestamp: new Date(),
+        isFinal: message.isFinal ?? true,
+      };
+      setTranscripts(prev => [...prev, newEntry]);
+
+      if (message.isFinal && meeting?.id) {
+        api.createTranscriptSegment(meeting.id, {
+          text: message.content,
+          speaker: message.speaker || "User",
+          isFinal: true,
+        }).catch(err => {
+          console.error("Failed to save transcript segment:", err);
+        });
+      }
+    }
+  }, [meeting?.id]);
+
+  const {
+    isConnected: transcriptConnected,
+    isTranscribing,
+    startTranscription,
+    stopTranscription,
+  } = useAudioTranscript({
+    meetingId: meeting?.id || "",
+    onTranscript: handleTranscript,
+    onStatusChange: setTranscriptStatus,
+  });
+
+  const handleToggleTranscription = useCallback(async () => {
+    if (isTranscribing) {
+      stopTranscription();
+    } else {
+      await startTranscription();
+    }
+  }, [isTranscribing, startTranscription, stopTranscription]);
 
   // Convert database messages to UI format
   const messages: Message[] = chatMessages.map(msg => ({
@@ -441,6 +488,23 @@ export default function MeetingRoom() {
                 className="h-full"
             />
           </div>
+
+          {/* Live Transcript */}
+          <div 
+            className={`
+              transition-all duration-500 ease-in-out transform origin-right
+              ${isTranscriptOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+              rounded-2xl overflow-hidden shadow-xl border border-border
+            `}
+          >
+            <LiveTranscriptPanel 
+                transcripts={transcripts}
+                isTranscribing={isTranscribing}
+                onToggleTranscription={handleToggleTranscription}
+                status={transcriptStatus}
+                className="h-full"
+            />
+          </div>
         </div>
 
         {/* Bottom Controls */}
@@ -536,6 +600,23 @@ export default function MeetingRoom() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Toggle SOP Document</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={isTranscriptOpen ? "default" : "outline"} 
+                    size="icon" 
+                    className={`h-12 w-12 rounded-full border-2 ${isTranscriptOpen ? 'bg-cyan-500 border-cyan-500 hover:bg-cyan-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                    onClick={() => setIsTranscriptOpen(!isTranscriptOpen)}
+                    data-testid="button-toggle-transcript"
+                  >
+                    <ScrollText className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Toggle Live Transcript</TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
