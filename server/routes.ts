@@ -142,6 +142,19 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/recordings/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteRecording(req.params.id);
+      if (!success) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete recording" });
+    }
+  });
+
   // Chat Messages
   app.post("/api/meetings/:meetingId/messages", async (req, res) => {
     try {

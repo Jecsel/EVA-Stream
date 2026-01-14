@@ -87,6 +87,14 @@ export const api = {
     return response.json();
   },
 
+  async deleteRecording(id: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("Failed to delete recording");
+    return response.json();
+  },
+
   // Chat Messages
   async createChatMessage(meetingId: string, data: Omit<InsertChatMessage, "meetingId">): Promise<ChatMessage> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/messages`, {

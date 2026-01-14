@@ -35,6 +35,7 @@ export interface IStorage {
   listRecordings(limit?: number): Promise<Recording[]>;
   getRecordingsByMeeting(meetingId: string): Promise<Recording[]>;
   updateRecording(id: string, recording: Partial<InsertRecording>): Promise<Recording | undefined>;
+  deleteRecording(id: string): Promise<boolean>;
 
   // Chat Messages
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
@@ -134,6 +135,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(recordings.id, id))
       .returning();
     return recording;
+  }
+
+  async deleteRecording(id: string): Promise<boolean> {
+    const result = await db.delete(recordings).where(eq(recordings.id, id)).returning();
+    return result.length > 0;
   }
 
   // Chat Messages

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { useRoute, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useRoute, Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Sparkles, Download } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
@@ -24,16 +27,65 @@ mermaid.initialize({
   },
 });
 
+function parseSummaryHighlights(summary: string) {
+  const keyDecisions: string[] = [];
+  const actionItems: string[] = [];
+  const topics: string[] = [];
+  
+  const sentences = summary.split(/[.!?]+/).filter(s => s.trim());
+  
+  sentences.forEach(sentence => {
+    const lower = sentence.toLowerCase();
+    if (lower.includes('decided') || lower.includes('decision') || lower.includes('agreed') || lower.includes('concluded')) {
+      keyDecisions.push(sentence.trim());
+    } else if (lower.includes('action') || lower.includes('will') || lower.includes('need to') || lower.includes('should') || lower.includes('must') || lower.includes('todo')) {
+      actionItems.push(sentence.trim());
+    } else if (sentence.trim().length > 10) {
+      topics.push(sentence.trim());
+    }
+  });
+  
+  return { keyDecisions, actionItems, topics, hasStructure: keyDecisions.length > 0 || actionItems.length > 0 };
+}
+
 export default function RecordingDetail() {
   const [, params] = useRoute("/recording/:id");
+  const [, setLocation] = useLocation();
   const recordingId = params?.id || "";
   const flowchartRef = useRef<HTMLDivElement>(null);
   const [renderedSopContent, setRenderedSopContent] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedSopContent, setEditedSopContent] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
     queryKey: ["recording", recordingId],
     queryFn: () => api.getRecording(recordingId),
     enabled: !!recordingId,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (sopContent: string) => api.updateRecording(recordingId, { sopContent }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+      setIsEditing(false);
+      toast.success("SOP saved successfully");
+    },
+    onError: () => {
+      toast.error("Failed to save SOP. Please try again.");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteRecording(recordingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recordings"] });
+      toast.success("Recording deleted");
+      setLocation("/");
+    },
+    onError: () => {
+      toast.error("Failed to delete recording. Please try again.");
+    },
   });
 
   const generateFlowchartFromSOP = (sopContent: string): string => {
@@ -73,6 +125,12 @@ export default function RecordingDetail() {
   };
 
   useEffect(() => {
+    if (recording?.sopContent && !isEditing) {
+      setEditedSopContent(recording.sopContent);
+    }
+  }, [recording?.sopContent, isEditing]);
+
+  useEffect(() => {
     if (!flowchartRef.current) return;
     
     if (!recording?.sopContent) {
@@ -99,6 +157,15 @@ export default function RecordingDetail() {
     }
   }, [recording?.sopContent, renderedSopContent]);
 
+  const handleSave = () => {
+    updateMutation.mutate(editedSopContent);
+  };
+
+  const handleCancelEdit = () => {
+    setEditedSopContent(recording?.sopContent || "");
+    setIsEditing(false);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -120,6 +187,8 @@ export default function RecordingDetail() {
       </div>
     );
   }
+
+  const summaryData = parseSummaryHighlights(recording.summary || "");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -150,24 +219,118 @@ export default function RecordingDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-download-sop">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            data-testid="button-download-sop"
+            onClick={() => {
+              if (!recording?.sopContent) return;
+              const blob = new Blob([recording.sopContent], { type: 'text/markdown' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${recording.title.replace(/[^a-z0-9]/gi, '_')}_SOP.md`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            disabled={!recording?.sopContent}
+          >
             <Download className="w-4 h-4 mr-2" />
             Export SOP
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" data-testid="button-delete-recording">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Recording</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this recording? This will permanently remove the recording and its SOP content. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={() => deleteMutation.mutate()}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  data-testid="button-confirm-delete"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-6">
-        <div className="bg-card/50 border border-border rounded-xl p-4 mb-6">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-4 h-4 text-white" />
+        <div className="bg-gradient-to-br from-card via-card to-primary/5 border border-border rounded-xl p-5 mb-6" data-testid="section-ai-summary">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
+              <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <h3 className="text-sm font-medium mb-1">AI Summary</h3>
-              <p className="text-sm text-muted-foreground" data-testid="text-ai-summary">
-                {recording.summary || "No summary available for this recording."}
-              </p>
+            <div className="flex-1 space-y-4">
+              <div>
+                <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                  AI Meeting Summary
+                  <span className="px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full">Auto-generated</span>
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                  {recording.summary || "No summary available for this recording."}
+                </p>
+              </div>
+              
+              {summaryData.hasStructure && (
+                <div className="grid gap-3 md:grid-cols-2 pt-2 border-t border-border/50">
+                  {summaryData.keyDecisions.length > 0 && (
+                    <div className="bg-background/50 rounded-lg p-3">
+                      <h4 className="text-xs font-medium text-green-400 mb-2 flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Key Decisions
+                      </h4>
+                      <ul className="space-y-1">
+                        {summaryData.keyDecisions.slice(0, 3).map((decision, i) => (
+                          <li key={i} className="text-xs text-foreground/80">{decision}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {summaryData.actionItems.length > 0 && (
+                    <div className="bg-background/50 rounded-lg p-3">
+                      <h4 className="text-xs font-medium text-orange-400 mb-2 flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5" />
+                        Action Items
+                      </h4>
+                      <ul className="space-y-1">
+                        {summaryData.actionItems.slice(0, 3).map((action, i) => (
+                          <li key={i} className="text-xs text-foreground/80">{action}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {!summaryData.hasStructure && summaryData.topics.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-border/50">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" />
+                    Topics:
+                  </span>
+                  {summaryData.topics.slice(0, 4).map((topic, i) => (
+                    <span key={i} className="px-2 py-0.5 text-xs bg-muted rounded-full text-foreground/70">
+                      {topic.length > 40 ? topic.substring(0, 40) + "..." : topic}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -186,23 +349,75 @@ export default function RecordingDetail() {
 
           <TabsContent value="sop" className="mt-0">
             <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-muted/30">
+              <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <FileText className="w-4 h-4 text-primary" />
                   Standard Operating Procedure
                 </h2>
-              </div>
-              <ScrollArea className="h-[calc(100vh-350px)]">
-                <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-sop">
-                  {recording.sopContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {recording.sopContent}
-                    </ReactMarkdown>
+                <div className="flex items-center gap-2">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                        disabled={updateMutation.isPending}
+                        data-testid="button-cancel-edit"
+                      >
+                        <X className="w-4 h-4 mr-1" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSave}
+                        disabled={updateMutation.isPending}
+                        data-testid="button-save-sop"
+                      >
+                        <Save className="w-4 h-4 mr-1" />
+                        {updateMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                    </>
                   ) : (
-                    <p className="text-muted-foreground italic">No SOP content was generated for this meeting.</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsEditing(true)}
+                      disabled={!recording.sopContent}
+                      data-testid="button-edit-sop"
+                    >
+                      <Edit2 className="w-4 h-4 mr-1" />
+                      Edit
+                    </Button>
                   )}
                 </div>
-              </ScrollArea>
+              </div>
+              
+              {isEditing ? (
+                <div className="p-4">
+                  <Textarea
+                    value={editedSopContent}
+                    onChange={(e) => setEditedSopContent(e.target.value)}
+                    className="min-h-[calc(100vh-400px)] font-mono text-sm resize-none"
+                    placeholder="Enter SOP content in Markdown format..."
+                    data-testid="textarea-sop-edit"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Use Markdown formatting: ## for headings, - for bullet points, **bold**, *italic*
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[calc(100vh-350px)]">
+                  <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-sop">
+                    {recording.sopContent ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {recording.sopContent}
+                      </ReactMarkdown>
+                    ) : (
+                      <p className="text-muted-foreground italic">No SOP content was generated for this meeting.</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           </TabsContent>
 
