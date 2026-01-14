@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema } from "@shared/schema";
@@ -205,6 +205,65 @@ export async function registerRoutes(
     } catch (error) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: "Failed to process chat message" });
+    }
+  });
+
+  // End meeting via sendBeacon (URLSearchParams) - for auto-save on page close
+  app.post("/api/meetings/:meetingId/end-beacon", express.urlencoded({ extended: true }), async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const sopContent = req.body.sopContent;
+      const duration = req.body.duration;
+
+      // Validate required fields are present
+      if (!duration) {
+        console.log("End-beacon called without required fields, skipping");
+        res.status(400).json({ error: "Missing required fields" });
+        return;
+      }
+
+      // Get meeting
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        res.status(404).json({ error: "Meeting not found" });
+        return;
+      }
+
+      // Check if meeting was already ended
+      if (meeting.status === "completed") {
+        res.status(200).json({ message: "Meeting already ended" });
+        return;
+      }
+
+      // Get all chat messages for summary
+      const messages = await storage.getChatMessagesByMeeting(meetingId);
+      
+      // Generate simple summary (no AI call to keep it fast)
+      let summary = "Meeting ended (auto-saved).";
+      if (messages.length > 0) {
+        const userMessages = messages.filter(m => m.role === "user");
+        if (userMessages.length > 0) {
+          summary = `Meeting with ${messages.length} messages. Topics discussed: ${userMessages.slice(0, 3).map(m => m.content.slice(0, 50)).join(", ")}...`;
+        }
+      }
+
+      // Update meeting status to completed
+      await storage.updateMeeting(meetingId, { status: "completed" });
+
+      // Create recording
+      await storage.createRecording({
+        meetingId,
+        title: meeting.title,
+        duration,
+        summary,
+        sopContent: sopContent || null,
+      });
+
+      console.log(`Meeting ${meetingId} auto-saved via beacon`);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("End meeting (beacon) error:", error);
+      res.status(500).json({ error: "Failed to end meeting" });
     }
   });
 

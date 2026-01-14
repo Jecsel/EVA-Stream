@@ -54,13 +54,37 @@ export default function MeetingRoom() {
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
 
-  // Meeting duration timer
+  // Track if meeting has been properly ended
+  const hasEndedMeetingRef = useRef(false);
+  const meetingIdRef = useRef<string | null>(null);
+  const sopContentRef = useRef(sopContent);
+  const meetingActiveRef = useRef(false);
+
+  // Keep refs in sync
   useEffect(() => {
-    const timer = setInterval(() => {
-      setMeetingDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
-    }, 1000);
-    return () => clearInterval(timer);
+    sopContentRef.current = sopContent;
+  }, [sopContent]);
+
+  // Mark meeting as active after 5 seconds (meaningful session)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      meetingActiveRef.current = true;
+    }, 5000);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Load meeting data first
+  const { data: meeting } = useQuery({
+    queryKey: ["meeting", roomId],
+    queryFn: () => api.getMeetingByRoomId(roomId),
+  });
+
+  // Update meeting ID ref when meeting loads
+  useEffect(() => {
+    if (meeting?.id) {
+      meetingIdRef.current = meeting.id;
+    }
+  }, [meeting?.id]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -71,6 +95,40 @@ export default function MeetingRoom() {
     }
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Meeting duration timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMeetingDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Warn user before leaving without ending meeting
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only auto-save if meeting was active and not already ended
+      if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
+        // Try to save meeting using sendBeacon with URLSearchParams for reliable parsing
+        const duration = formatDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
+        const params = new URLSearchParams();
+        params.append('sopContent', sopContentRef.current);
+        params.append('duration', duration);
+        navigator.sendBeacon(
+          `/api/meetings/${meetingIdRef.current}/end-beacon`, 
+          new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' })
+        );
+        
+        // Show browser warning
+        e.preventDefault();
+        e.returnValue = 'Your meeting recording may not be saved. Click "End Call" to save properly.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // End meeting and create recording
   const handleEndMeeting = async () => {
@@ -87,6 +145,8 @@ export default function MeetingRoom() {
       const result = await api.endMeeting(meeting.id, sopContent, duration);
       
       if (result.recording) {
+        // Mark as properly ended to prevent beforeunload warning
+        hasEndedMeetingRef.current = true;
         // Success - redirect to dashboard
         setLocation("/");
       } else {
@@ -99,12 +159,6 @@ export default function MeetingRoom() {
       addSystemMessage("Failed to save recording. Please try ending the call again.");
     }
   };
-
-  // Load meeting data
-  const { data: meeting } = useQuery({
-    queryKey: ["meeting", roomId],
-    queryFn: () => api.getMeetingByRoomId(roomId),
-  });
 
   // Load chat messages
   const { data: chatMessages = [] } = useQuery({
