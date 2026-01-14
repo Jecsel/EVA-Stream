@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { Play, Calendar, Clock, MoreVertical, Share2, FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -6,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useLocation } from "wouter";
 
 interface MeetingRecording {
   id: string;
@@ -21,8 +23,22 @@ interface MeetingCardProps {
 }
 
 export function MeetingCard({ recording }: MeetingCardProps) {
+  const [, setLocation] = useLocation();
+
+  const handleCardClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-dropdown-trigger]') || target.closest('[role="menu"]')) {
+      return;
+    }
+    setLocation(`/recording/${recording.id}`);
+  };
+
   return (
-    <div className="group relative bg-card hover:bg-muted/30 border border-border rounded-xl overflow-hidden transition-all duration-200 hover:shadow-lg hover:border-primary/20">
+    <div 
+      className="group relative bg-card hover:bg-muted/30 border border-border rounded-xl overflow-hidden transition-all duration-200 hover:shadow-lg hover:border-primary/20 cursor-pointer"
+      onClick={handleCardClick}
+      data-testid={`card-recording-${recording.id}`}
+    >
       {/* Thumbnail Area */}
       <div className={`h-32 w-full ${recording.thumbnailColor} relative p-4 flex flex-col justify-end`}>
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
@@ -52,7 +68,7 @@ export function MeetingCard({ recording }: MeetingCardProps) {
             
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" size="icon" className="h-6 w-6 -mr-2 text-muted-foreground hover:text-foreground" data-dropdown-trigger>
                         <MoreVertical className="w-4 h-4" />
                     </Button>
                 </DropdownMenuTrigger>
