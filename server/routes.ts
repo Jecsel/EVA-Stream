@@ -208,5 +208,52 @@ export async function registerRoutes(
     }
   });
 
+  // End meeting and create recording with AI summary
+  app.post("/api/meetings/:meetingId/end", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const { sopContent, duration } = req.body;
+
+      // Get meeting
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        res.status(404).json({ error: "Meeting not found" });
+        return;
+      }
+
+      // Get all chat messages for summary
+      const messages = await storage.getChatMessagesByMeeting(meetingId);
+      
+      // Generate AI summary of the meeting
+      let summary = "Meeting ended without discussion.";
+      if (messages.length > 0) {
+        const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+        const summaryResponse = await analyzeChat(
+          `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,
+          `Meeting: ${meeting.title}`,
+          false
+        );
+        summary = summaryResponse.message;
+      }
+
+      // Update meeting status to completed
+      await storage.updateMeeting(meetingId, { status: "completed" });
+
+      // Create recording
+      const recording = await storage.createRecording({
+        meetingId,
+        title: meeting.title,
+        duration: duration || "00:00",
+        summary,
+        sopContent: sopContent || null,
+      });
+
+      res.json({ recording, summary });
+    } catch (error) {
+      console.error("End meeting error:", error);
+      res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
   return httpServer;
 }

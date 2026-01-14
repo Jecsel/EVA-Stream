@@ -114,4 +114,15 @@ export const api = {
     if (!response.ok) throw new Error("Failed to send chat message");
     return response.json();
   },
+
+  // End meeting and create recording
+  async endMeeting(meetingId: string, sopContent?: string, duration?: string): Promise<{ recording: Recording; summary: string }> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sopContent, duration }),
+    });
+    if (!response.ok) throw new Error("Failed to end meeting");
+    return response.json();
+  },
 };

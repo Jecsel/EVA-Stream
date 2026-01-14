@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import { useRoute } from "wouter";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff } from "lucide-react";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -28,6 +28,7 @@ interface Message {
 
 export default function MeetingRoom() {
   const [, params] = useRoute("/meeting/:id");
+  const [, setLocation] = useLocation();
   const roomId = params?.id || "demo-room";
   const queryClient = useQueryClient();
   
@@ -37,6 +38,9 @@ export default function MeetingRoom() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
+  const [isEndingMeeting, setIsEndingMeeting] = useState(false);
+  const [meetingDuration, setMeetingDuration] = useState(0);
+  const meetingStartTime = useRef(Date.now());
   const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
 
 ## 1. Meeting Objective
@@ -49,6 +53,52 @@ export default function MeetingRoom() {
 - Lead Developer
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
+
+  // Meeting duration timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMeetingDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // End meeting and create recording
+  const handleEndMeeting = async () => {
+    if (!meeting?.id || isEndingMeeting) return;
+    
+    setIsEndingMeeting(true);
+    try {
+      // Stop all active features
+      stopObserving();
+      stopScreenCapture();
+      
+      // End meeting and create recording
+      const duration = formatDuration(meetingDuration);
+      const result = await api.endMeeting(meeting.id, sopContent, duration);
+      
+      if (result.recording) {
+        // Success - redirect to dashboard
+        setLocation("/");
+      } else {
+        throw new Error("Recording not created");
+      }
+    } catch (error) {
+      console.error("Failed to end meeting:", error);
+      setIsEndingMeeting(false);
+      // Keep user in room on failure - they can try again
+      addSystemMessage("Failed to save recording. Please try ending the call again.");
+    }
+  };
 
   // Load meeting data
   const { data: meeting } = useQuery({
@@ -251,7 +301,7 @@ export default function MeetingRoom() {
              </div>
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs font-medium text-muted-foreground">00:12:45</span>
+                <span className="text-xs font-medium text-muted-foreground">{formatDuration(meetingDuration)}</span>
              </div>
           </div>
         </header>
@@ -425,10 +475,24 @@ export default function MeetingRoom() {
               </Tooltip>
             </TooltipProvider>
             
-            <Button variant="destructive" size="icon" className="h-12 w-16 rounded-full ml-4">
-              <span className="sr-only">End Call</span>
-              <div className="w-4 h-4 bg-white rounded-sm" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="destructive" 
+                    size="icon" 
+                    className="h-12 w-16 rounded-full ml-4"
+                    onClick={handleEndMeeting}
+                    disabled={isEndingMeeting}
+                    data-testid="button-end-call"
+                  >
+                    <span className="sr-only">End Call</span>
+                    <PhoneOff className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isEndingMeeting ? "Saving recording..." : "End Call & Save Recording"}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
         </div>
       </main>
     </div>
