@@ -7,10 +7,13 @@ import {
   type InsertRecording,
   type ChatMessage,
   type InsertChatMessage,
+  type TranscriptSegment,
+  type InsertTranscriptSegment,
   users,
   meetings,
   recordings,
-  chatMessages
+  chatMessages,
+  transcriptSegments
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc } from "drizzle-orm";
@@ -40,6 +43,10 @@ export interface IStorage {
   // Chat Messages
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
   getChatMessagesByMeeting(meetingId: string): Promise<ChatMessage[]>;
+
+  // Transcript Segments
+  createTranscriptSegment(segment: InsertTranscriptSegment): Promise<TranscriptSegment>;
+  getTranscriptsByMeeting(meetingId: string): Promise<TranscriptSegment[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -154,6 +161,20 @@ export class DatabaseStorage implements IStorage {
       .from(chatMessages)
       .where(eq(chatMessages.meetingId, meetingId))
       .orderBy(chatMessages.createdAt);
+  }
+
+  // Transcript Segments
+  async createTranscriptSegment(insertSegment: InsertTranscriptSegment): Promise<TranscriptSegment> {
+    const [segment] = await db.insert(transcriptSegments).values(insertSegment).returning();
+    return segment;
+  }
+
+  async getTranscriptsByMeeting(meetingId: string): Promise<TranscriptSegment[]> {
+    return db
+      .select()
+      .from(transcriptSegments)
+      .where(eq(transcriptSegments.meetingId, meetingId))
+      .orderBy(transcriptSegments.createdAt);
   }
 }
 

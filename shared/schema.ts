@@ -74,3 +74,21 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+
+// Live transcript segments for real-time speech-to-text
+export const transcriptSegments = pgTable("transcript_segments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  speaker: text("speaker").notNull().default("User"),
+  text: text("text").notNull(),
+  isFinal: boolean("is_final").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTranscriptSegmentSchema = createInsertSchema(transcriptSegments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTranscriptSegment = z.infer<typeof insertTranscriptSegmentSchema>;
+export type TranscriptSegment = typeof transcriptSegments.$inferSelect;
