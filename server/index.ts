@@ -2,9 +2,49 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import { processLiveInput, type GeminiLiveMessage, type GeminiLiveResponse } from "./gemini-live";
 
 const app = express();
 const httpServer = createServer(app);
+
+// WebSocket server for Gemini Live API
+const wss = new WebSocketServer({ server: httpServer, path: "/ws/eva" });
+
+wss.on("connection", (ws: WebSocket, req) => {
+  const url = new URL(req.url || "", `http://${req.headers.host}`);
+  const meetingId = url.searchParams.get("meetingId") || "unknown";
+  
+  console.log(`EVA WebSocket connected for meeting: ${meetingId}`);
+
+  ws.on("message", async (data: Buffer) => {
+    try {
+      const message: GeminiLiveMessage = JSON.parse(data.toString());
+      message.meetingId = meetingId;
+      
+      const response = await processLiveInput(meetingId, message);
+      
+      // Only send non-trivial responses
+      if (response.content && response.content !== "[Observing meeting]") {
+        ws.send(JSON.stringify(response));
+      }
+    } catch (error) {
+      console.error("WebSocket message error:", error);
+      ws.send(JSON.stringify({ type: "error", content: "Failed to process message" }));
+    }
+  });
+
+  ws.on("close", () => {
+    console.log(`EVA WebSocket disconnected for meeting: ${meetingId}`);
+  });
+
+  ws.on("error", (error) => {
+    console.error(`WebSocket error for meeting ${meetingId}:`, error);
+  });
+
+  // Send initial connection status
+  ws.send(JSON.stringify({ type: "status", content: "EVA connected and ready" }));
+});
 
 declare module "http" {
   interface IncomingMessage {

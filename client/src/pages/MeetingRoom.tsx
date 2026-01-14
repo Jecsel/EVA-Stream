@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRoute } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph } from "lucide-react";
+import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useEvaLive } from "@/hooks/useEvaLive";
 import type { ChatMessage } from "@shared/schema";
 
 interface Message {
@@ -35,6 +36,7 @@ export default function MeetingRoom() {
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
+  const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
 
 ## 1. Meeting Objective
@@ -59,6 +61,40 @@ export default function MeetingRoom() {
     queryKey: ["messages", meeting?.id],
     queryFn: () => api.getChatMessages(meeting!.id),
     enabled: !!meeting?.id,
+    refetchInterval: 3000, // Refresh every 3 seconds for live updates
+  });
+
+  // EVA Live connection for real-time screen analysis
+  const handleEvaMessage = useCallback((message: { type: string; content: string }) => {
+    if (message.type === "text" && message.content && meeting?.id) {
+      // Save AI message to database
+      api.createChatMessage(meeting.id, {
+        role: "ai",
+        content: message.content,
+        context: "Screen Analysis",
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["messages", meeting.id] });
+      });
+    }
+  }, [meeting?.id, queryClient]);
+
+  const handleSopUpdate = useCallback((content: string) => {
+    setSopContent(prev => prev + "\n" + content);
+  }, []);
+
+  const {
+    isConnected: evaConnected,
+    isObserving,
+    startObserving,
+    stopObserving,
+    startScreenCapture,
+    stopScreenCapture,
+    sendTextMessage,
+  } = useEvaLive({
+    meetingId: meeting?.id || "",
+    onMessage: handleEvaMessage,
+    onSopUpdate: handleSopUpdate,
+    onStatusChange: setEvaStatus,
   });
 
   // Convert database messages to UI format
@@ -74,7 +110,7 @@ export default function MeetingRoom() {
   const displayMessages = messages.length === 0 ? [{
     id: "welcome",
     role: "ai" as const,
-    content: "Hello! I'm your EVA SOP assistant. I'm ready to transcribe, analyze shared screens, and answer questions about the meeting context.",
+    content: "Hello! I'm EVA, your AI SOP assistant. I can observe your screen share and help document processes in real-time. Click the eye icon to start screen analysis.",
     timestamp: new Date(),
   }] : messages;
 
@@ -87,30 +123,40 @@ export default function MeetingRoom() {
     },
   });
 
-  // Simulate random screen sharing events if we don't have real hooks from Jitsi yet
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // In a real app, this would be driven by Jitsi events
-      // For demo, we toggle it occasionally or keep it off until user "starts" it (simulated)
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
   const handleJitsiApiReady = (api: any) => {
     setJitsiApi(api);
     
     // Listen for screen sharing events
     api.addEventListeners({
-      screenSharingStatusChanged: (payload: { on: boolean }) => {
+      screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
+        
         if (payload.on) {
-          addSystemMessage("Screen sharing started. I'm now analyzing the visual content.");
+          addSystemMessage("Screen sharing started. EVA is now analyzing the visual content.");
+          
+          // Start EVA observation when screen sharing starts
+          if (evaConnected && isObserving) {
+            // Request screen capture directly from browser
+            // Note: This will prompt user to select screen again, but ensures we get the stream
+            try {
+              const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                video: { frameRate: 1 } 
+              });
+              startScreenCapture(stream);
+              addSystemMessage("EVA is now observing your shared screen.");
+            } catch (e) {
+              console.log("Could not start screen capture for EVA:", e);
+              addSystemMessage("Could not access screen for EVA observation. Please enable EVA observation manually.");
+            }
+          }
         } else {
           addSystemMessage("Screen sharing ended.");
+          stopScreenCapture();
         }
       },
       videoConferenceLeft: () => {
-        // Handle leaving
+        stopObserving();
+        stopScreenCapture();
       }
     });
   };
@@ -145,10 +191,34 @@ export default function MeetingRoom() {
     }
   };
 
+  const toggleEvaObservation = async () => {
+    if (isObserving) {
+      stopObserving();
+      stopScreenCapture();
+      addSystemMessage("EVA stopped observing the screen.");
+    } else {
+      startObserving();
+      
+      // If already screen sharing, prompt for screen capture
+      if (isScreenSharing) {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ 
+            video: { frameRate: 1 } 
+          });
+          startScreenCapture(stream);
+          addSystemMessage("EVA is now observing your shared screen in real-time.");
+        } catch (e) {
+          console.log("Could not start screen capture:", e);
+          addSystemMessage("EVA is ready to observe. Please share your screen to enable real-time analysis.");
+        }
+      } else {
+        addSystemMessage("EVA is ready to observe. Share your screen to enable real-time analysis.");
+      }
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
-      {/* Left Sidebar / Nav (Optional, kept minimal for Google Meet style) */}
-      
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative">
         {/* Top Bar */}
@@ -169,6 +239,19 @@ export default function MeetingRoom() {
           </div>
           
           <div className="flex items-center gap-2">
+             {/* EVA Status Indicator */}
+             <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
+               evaConnected ? 'border-green-500/50' : 'border-border'
+             }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  evaStatus === "connected" ? "bg-green-500 animate-pulse" :
+                  evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
+                  "bg-gray-500"
+                }`} />
+                <span className="text-xs font-medium text-muted-foreground">
+                  EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
+                </span>
+             </div>
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-xs font-medium text-muted-foreground">00:12:45</span>
@@ -203,7 +286,7 @@ export default function MeetingRoom() {
             />
           </div>
 
-          {/* New Column: SOP Document */}
+          {/* SOP Document */}
           <div 
             className={`
               transition-all duration-500 ease-in-out transform origin-right
@@ -218,7 +301,7 @@ export default function MeetingRoom() {
             />
           </div>
 
-          {/* New Column: SOP Flowchart */}
+          {/* SOP Flowchart */}
           <div 
             className={`
               transition-all duration-500 ease-in-out transform origin-right
@@ -260,7 +343,6 @@ export default function MeetingRoom() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {/* Simulate triggering Jitsi screen share */}
                   <Button 
                     variant={isScreenSharing ? "default" : "outline"}
                     size="icon" 
@@ -279,6 +361,24 @@ export default function MeetingRoom() {
             </TooltipProvider>
 
             <div className="w-px h-8 bg-border mx-2" />
+
+            {/* EVA Observation Toggle */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={isObserving ? "default" : "outline"} 
+                    size="icon" 
+                    className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-purple-600 border-purple-600 hover:bg-purple-700' : 'border-border bg-card hover:bg-muted'}`}
+                    onClick={toggleEvaObservation}
+                    disabled={!evaConnected}
+                  >
+                    {isObserving ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isObserving ? "Stop EVA Observation" : "Start EVA Observation"}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             <TooltipProvider>
               <Tooltip>
