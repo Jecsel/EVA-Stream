@@ -2,6 +2,12 @@ import type { Meeting, Recording, ChatMessage, InsertMeeting, InsertRecording, I
 
 const API_BASE = "/api";
 
+export interface AIChatResponse {
+  message: string;
+  sopUpdate?: string;
+  savedMessage: ChatMessage;
+}
+
 export const api = {
   // Meetings
   async createMeeting(data: InsertMeeting): Promise<Meeting> {
@@ -95,6 +101,17 @@ export const api = {
   async getChatMessages(meetingId: string): Promise<ChatMessage[]> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/messages`);
     if (!response.ok) throw new Error("Failed to fetch chat messages");
+    return response.json();
+  },
+
+  // AI Chat - EVA SOP Assistant
+  async sendAIChat(meetingId: string, message: string, isScreenSharing: boolean): Promise<AIChatResponse> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, isScreenSharing }),
+    });
+    if (!response.ok) throw new Error("Failed to send chat message");
     return response.json();
   },
 };

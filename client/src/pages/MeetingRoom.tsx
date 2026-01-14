@@ -4,7 +4,6 @@ import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
-import { simulateGeminiAnalysis } from "@/lib/gemini";
 import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -128,33 +127,18 @@ export default function MeetingRoom() {
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
 
-    // Save user message
-    saveChatMessage.mutate({
-      role: "user",
-      content,
-    });
-
-    // Get AI response
+    // Get AI response from backend (which also saves messages)
     try {
       setIsSopUpdating(true);
-      const response = await simulateGeminiAnalysis(content, isScreenSharing);
+      const response = await api.sendAIChat(meeting.id, content, isScreenSharing);
       
-      // Save AI message
-      saveChatMessage.mutate({
-        role: "ai",
-        content: response.message,
-        context: isScreenSharing ? "Screen Analysis" : undefined,
-      });
+      // Refresh messages after AI response
+      queryClient.invalidateQueries({ queryKey: ["messages", meeting.id] });
       
       if (response.sopUpdate && !sopContent.includes(response.sopUpdate.trim())) {
-          // Simulate appending new content to SOP
-          setTimeout(() => {
-            setSopContent(prev => prev + "\n" + response.sopUpdate);
-            setIsSopUpdating(false);
-          }, 1000);
-      } else {
-          setIsSopUpdating(false);
+          setSopContent(prev => prev + "\n" + response.sopUpdate);
       }
+      setIsSopUpdating(false);
     } catch (error) {
       console.error("Failed to get AI response", error);
       setIsSopUpdating(false);

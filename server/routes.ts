@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { analyzeChat } from "./gemini";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -165,6 +166,45 @@ export async function registerRoutes(
       res.json(messages);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  // AI Chat endpoint - EVA SOP Assistant
+  app.post("/api/meetings/:meetingId/chat", async (req, res) => {
+    try {
+      const { message, isScreenSharing } = req.body;
+      const meetingId = req.params.meetingId;
+
+      // Get meeting context
+      const meeting = await storage.getMeeting(meetingId);
+      const meetingContext = meeting ? `Meeting: ${meeting.title}` : "General Meeting";
+
+      // Save user message
+      await storage.createChatMessage({
+        meetingId,
+        role: "user",
+        content: message,
+      });
+
+      // Get AI response from Gemini
+      const aiResponse = await analyzeChat(message, meetingContext, isScreenSharing);
+
+      // Save AI response
+      const savedMessage = await storage.createChatMessage({
+        meetingId,
+        role: "ai",
+        content: aiResponse.message,
+        context: isScreenSharing ? "Screen Analysis" : undefined,
+      });
+
+      res.json({
+        message: aiResponse.message,
+        sopUpdate: aiResponse.sopUpdate,
+        savedMessage,
+      });
+    } catch (error) {
+      console.error("AI chat error:", error);
+      res.status(500).json({ error: "Failed to process chat message" });
     }
   });
 
