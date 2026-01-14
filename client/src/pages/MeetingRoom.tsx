@@ -14,6 +14,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ChatMessage } from "@shared/schema";
 
 interface Message {
   id: string;
@@ -26,17 +29,11 @@ interface Message {
 export default function MeetingRoom() {
   const [, params] = useRoute("/meeting/:id");
   const roomId = params?.id || "demo-room";
+  const queryClient = useQueryClient();
+  
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "ai",
-      content: "Hello! I'm your EVA SOP assistant. I'm ready to transcribe, analyze shared screens, and answer questions about the meeting context.",
-      timestamp: new Date(),
-    }
-  ]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
   const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
@@ -51,6 +48,45 @@ export default function MeetingRoom() {
 - Lead Developer
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
+
+  // Load meeting data
+  const { data: meeting } = useQuery({
+    queryKey: ["meeting", roomId],
+    queryFn: () => api.getMeetingByRoomId(roomId),
+  });
+
+  // Load chat messages
+  const { data: chatMessages = [] } = useQuery({
+    queryKey: ["messages", meeting?.id],
+    queryFn: () => api.getChatMessages(meeting!.id),
+    enabled: !!meeting?.id,
+  });
+
+  // Convert database messages to UI format
+  const messages: Message[] = chatMessages.map(msg => ({
+    id: msg.id,
+    role: msg.role as "user" | "ai",
+    content: msg.content,
+    timestamp: new Date(msg.createdAt),
+    context: msg.context || undefined,
+  }));
+
+  // Add welcome message if no messages exist
+  const displayMessages = messages.length === 0 ? [{
+    id: "welcome",
+    role: "ai" as const,
+    content: "Hello! I'm your EVA SOP assistant. I'm ready to transcribe, analyze shared screens, and answer questions about the meeting context.",
+    timestamp: new Date(),
+  }] : messages;
+
+  // Mutation to save chat messages
+  const saveChatMessage = useMutation({
+    mutationFn: (data: { role: string; content: string; context?: string }) =>
+      api.createChatMessage(meeting!.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", meeting?.id] });
+    },
+  });
 
   // Simulate random screen sharing events if we don't have real hooks from Jitsi yet
   useEffect(() => {
@@ -81,38 +117,34 @@ export default function MeetingRoom() {
   };
 
   const addSystemMessage = (content: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
+    if (!meeting?.id) return;
+    saveChatMessage.mutate({
       role: "ai",
       content,
-      timestamp: new Date(),
-      context: "System Event"
-    };
-    setMessages(prev => [...prev, newMessage]);
+      context: "System Event",
+    });
   };
 
   const handleSendMessage = async (content: string) => {
-    // Add user message
-    const userMsg: Message = {
-      id: Date.now().toString(),
+    if (!meeting?.id) return;
+
+    // Save user message
+    saveChatMessage.mutate({
       role: "user",
       content,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, userMsg]);
+    });
 
     // Get AI response
     try {
       setIsSopUpdating(true);
       const response = await simulateGeminiAnalysis(content, isScreenSharing);
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
+      
+      // Save AI message
+      saveChatMessage.mutate({
         role: "ai",
         content: response.message,
-        timestamp: new Date(),
-        context: isScreenSharing ? "Screen Analysis" : undefined
-      };
-      setMessages(prev => [...prev, aiMsg]);
+        context: isScreenSharing ? "Screen Analysis" : undefined,
+      });
       
       if (response.sopUpdate && !sopContent.includes(response.sopUpdate.trim())) {
           // Simulate appending new content to SOP
@@ -180,7 +212,7 @@ export default function MeetingRoom() {
             `}
           >
             <AIChatPanel 
-              messages={messages} 
+              messages={displayMessages} 
               onSendMessage={handleSendMessage}
               isScreenSharing={isScreenSharing}
               className="h-full"

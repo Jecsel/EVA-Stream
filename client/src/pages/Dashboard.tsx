@@ -37,42 +37,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MeetingCard } from "@/components/MeetingCard";
 import { MeetingsList } from "@/components/MeetingsList";
-
-// Mock Data
-const RECORDINGS = [
-  {
-    id: "1",
-    title: "Product Design Review - Q3",
-    date: "Today, 10:30 AM",
-    duration: "45:12",
-    summary: "Discussed the new navigation patterns. Agreed to move forward with the sidebar layout. AI noted 3 action items regarding accessibility.",
-    thumbnailColor: "bg-blue-900/40"
-  },
-  {
-    id: "2",
-    title: "Weekly Team Sync",
-    date: "Yesterday, 2:00 PM",
-    duration: "28:05",
-    summary: "Team updates on the sprint progress. Blocker identified in the backend integration. Scheduled a follow-up for Friday.",
-    thumbnailColor: "bg-emerald-900/40"
-  },
-  {
-    id: "3",
-    title: "Client Discovery Call",
-    date: "Jan 10, 4:15 PM",
-    duration: "1:02:30",
-    summary: "Client outlined their core requirements for the MVP. Budget constraints were discussed. AI highlighted 5 key feature requests.",
-    thumbnailColor: "bg-purple-900/40"
-  },
-  {
-    id: "4",
-    title: "Marketing Strategy Brainstorm",
-    date: "Jan 8, 11:00 AM",
-    duration: "55:00",
-    summary: "Brainstorming session for the upcoming launch. Generated 10+ campaign ideas. AI grouped ideas into 'Social', 'Content', and 'Ads'.",
-    thumbnailColor: "bg-orange-900/40"
-  }
-];
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { format, formatDistanceToNow } from "date-fns";
 
 export default function Dashboard() {
   const [location, setLocation] = useLocation();
@@ -80,13 +47,20 @@ export default function Dashboard() {
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
 
+  // Fetch recordings from the API
+  const { data: recordings = [], isLoading: recordingsLoading } = useQuery({
+    queryKey: ["recordings"],
+    queryFn: () => api.listRecordings(10),
+  });
+
   const handleCreateInstant = () => {
     const randomId = Math.random().toString(36).substring(7);
     setLocation(`/meeting/${randomId}`);
   };
 
   const handleCreateForLater = () => {
-    const link = `https://videoai.app/meet/${Math.random().toString(36).substring(7)}`;
+    const randomId = Math.random().toString(36).substring(7);
+    const link = `${window.location.origin}/meeting/${randomId}`;
     setGeneratedLink(link);
   };
 
@@ -95,6 +69,19 @@ export default function Dashboard() {
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
+
+  // Format recording data for MeetingCard
+  const formattedRecordings = recordings.map((rec, index) => {
+    const colors = ["bg-blue-900/40", "bg-emerald-900/40", "bg-purple-900/40", "bg-orange-900/40"];
+    return {
+      id: rec.id,
+      title: rec.title,
+      date: formatDistanceToNow(new Date(rec.recordedAt), { addSuffix: true }),
+      duration: rec.duration,
+      summary: rec.summary || "No summary available",
+      thumbnailColor: colors[index % colors.length]
+    };
+  });
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -256,9 +243,19 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {RECORDINGS.map(rec => (
-                        <MeetingCard key={rec.id} recording={rec} />
-                    ))}
+                    {recordingsLoading ? (
+                        <div className="col-span-2 text-center py-12 text-muted-foreground">
+                            Loading recordings...
+                        </div>
+                    ) : formattedRecordings.length === 0 ? (
+                        <div className="col-span-2 text-center py-12 text-muted-foreground">
+                            No recordings yet. Start a meeting to create your first recording.
+                        </div>
+                    ) : (
+                        formattedRecordings.map(rec => (
+                            <MeetingCard key={rec.id} recording={rec} />
+                        ))
+                    )}
                 </div>
                 
                 <div className="mt-8 flex justify-center">
