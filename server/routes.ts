@@ -5,6 +5,7 @@ import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, in
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat } from "./gemini";
+import { generateJitsiToken, isJaaSConfigured } from "./jitsi";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -351,6 +352,71 @@ export async function registerRoutes(
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
+  // Jitsi JaaS Token Generation
+  app.get("/api/jitsi/status", async (_req, res) => {
+    try {
+      const configured = isJaaSConfigured();
+      res.json({ 
+        configured,
+        message: configured 
+          ? "JaaS is configured and ready" 
+          : "JaaS is not configured. Using free Jitsi Meet server."
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check JaaS status" });
+    }
+  });
+
+  app.post("/api/jitsi/token", async (req, res) => {
+    try {
+      const { roomName, userName, userEmail, userId, isModerator } = req.body;
+
+      if (!roomName || !userName) {
+        res.status(400).json({ error: "roomName and userName are required" });
+        return;
+      }
+
+      // Check if JaaS is configured
+      if (!isJaaSConfigured()) {
+        res.status(200).json({ 
+          configured: false,
+          message: "JaaS not configured. Using free Jitsi Meet server.",
+          domain: "meet.jit.si",
+          roomName,
+        });
+        return;
+      }
+
+      // Generate JWT token
+      const result = generateJitsiToken({
+        roomName,
+        userName,
+        userEmail,
+        userId,
+        isModerator: isModerator ?? true,
+        features: {
+          livestreaming: false,
+          recording: true,
+          transcription: true,
+        },
+      });
+
+      res.json({
+        configured: true,
+        token: result.token,
+        appId: result.appId,
+        roomName: result.roomName,
+        domain: result.domain,
+      });
+    } catch (error) {
+      console.error("Jitsi token generation error:", error);
+      res.status(500).json({ 
+        error: "Failed to generate Jitsi token",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
