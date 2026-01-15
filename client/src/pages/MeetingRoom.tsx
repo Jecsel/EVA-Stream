@@ -253,28 +253,37 @@ export default function MeetingRoom() {
     onStatusChange: setEvaStatus,
   });
 
+  const interimIdRef = useRef("interim-current");
+  
   const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
     if (message.type === "transcript" && message.content) {
-      const newEntry = {
-        id: `transcript-${Date.now()}`,
-        text: message.content,
-        speaker: message.speaker || "User",
-        timestamp: new Date(),
-        isFinal: message.isFinal ?? true,
-      };
-      setTranscripts(prev => [...prev, newEntry]);
-
-      if (message.isFinal && meeting?.id) {
-        api.createTranscriptSegment(meeting.id, {
+      if (message.isFinal) {
+        const newEntry = {
+          id: `transcript-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           text: message.content,
           speaker: message.speaker || "User",
+          timestamp: new Date(),
           isFinal: true,
-        }).catch(err => {
-          console.error("Failed to save transcript segment:", err);
+        };
+        setTranscripts(prev => {
+          const withoutInterim = prev.filter(t => t.id !== interimIdRef.current);
+          return [...withoutInterim, newEntry];
+        });
+      } else {
+        setTranscripts(prev => {
+          const withoutCurrentInterim = prev.filter(t => t.id !== interimIdRef.current);
+          const interimEntry = {
+            id: interimIdRef.current,
+            text: message.content,
+            speaker: message.speaker || "User",
+            timestamp: new Date(),
+            isFinal: false,
+          };
+          return [...withoutCurrentInterim, interimEntry];
         });
       }
     }
-  }, [meeting?.id]);
+  }, []);
 
   const {
     isConnected: transcriptConnected,
