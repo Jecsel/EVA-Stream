@@ -495,6 +495,7 @@ export default function MeetingRoom() {
             <SOPDocument 
                 content={sopContent}
                 isUpdating={isSopUpdating}
+                onContentChange={setSopContent}
                 className="h-full"
             />
           </div>
