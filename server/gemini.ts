@@ -115,6 +115,59 @@ export interface TranscriptionAnalysis {
   keyTopics: string[];
 }
 
+export async function generateMermaidFlowchart(
+  sopContent: string
+): Promise<string> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> End';
+    }
+
+    const prompt = `Convert the following SOP (Standard Operating Procedure) document into a Mermaid.js flowchart diagram.
+
+Rules for the flowchart:
+1. Use "graph TD" for top-down flow
+2. Start with a circular Start node: Start(("Start Meeting"))
+3. End with a circular End node: End(("End"))
+4. Use rectangular nodes for main steps: StepN["Step description"]
+5. Keep step labels short (max 4-5 words)
+6. Extract only the main procedural steps, not every detail
+7. Apply these styles:
+   - Start node: style Start fill:#1967D2,stroke:none,color:#fff
+   - End node: style End fill:#34A853,stroke:none,color:#fff
+   - Step nodes: style StepN fill:#292A2D,stroke:#3c4043,color:#E8EAED
+8. Connect nodes with arrows: NodeA --> NodeB
+9. Maximum 8-10 steps to keep the flowchart readable
+10. Return ONLY the Mermaid code, no explanations or markdown code blocks
+
+SOP Content:
+${sopContent.slice(0, 8000)}
+
+Generate the Mermaid flowchart code:`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    let mermaidCode = response.text || "";
+    
+    // Clean up the response - remove markdown code blocks if present
+    mermaidCode = mermaidCode.replace(/```mermaid\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    // Validate that we have a basic mermaid structure
+    if (!mermaidCode.includes('graph') && !mermaidCode.includes('flowchart')) {
+      // Fallback to basic structure
+      return 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> End';
+    }
+
+    return mermaidCode;
+  } catch (error) {
+    console.error("Gemini Mermaid generation error:", error);
+    return 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    Error["Error generating flowchart"]\n    style Error fill:#EA4335,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> Error --> End';
+  }
+}
+
 export async function analyzeTranscription(
   transcriptText: string,
   meetingTitle?: string

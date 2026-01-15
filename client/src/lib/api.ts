@@ -156,4 +156,15 @@ export const api = {
     if (!response.ok) throw new Error("Failed to fetch meeting transcriptions");
     return response.json();
   },
+
+  // Generate Mermaid flowchart from SOP content
+  async generateFlowchart(sopContent: string): Promise<{ mermaidCode: string }> {
+    const response = await fetch(`${API_BASE}/generate-flowchart`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sopContent }),
+    });
+    if (!response.ok) throw new Error("Failed to generate flowchart");
+    return response.json();
+  },
 };

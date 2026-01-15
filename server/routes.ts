@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart } from "./gemini";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 
@@ -330,6 +330,24 @@ export async function registerRoutes(
     } catch (error) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: "Failed to process chat message" });
+    }
+  });
+
+  // Generate Mermaid flowchart from SOP content
+  app.post("/api/generate-flowchart", async (req, res) => {
+    try {
+      const { sopContent } = req.body;
+      
+      if (!sopContent || typeof sopContent !== 'string') {
+        res.status(400).json({ error: "sopContent is required" });
+        return;
+      }
+
+      const mermaidCode = await generateMermaidFlowchart(sopContent);
+      res.json({ mermaidCode });
+    } catch (error) {
+      console.error("Flowchart generation error:", error);
+      res.status(500).json({ error: "Failed to generate flowchart" });
     }
   });
 

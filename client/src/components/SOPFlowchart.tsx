@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import mermaid from 'mermaid';
 import { GitGraph, RefreshCw, Maximize, Share2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 
 interface SOPFlowchartProps {
   sopContent: string;
@@ -12,8 +13,9 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [svgContent, setSvgContent] = useState<string>('');
+  const [lastProcessedContent, setLastProcessedContent] = useState<string>('');
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize mermaid
   useEffect(() => {
     mermaid.initialize({
       startOnLoad: false,
@@ -31,79 +33,62 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
     });
   }, []);
 
-  // Convert SOP markdown to Mermaid syntax
-  const generateMermaidSyntax = (content: string): string => {
-    if (!content) return 'graph TD\nStart[Start]';
+  const renderMermaidChart = useCallback(async (mermaidCode: string) => {
+    try {
+      const id = `mermaid-${Date.now()}`;
+      const { svg } = await mermaid.render(id, mermaidCode);
+      setSvgContent(svg);
+    } catch (error) {
+      console.error('Failed to render mermaid chart:', error);
+    }
+  }, []);
 
-    const lines = content.split('\n');
-    let graphDefinition = 'graph TD\n';
-    
-    // Add Start Node
-    graphDefinition += `    Start(("Start Meeting"))\n`;
-    graphDefinition += `    style Start fill:#1967D2,stroke:none,color:#fff\n`;
-    
-    let previousNodeId = 'Start';
-    let idCounter = 1;
+  const generateFlowchartFromAPI = useCallback(async (content: string) => {
+    if (!content || content.trim().length < 20) {
+      const defaultChart = 'graph TD\n    Start(("Start Meeting"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> End';
+      await renderMermaidChart(defaultChart);
+      setLastProcessedContent(content);
+      return;
+    }
 
-    lines.forEach(line => {
-      // Look for H2 headers as main process steps
-      if (line.trim().startsWith('## ')) {
-        const label = line.replace('## ', '').trim();
-        // Sanitize label for mermaid (remove special chars)
-        const safeLabel = label.replace(/["'()]/g, '');
-        const nodeId = `Step${idCounter}`;
-        
-        graphDefinition += `    ${nodeId}["${safeLabel}"]\n`;
-        graphDefinition += `    ${previousNodeId} --> ${nodeId}\n`;
-        
-        // Add styling for standard nodes
-        graphDefinition += `    style ${nodeId} fill:#292A2D,stroke:#3c4043,color:#E8EAED\n`;
-        
-        previousNodeId = nodeId;
-        idCounter++;
-      }
-      // Look for bullet points as sub-actions or decisions
-      else if (line.trim().startsWith('- ')) {
-         const itemLabel = line.replace('- ', '').trim();
-         // Optionally add these as sub-nodes or notes, keeping it simple for now as notes on the previous node would be complex
-         // For a flowchart, let's keep it high-level based on headers to avoid clutter
-      }
-    });
-
-    // Add End Node
-    graphDefinition += `    End(("End"))\n`;
-    graphDefinition += `    style End fill:#34A853,stroke:none,color:#fff\n`;
-    graphDefinition += `    ${previousNodeId} --> End\n`;
-
-    return graphDefinition;
-  };
+    setIsUpdating(true);
+    try {
+      const response = await api.generateFlowchart(content);
+      await renderMermaidChart(response.mermaidCode);
+    } catch (error) {
+      console.error('Failed to generate flowchart:', error);
+      const errorChart = 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    Error["Error generating flowchart"]\n    style Error fill:#EA4335,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> Error --> End';
+      await renderMermaidChart(errorChart);
+    } finally {
+      setLastProcessedContent(content);
+      setIsUpdating(false);
+    }
+  }, [renderMermaidChart]);
 
   useEffect(() => {
-    if (!sopContent || !containerRef.current) return;
+    if (!containerRef.current) return;
+    
+    if (sopContent === lastProcessedContent) return;
+    
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
 
-    const renderChart = async () => {
-      setIsUpdating(true);
-      try {
-        const syntax = generateMermaidSyntax(sopContent);
-        // Generate a unique ID for the SVG
-        const id = `mermaid-${Date.now()}`;
-        
-        // Render the diagram
-        const { svg } = await mermaid.render(id, syntax);
-        setSvgContent(svg);
-      } catch (error) {
-        console.error('Failed to render mermaid chart:', error);
-        // In case of error, we could show a fallback or retry
-      } finally {
-        setIsUpdating(false);
+    debounceTimer.current = setTimeout(() => {
+      generateFlowchartFromAPI(sopContent);
+    }, 1500);
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
       }
     };
+  }, [sopContent, lastProcessedContent, generateFlowchartFromAPI]);
 
-    // Debounce the rendering slightly to avoid flicker on fast typing
-    const timeoutId = setTimeout(renderChart, 500);
-    return () => clearTimeout(timeoutId);
-
-  }, [sopContent]);
+  const handleManualRefresh = () => {
+    setLastProcessedContent('');
+    generateFlowchartFromAPI(sopContent);
+  };
 
   return (
     <div className={`flex flex-col h-full bg-card border-l border-border ${className}`}>
@@ -119,15 +104,25 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
                 {isUpdating ? (
                     <>
                     <RefreshCw className="w-3 h-3 text-orange-500 animate-spin" />
-                    <p className="text-xs text-orange-500">Rendering...</p>
+                    <p className="text-xs text-orange-500">Generating...</p>
                     </>
                 ) : (
-                    <p className="text-xs text-muted-foreground">Mermaid.js</p>
+                    <p className="text-xs text-muted-foreground">AI-powered</p>
                 )}
             </div>
           </div>
         </div>
         <div className="flex gap-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={handleManualRefresh}
+              disabled={isUpdating}
+              data-testid="flowchart-refresh"
+            >
+                <RefreshCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
+            </Button>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                 <Share2 className="w-4 h-4" />
             </Button>
