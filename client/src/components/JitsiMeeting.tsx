@@ -128,12 +128,16 @@ export function JitsiMeeting({
             prejoinConfig: {
               enabled: false,
             },
+            enableLobby: false,
+            hideLobbyButton: true,
+            requireDisplayName: false,
             disableDeepLinking: true,
             disableModeratorIndicator: true,
             enableEmailInStats: false,
             disableInitialGUM: false,
             startAudioOnly: false,
             enableWelcomePage: false,
+            readOnlyName: true,
             theme: {
               default: 'dark',
             },
