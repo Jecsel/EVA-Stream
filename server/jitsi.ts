@@ -24,6 +24,40 @@ interface JitsiTokenResult {
   domain: string;
 }
 
+function formatPrivateKey(key: string): string {
+  let formatted = key;
+  
+  // Handle literal \n strings (when stored as escaped in env vars)
+  formatted = formatted.replace(/\\n/g, '\n');
+  
+  // If there are no newlines and it looks like a key, try to format it
+  if (!formatted.includes('\n') && formatted.includes('-----BEGIN')) {
+    // Try to detect if headers/footers are embedded without newlines
+    formatted = formatted
+      .replace(/-----BEGIN RSA PRIVATE KEY-----/g, '-----BEGIN RSA PRIVATE KEY-----\n')
+      .replace(/-----END RSA PRIVATE KEY-----/g, '\n-----END RSA PRIVATE KEY-----')
+      .replace(/-----BEGIN PRIVATE KEY-----/g, '-----BEGIN PRIVATE KEY-----\n')
+      .replace(/-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----');
+    
+    // Add newlines every 64 characters in the body if it's one long line
+    const lines = formatted.split('\n');
+    if (lines.length === 3) {
+      const header = lines[0];
+      const body = lines[1];
+      const footer = lines[2];
+      const bodyWithNewlines = body.match(/.{1,64}/g)?.join('\n') || body;
+      formatted = `${header}\n${bodyWithNewlines}\n${footer}`;
+    }
+  }
+  
+  // Ensure the key has proper structure
+  if (!formatted.startsWith('-----BEGIN')) {
+    throw new Error('Invalid private key format: missing BEGIN header');
+  }
+  
+  return formatted.trim();
+}
+
 export function generateJitsiToken(options: JitsiTokenOptions): JitsiTokenResult {
   const appId = process.env.JAAS_APP_ID;
   const apiKey = process.env.JAAS_API_KEY;
@@ -65,9 +99,13 @@ export function generateJitsiToken(options: JitsiTokenOptions): JitsiTokenResult
     sub: appId,
   };
 
-  // Sign the JWT with RS256 algorithm
-  // The private key needs to have newlines properly formatted
-  const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
+  // Format the private key properly for RS256 signing
+  let formattedPrivateKey: string;
+  try {
+    formattedPrivateKey = formatPrivateKey(privateKey);
+  } catch (error) {
+    throw new Error(`Invalid JAAS_PRIVATE_KEY format: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
   
   const token = jwt.sign(payload, formattedPrivateKey, {
     algorithm: 'RS256',
