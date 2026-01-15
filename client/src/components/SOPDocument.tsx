@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { motion } from "framer-motion";
 
 interface SOPDocumentProps {
@@ -92,7 +93,10 @@ export function SOPDocument({ content, className, isUpdating, onContentChange }:
           ) : (
             <article className="prose prose-invert prose-sm max-w-none">
                 {displayContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                    >
                         {displayContent}
                     </ReactMarkdown>
                 ) : (
