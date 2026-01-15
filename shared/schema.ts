@@ -92,3 +92,45 @@ export const insertTranscriptSegmentSchema = createInsertSchema(transcriptSegmen
 
 export type InsertTranscriptSegment = z.infer<typeof insertTranscriptSegmentSchema>;
 export type TranscriptSegment = typeof transcriptSegments.$inferSelect;
+
+// Re-export chat models for OpenAI integration
+export * from "./models/chat";
+
+// SOP Documents - tracks the current version of an SOP for a meeting
+export const sopDocuments = pgTable("sop_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  title: text("title").notNull().default("Meeting SOP"),
+  currentVersionId: varchar("current_version_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSopDocumentSchema = createInsertSchema(sopDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSopDocument = z.infer<typeof insertSopDocumentSchema>;
+export type SopDocument = typeof sopDocuments.$inferSelect;
+
+// SOP Versions - tracks each version of an SOP with content and changelog
+export const sopVersions = pgTable("sop_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").notNull().references(() => sopDocuments.id, { onDelete: 'cascade' }),
+  versionNumber: text("version_number").notNull().default("1.0"),
+  content: text("content").notNull(),
+  mermaidDiagram: text("mermaid_diagram"),
+  changeSummary: text("change_summary"),
+  createdBy: text("created_by").notNull().default("EVA"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSopVersionSchema = createInsertSchema(sopVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSopVersion = z.infer<typeof insertSopVersionSchema>;
+export type SopVersion = typeof sopVersions.$inferSelect;
