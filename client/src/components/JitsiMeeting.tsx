@@ -1,4 +1,4 @@
-import { JitsiMeeting as JitsiReactMeeting } from '@jitsi/react-sdk';
+import { JitsiMeeting as JitsiReactMeeting, JaaSMeeting } from '@jitsi/react-sdk';
 import { Loader2, Video, AlertCircle } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -25,8 +25,9 @@ export function JitsiMeeting({
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLDivElement | null>(null);
 
-  const formattedRoomName = appId ? `${appId}/${roomName}` : roomName;
-  const domain = jwt ? "8x8.vc" : "meet.jit.si";
+  // Use JaaS if we have JWT and appId
+  const useJaaS = !!(jwt && appId);
+  const domain = useJaaS ? "8x8.vc" : "meet.jit.si";
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -54,7 +55,7 @@ export function JitsiMeeting({
   }, [updateIframeSize]);
 
   const handleApiReady = (externalApi: any) => {
-    console.log("Jitsi API ready, domain:", domain, "room:", formattedRoomName);
+    console.log("Jitsi API ready, domain:", domain, "room:", roomName, "useJaaS:", useJaaS);
     setLoading(false);
     setError(null);
     
@@ -115,76 +116,142 @@ export function JitsiMeeting({
         </div>
       )}
       
-      <JitsiReactMeeting
-        domain={domain}
-        roomName={formattedRoomName}
-        jwt={jwt}
-        configOverwrite={{
-          startWithAudioMuted: true,
-          startWithVideoMuted: true,
-          prejoinPageEnabled: false,
-          prejoinConfig: {
-            enabled: false,
-          },
-          disableDeepLinking: true,
-          disableModeratorIndicator: true,
-          enableEmailInStats: false,
-          disableInitialGUM: true,
-          startAudioOnly: false,
-          enableWelcomePage: false,
-          theme: {
-            default: 'dark',
-          },
-          toolbarButtons: [
-            'camera',
-            'chat',
-            'desktop',
-            'filmstrip',
-            'fullscreen',
-            'hangup',
-            'microphone',
-            'participants-pane',
-            'raisehand',
-            'settings',
-            'tileview',
-            'toggle-camera',
-            'videoquality',
-          ],
-        }}
-        interfaceConfigOverwrite={{
-          SHOW_JITSI_WATERMARK: false,
-          SHOW_WATERMARK_FOR_GUESTS: false,
-          DEFAULT_BACKGROUND: '#18181b',
-          TOOLBAR_ALWAYS_VISIBLE: true,
-          DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
-          HIDE_INVITE_MORE_HEADER: true,
-          MOBILE_APP_PROMO: false,
-          SHOW_CHROME_EXTENSION_BANNER: false,
-        }}
-        userInfo={{
-          displayName: displayName,
-          email: `${displayName.replace(/\s+/g, '.').toLowerCase()}@example.com`
-        }}
-        onApiReady={handleApiReady}
-        onReadyToClose={() => {
-          console.log("Jitsi: Meeting ended by user");
-        }}
-        getIFrameRef={(iframeWrapper) => {
-          if (iframeWrapper) {
-            iframeRef.current = iframeWrapper;
-            iframeWrapper.style.position = 'absolute';
-            iframeWrapper.style.top = '0';
-            iframeWrapper.style.left = '0';
-            iframeWrapper.style.width = '100%';
-            iframeWrapper.style.height = '100%';
-            iframeWrapper.style.minHeight = '500px';
-            iframeWrapper.style.background = '#18181b';
-            iframeWrapper.style.border = 'none';
-            iframeWrapper.style.borderRadius = '12px';
-            updateIframeSize();
-          }
-        }}
-      />
+      {useJaaS ? (
+        <JaaSMeeting
+          appId={appId!}
+          roomName={roomName}
+          jwt={jwt}
+          configOverwrite={{
+            startWithAudioMuted: true,
+            startWithVideoMuted: true,
+            prejoinPageEnabled: false,
+            prejoinConfig: {
+              enabled: false,
+            },
+            disableDeepLinking: true,
+            disableModeratorIndicator: true,
+            enableEmailInStats: false,
+            disableInitialGUM: false,
+            startAudioOnly: false,
+            enableWelcomePage: false,
+            theme: {
+              default: 'dark',
+            },
+            toolbarButtons: [
+              'camera',
+              'chat',
+              'desktop',
+              'filmstrip',
+              'fullscreen',
+              'hangup',
+              'microphone',
+              'participants-pane',
+              'raisehand',
+              'settings',
+              'tileview',
+              'toggle-camera',
+              'videoquality',
+            ],
+          }}
+          interfaceConfigOverwrite={{
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            DEFAULT_BACKGROUND: '#18181b',
+            TOOLBAR_ALWAYS_VISIBLE: true,
+            DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+            HIDE_INVITE_MORE_HEADER: true,
+            MOBILE_APP_PROMO: false,
+            SHOW_CHROME_EXTENSION_BANNER: false,
+          }}
+          userInfo={{
+            displayName: displayName,
+            email: `${displayName.replace(/\s+/g, '.').toLowerCase()}@example.com`
+          }}
+          onApiReady={handleApiReady}
+          onReadyToClose={() => {
+            console.log("Jitsi: Meeting ended by user");
+          }}
+          getIFrameRef={(iframeWrapper) => {
+            if (iframeWrapper) {
+              iframeRef.current = iframeWrapper;
+              iframeWrapper.style.position = 'absolute';
+              iframeWrapper.style.top = '0';
+              iframeWrapper.style.left = '0';
+              iframeWrapper.style.width = '100%';
+              iframeWrapper.style.height = '100%';
+              iframeWrapper.style.minHeight = '500px';
+              iframeWrapper.style.background = '#18181b';
+              iframeWrapper.style.border = 'none';
+              iframeWrapper.style.borderRadius = '12px';
+              updateIframeSize();
+            }
+          }}
+        />
+      ) : (
+        <JitsiReactMeeting
+          domain={domain}
+          roomName={roomName}
+          configOverwrite={{
+            startWithAudioMuted: true,
+            startWithVideoMuted: true,
+            prejoinPageEnabled: false,
+            disableDeepLinking: true,
+            disableModeratorIndicator: true,
+            enableEmailInStats: false,
+            theme: {
+              default: 'dark',
+            },
+            toolbarButtons: [
+              'camera',
+              'chat',
+              'desktop',
+              'filmstrip',
+              'fullscreen',
+              'hangup',
+              'microphone',
+              'participants-pane',
+              'raisehand',
+              'settings',
+              'tileview',
+              'toggle-camera',
+              'videoquality',
+            ],
+          }}
+          interfaceConfigOverwrite={{
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            DEFAULT_BACKGROUND: '#18181b',
+            TOOLBAR_ALWAYS_VISIBLE: true,
+            DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+            HIDE_INVITE_MORE_HEADER: true,
+            MOBILE_APP_PROMO: false,
+            SHOW_CHROME_EXTENSION_BANNER: false,
+          }}
+          userInfo={{
+            displayName: displayName,
+            email: `${displayName.replace(/\s+/g, '.').toLowerCase()}@example.com`
+          }}
+          onApiReady={handleApiReady}
+          onReadyToClose={() => {
+            console.log("Jitsi: Meeting ended by user");
+          }}
+          getIFrameRef={(iframeWrapper) => {
+            if (iframeWrapper) {
+              iframeRef.current = iframeWrapper;
+              iframeWrapper.style.position = 'absolute';
+              iframeWrapper.style.top = '0';
+              iframeWrapper.style.left = '0';
+              iframeWrapper.style.width = '100%';
+              iframeWrapper.style.height = '100%';
+              iframeWrapper.style.minHeight = '500px';
+              iframeWrapper.style.background = '#18181b';
+              iframeWrapper.style.border = 'none';
+              iframeWrapper.style.borderRadius = '12px';
+              updateIframeSize();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
