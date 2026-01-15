@@ -1,6 +1,6 @@
 import { JitsiMeeting as JitsiReactMeeting } from '@jitsi/react-sdk';
 import { Loader2, Video, AlertCircle } from "lucide-react";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface JitsiMeetingProps {
   roomName: string;
@@ -22,6 +22,8 @@ export function JitsiMeeting({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadTimeout, setLoadTimeout] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLDivElement | null>(null);
 
   const formattedRoomName = appId ? `${appId}/${roomName}` : roomName;
   const domain = jwt ? "8x8.vc" : "meet.jit.si";
@@ -36,14 +38,34 @@ export function JitsiMeeting({
     return () => clearTimeout(timer);
   }, [loading]);
 
+  const updateIframeSize = useCallback(() => {
+    if (iframeRef.current && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const height = Math.max(rect.height, 500);
+      iframeRef.current.style.height = `${height}px`;
+      iframeRef.current.style.width = '100%';
+    }
+  }, []);
+
+  useEffect(() => {
+    updateIframeSize();
+    window.addEventListener('resize', updateIframeSize);
+    return () => window.removeEventListener('resize', updateIframeSize);
+  }, [updateIframeSize]);
+
   const handleApiReady = (externalApi: any) => {
     console.log("Jitsi API ready, domain:", domain, "room:", formattedRoomName);
     setLoading(false);
     setError(null);
     
+    setTimeout(updateIframeSize, 100);
+    setTimeout(updateIframeSize, 500);
+    setTimeout(updateIframeSize, 1000);
+    
     externalApi.addEventListeners({
       videoConferenceJoined: () => {
         console.log("Jitsi: Video conference joined");
+        updateIframeSize();
       },
       readyToClose: () => {
         console.log("Jitsi: Ready to close");
@@ -55,7 +77,7 @@ export function JitsiMeeting({
 
   if (error) {
     return (
-      <div className={`relative w-full h-full min-h-[400px] overflow-hidden rounded-xl bg-zinc-900 flex items-center justify-center ${className}`}>
+      <div className={`relative w-full h-full min-h-[500px] overflow-hidden rounded-xl bg-zinc-900 flex items-center justify-center ${className}`}>
         <div className="flex flex-col items-center gap-4 text-center p-8">
           <AlertCircle className="h-12 w-12 text-red-500" />
           <p className="text-white font-medium">Failed to load video conference</p>
@@ -72,7 +94,11 @@ export function JitsiMeeting({
   }
 
   return (
-    <div className={`relative w-full h-full min-h-[400px] overflow-hidden rounded-xl bg-zinc-900 ${className}`} style={{ minHeight: '400px' }}>
+    <div 
+      ref={containerRef}
+      className={`relative w-full overflow-hidden rounded-xl bg-zinc-900 ${className}`} 
+      style={{ height: 'calc(100vh - 200px)', minHeight: '500px' }}
+    >
       {loading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900">
           <div className="flex flex-col items-center gap-4">
@@ -98,23 +124,21 @@ export function JitsiMeeting({
           startWithVideoMuted: true,
           prejoinPageEnabled: false,
           disableDeepLinking: true,
+          disableModeratorIndicator: true,
+          enableEmailInStats: false,
           theme: {
             default: 'dark',
           },
           toolbarButtons: [
             'camera',
             'chat',
-            'closedcaptions',
             'desktop',
             'filmstrip',
             'fullscreen',
             'hangup',
             'microphone',
-            'noisesuppression',
             'participants-pane',
             'raisehand',
-            'recording',
-            'select-background',
             'settings',
             'tileview',
             'toggle-camera',
@@ -128,6 +152,8 @@ export function JitsiMeeting({
           TOOLBAR_ALWAYS_VISIBLE: true,
           DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
           HIDE_INVITE_MORE_HEADER: true,
+          MOBILE_APP_PROMO: false,
+          SHOW_CHROME_EXTENSION_BANNER: false,
         }}
         userInfo={{
           displayName: displayName,
@@ -137,14 +163,19 @@ export function JitsiMeeting({
         onReadyToClose={() => {
           console.log("Jitsi: Meeting ended by user");
         }}
-        getIFrameRef={(iframeRef) => {
-          if (iframeRef) {
-            iframeRef.style.height = '100%';
-            iframeRef.style.width = '100%';
-            iframeRef.style.minHeight = '400px';
-            iframeRef.style.background = '#18181b';
-            iframeRef.style.border = 'none';
-            iframeRef.style.borderRadius = '12px';
+        getIFrameRef={(iframeWrapper) => {
+          if (iframeWrapper) {
+            iframeRef.current = iframeWrapper;
+            iframeWrapper.style.position = 'absolute';
+            iframeWrapper.style.top = '0';
+            iframeWrapper.style.left = '0';
+            iframeWrapper.style.width = '100%';
+            iframeWrapper.style.height = '100%';
+            iframeWrapper.style.minHeight = '500px';
+            iframeWrapper.style.background = '#18181b';
+            iframeWrapper.style.border = 'none';
+            iframeWrapper.style.borderRadius = '12px';
+            updateIframeSize();
           }
         }}
       />
