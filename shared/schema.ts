@@ -92,3 +92,44 @@ export const insertTranscriptSegmentSchema = createInsertSchema(transcriptSegmen
 
 export type InsertTranscriptSegment = z.infer<typeof insertTranscriptSegmentSchema>;
 export type TranscriptSegment = typeof transcriptSegments.$inferSelect;
+
+// JaaS Webhook Events - for idempotency tracking
+export const webhookEvents = pgTable("webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  eventType: text("event_type").notNull(),
+  sessionId: text("session_id").notNull(),
+  fqn: text("fqn").notNull(),
+  payload: jsonb("payload"),
+  processedAt: timestamp("processed_at").notNull().defaultNow(),
+});
+
+export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
+  id: true,
+  processedAt: true,
+});
+
+export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+
+// Full meeting transcriptions from JaaS
+export const meetingTranscriptions = pgTable("meeting_transcriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").references(() => meetings.id, { onDelete: 'cascade' }),
+  sessionId: text("session_id").notNull(),
+  fqn: text("fqn").notNull(),
+  rawTranscript: text("raw_transcript"),
+  parsedTranscript: jsonb("parsed_transcript"),
+  aiSummary: text("ai_summary"),
+  actionItems: jsonb("action_items"),
+  downloadUrl: text("download_url"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMeetingTranscriptionSchema = createInsertSchema(meetingTranscriptions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMeetingTranscription = z.infer<typeof insertMeetingTranscriptionSchema>;
+export type MeetingTranscription = typeof meetingTranscriptions.$inferSelect;

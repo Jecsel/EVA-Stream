@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat } from "./gemini";
+import { analyzeChat, analyzeTranscription } from "./gemini";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 
@@ -444,5 +444,233 @@ export async function registerRoutes(
     }
   });
 
+  // JaaS Webhook endpoint - receives events from 8x8 JaaS
+  // Payload structure per https://developer.8x8.com/jaas/docs/webhooks-payload/
+  app.post("/api/jaas/webhook", async (req, res) => {
+    try {
+      const body = req.body;
+      
+      // Extract fields - JaaS sends at top level of payload
+      const idempotencyKey = body.idempotencyKey;
+      const eventType = body.eventType;
+      const sessionId = body.sessionId;
+      const fqn = body.fqn;
+      const data = body.data;
+
+      console.log(`JaaS Webhook received: ${eventType}`, { sessionId, fqn, body: JSON.stringify(body).slice(0, 500) });
+
+      // Validate required fields
+      if (!idempotencyKey || !eventType || !sessionId || !fqn) {
+        console.error("JaaS webhook missing required fields:", { idempotencyKey, eventType, sessionId, fqn });
+        res.status(400).json({ 
+          error: "Missing required fields", 
+          received: { idempotencyKey: !!idempotencyKey, eventType: !!eventType, sessionId: !!sessionId, fqn: !!fqn }
+        });
+        return;
+      }
+
+      // Check idempotency - skip if already processed
+      const existingEvent = await storage.getWebhookEventByIdempotencyKey(idempotencyKey);
+      if (existingEvent) {
+        console.log(`Duplicate webhook event skipped: ${idempotencyKey}`);
+        res.status(200).json({ status: "duplicate", message: "Event already processed" });
+        return;
+      }
+
+      // Store webhook event for idempotency tracking
+      await storage.createWebhookEvent({
+        idempotencyKey,
+        eventType,
+        sessionId,
+        fqn,
+        payload: body,
+      });
+
+      // Extract room name from FQN (format: "AppID/roomName")
+      const roomName = fqn?.split("/")[1];
+
+      // Handle different event types
+      switch (eventType) {
+        case "ROOM_CREATED": {
+          console.log(`Room created: ${data?.conference}`);
+          break;
+        }
+
+        case "ROOM_DESTROYED": {
+          console.log(`Room destroyed: ${data?.conference}`);
+          // Find and complete the meeting
+          if (roomName) {
+            const meeting = await storage.getMeetingByRoomId(roomName);
+            if (meeting && meeting.status !== "completed") {
+              await storage.updateMeeting(meeting.id, { status: "completed" });
+            }
+          }
+          break;
+        }
+
+        case "PARTICIPANT_JOINED": {
+          console.log(`Participant joined: ${data?.name}`);
+          break;
+        }
+
+        case "PARTICIPANT_LEFT": {
+          console.log(`Participant left: ${data?.name}, reason: ${data?.disconnectReason}`);
+          break;
+        }
+
+        case "RECORDING_STARTED": {
+          console.log(`Recording started for: ${data?.conference}`);
+          break;
+        }
+
+        case "RECORDING_ENDED": {
+          console.log(`Recording ended for: ${data?.conference}`);
+          break;
+        }
+
+        case "TRANSCRIPTION_UPLOADED": {
+          console.log(`Transcription uploaded, downloading from: ${data?.preAuthenticatedLink}`);
+          
+          // Find associated meeting
+          let meetingId: string | null = null;
+          if (roomName) {
+            const meeting = await storage.getMeetingByRoomId(roomName);
+            meetingId = meeting?.id || null;
+          }
+
+          // Create initial transcription record
+          const transcription = await storage.createMeetingTranscription({
+            meetingId,
+            sessionId,
+            fqn,
+            downloadUrl: data?.preAuthenticatedLink,
+          });
+
+          // Download transcription asynchronously
+          if (data?.preAuthenticatedLink) {
+            processTranscription(
+              transcription.id,
+              data.preAuthenticatedLink,
+              roomName
+            ).catch(err => console.error("Transcription processing error:", err));
+          }
+          break;
+        }
+
+        case "CHAT_UPLOADED": {
+          console.log(`Chat uploaded: ${data?.preAuthenticatedLink}`);
+          break;
+        }
+
+        default:
+          console.log(`Unhandled JaaS event type: ${eventType}`);
+      }
+
+      res.status(200).json({ status: "received", eventType });
+    } catch (error) {
+      console.error("JaaS webhook error:", error);
+      res.status(500).json({ error: "Failed to process webhook" });
+    }
+  });
+
+  // Get transcriptions for a meeting
+  app.get("/api/meetings/:meetingId/transcriptions", async (req, res) => {
+    try {
+      const transcriptions = await storage.getTranscriptionsByMeetingId(req.params.meetingId);
+      res.json(transcriptions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch transcriptions" });
+    }
+  });
+
   return httpServer;
+}
+
+// Process transcription in background
+async function processTranscription(
+  transcriptionId: string,
+  downloadUrl: string,
+  roomName?: string
+): Promise<void> {
+  try {
+    console.log(`Downloading transcription from: ${downloadUrl}`);
+    
+    // Download the transcription file
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download transcription: ${response.status}`);
+    }
+    
+    const rawTranscript = await response.text();
+    console.log(`Downloaded transcription: ${rawTranscript.length} characters`);
+
+    // Parse the transcription (JaaS transcriptions are typically in SRT or VTT format)
+    const parsedTranscript = parseTranscription(rawTranscript);
+
+    // Get meeting title for context
+    let meetingTitle = roomName || "Meeting";
+    
+    // Analyze with Gemini
+    const analysis = await analyzeTranscription(rawTranscript, meetingTitle);
+    
+    console.log(`Transcription analyzed: ${analysis.actionItems.length} action items found`);
+
+    // Update the transcription record with all data
+    await storage.updateMeetingTranscription(transcriptionId, {
+      rawTranscript,
+      parsedTranscript,
+      aiSummary: analysis.summary,
+      actionItems: analysis.actionItems,
+    });
+
+    console.log(`Transcription ${transcriptionId} processed successfully`);
+  } catch (error) {
+    console.error(`Error processing transcription ${transcriptionId}:`, error);
+  }
+}
+
+// Parse SRT/VTT transcription format
+function parseTranscription(rawText: string): { speaker: string; text: string; timestamp: string }[] {
+  const segments: { speaker: string; text: string; timestamp: string }[] = [];
+  
+  // Try to parse as SRT format (common for JaaS)
+  const srtRegex = /(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n([\s\S]*?)(?=\n\n|\n*$)/g;
+  let match;
+  
+  while ((match = srtRegex.exec(rawText)) !== null) {
+    const text = match[4].trim();
+    const timestamp = match[2];
+    
+    // Try to extract speaker from text (format: "Speaker: text")
+    const speakerMatch = text.match(/^([^:]+):\s*(.*)$/);
+    if (speakerMatch) {
+      segments.push({
+        speaker: speakerMatch[1].trim(),
+        text: speakerMatch[2].trim(),
+        timestamp,
+      });
+    } else {
+      segments.push({
+        speaker: "Unknown",
+        text,
+        timestamp,
+      });
+    }
+  }
+
+  // If no SRT matches, try VTT or plain text
+  if (segments.length === 0) {
+    const lines = rawText.split("\n").filter(l => l.trim() && !l.startsWith("WEBVTT") && !l.match(/^\d{2}:\d{2}/));
+    for (const line of lines) {
+      if (line.trim()) {
+        segments.push({
+          speaker: "Participant",
+          text: line.trim(),
+          timestamp: "",
+        });
+      }
+    }
+  }
+
+  return segments;
 }

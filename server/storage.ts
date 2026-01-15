@@ -9,11 +9,17 @@ import {
   type InsertChatMessage,
   type TranscriptSegment,
   type InsertTranscriptSegment,
+  type WebhookEvent,
+  type InsertWebhookEvent,
+  type MeetingTranscription,
+  type InsertMeetingTranscription,
   users,
   meetings,
   recordings,
   chatMessages,
-  transcriptSegments
+  transcriptSegments,
+  webhookEvents,
+  meetingTranscriptions
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc } from "drizzle-orm";
@@ -47,6 +53,16 @@ export interface IStorage {
   // Transcript Segments
   createTranscriptSegment(segment: InsertTranscriptSegment): Promise<TranscriptSegment>;
   getTranscriptsByMeeting(meetingId: string): Promise<TranscriptSegment[]>;
+
+  // Webhook Events (idempotency)
+  getWebhookEventByIdempotencyKey(idempotencyKey: string): Promise<WebhookEvent | undefined>;
+  createWebhookEvent(event: InsertWebhookEvent): Promise<WebhookEvent>;
+
+  // Meeting Transcriptions
+  createMeetingTranscription(transcription: InsertMeetingTranscription): Promise<MeetingTranscription>;
+  getTranscriptionBySessionId(sessionId: string): Promise<MeetingTranscription | undefined>;
+  updateMeetingTranscription(id: string, data: Partial<InsertMeetingTranscription>): Promise<MeetingTranscription | undefined>;
+  getTranscriptionsByMeetingId(meetingId: string): Promise<MeetingTranscription[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -175,6 +191,45 @@ export class DatabaseStorage implements IStorage {
       .from(transcriptSegments)
       .where(eq(transcriptSegments.meetingId, meetingId))
       .orderBy(transcriptSegments.createdAt);
+  }
+
+  // Webhook Events
+  async getWebhookEventByIdempotencyKey(idempotencyKey: string): Promise<WebhookEvent | undefined> {
+    const [event] = await db.select().from(webhookEvents).where(eq(webhookEvents.idempotencyKey, idempotencyKey));
+    return event;
+  }
+
+  async createWebhookEvent(insertEvent: InsertWebhookEvent): Promise<WebhookEvent> {
+    const [event] = await db.insert(webhookEvents).values(insertEvent).returning();
+    return event;
+  }
+
+  // Meeting Transcriptions
+  async createMeetingTranscription(insertTranscription: InsertMeetingTranscription): Promise<MeetingTranscription> {
+    const [transcription] = await db.insert(meetingTranscriptions).values(insertTranscription).returning();
+    return transcription;
+  }
+
+  async getTranscriptionBySessionId(sessionId: string): Promise<MeetingTranscription | undefined> {
+    const [transcription] = await db.select().from(meetingTranscriptions).where(eq(meetingTranscriptions.sessionId, sessionId));
+    return transcription;
+  }
+
+  async updateMeetingTranscription(id: string, data: Partial<InsertMeetingTranscription>): Promise<MeetingTranscription | undefined> {
+    const [transcription] = await db
+      .update(meetingTranscriptions)
+      .set(data)
+      .where(eq(meetingTranscriptions.id, id))
+      .returning();
+    return transcription;
+  }
+
+  async getTranscriptionsByMeetingId(meetingId: string): Promise<MeetingTranscription[]> {
+    return db
+      .select()
+      .from(meetingTranscriptions)
+      .where(eq(meetingTranscriptions.meetingId, meetingId))
+      .orderBy(desc(meetingTranscriptions.createdAt));
   }
 }
 

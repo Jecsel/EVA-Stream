@@ -108,3 +108,72 @@ Generate a complete, well-formatted SOP document in Markdown format with clear h
     return existingSOP;
   }
 }
+
+export interface TranscriptionAnalysis {
+  summary: string;
+  actionItems: string[];
+  keyTopics: string[];
+}
+
+export async function analyzeTranscription(
+  transcriptText: string,
+  meetingTitle?: string
+): Promise<TranscriptionAnalysis> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return {
+        summary: "Transcription received but AI analysis unavailable (no API key configured).",
+        actionItems: [],
+        keyTopics: [],
+      };
+    }
+
+    const prompt = `Analyze the following meeting transcription and provide:
+1. A concise summary (2-3 paragraphs)
+2. A list of action items mentioned
+3. Key topics discussed
+
+Meeting Title: ${meetingTitle || "Unknown Meeting"}
+
+Transcription:
+${transcriptText.slice(0, 30000)}
+
+Respond in the following JSON format:
+{
+  "summary": "...",
+  "actionItems": ["action 1", "action 2", ...],
+  "keyTopics": ["topic 1", "topic 2", ...]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    
+    // Parse JSON response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: parsed.summary || "No summary generated.",
+        actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        keyTopics: Array.isArray(parsed.keyTopics) ? parsed.keyTopics : [],
+      };
+    }
+
+    return {
+      summary: text || "Transcription analysis complete.",
+      actionItems: [],
+      keyTopics: [],
+    };
+  } catch (error) {
+    console.error("Gemini transcription analysis error:", error);
+    return {
+      summary: "Error analyzing transcription.",
+      actionItems: [],
+      keyTopics: [],
+    };
+  }
+}
