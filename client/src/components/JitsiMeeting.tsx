@@ -123,9 +123,15 @@ export function JitsiMeeting({
           startWithAudioMuted: true,
           startWithVideoMuted: true,
           prejoinPageEnabled: false,
+          prejoinConfig: {
+            enabled: false,
+          },
           disableDeepLinking: true,
           disableModeratorIndicator: true,
           enableEmailInStats: false,
+          disableInitialGUM: true,
+          startAudioOnly: false,
+          enableWelcomePage: false,
           theme: {
             default: 'dark',
           },
