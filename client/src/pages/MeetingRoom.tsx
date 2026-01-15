@@ -95,30 +95,11 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id]);
 
-  // Fetch Jitsi JaaS token when component mounts
+  // Use public Jitsi Meet server (no JWT) for faster connections
   useEffect(() => {
-    const fetchJitsiToken = async () => {
-      try {
-        const result = await api.getJitsiToken(`VideoAI-${roomId}`, "User", {
-          isModerator: true,
-        });
-        
-        if (result.configured && result.token) {
-          setJitsiToken(result.token);
-          setJitsiAppId(result.appId);
-          console.log("JaaS configured, using 8x8.vc domain");
-        } else {
-          console.log("JaaS not configured, using free Jitsi Meet server");
-        }
-        setJitsiReady(true);
-      } catch (error) {
-        console.error("Failed to get Jitsi token:", error);
-        // Fall back to free server
-        setJitsiReady(true);
-      }
-    };
-
-    fetchJitsiToken();
+    console.log("Using public Jitsi Meet server (meet.jit.si) for faster connections");
+    // Skip JWT token fetching - use public server directly
+    setJitsiReady(true);
   }, [roomId]);
 
   const formatDuration = (seconds: number) => {
