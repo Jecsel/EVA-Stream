@@ -372,8 +372,39 @@ export async function registerRoutes(
         return;
       }
 
-      // Convert escaped newlines to actual newlines (secrets often store as single line)
-      const privateKey = rawPrivateKey.replace(/\\n/g, '\n');
+      // Handle various private key formats from environment variables
+      let privateKey = rawPrivateKey.trim();
+      
+      // Check if key contains literal \n (escaped) and convert to actual newlines
+      if (privateKey.includes('\\n')) {
+        privateKey = privateKey.replace(/\\n/g, '\n');
+      }
+      
+      // If key has no actual newlines but has PEM headers, it's all on one line
+      // We need to reconstruct proper PEM format with 64-char lines
+      if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN')) {
+        // Extract the header, body, and footer
+        const beginMatch = privateKey.match(/(-----BEGIN [A-Z ]+-----)/);
+        const endMatch = privateKey.match(/(-----END [A-Z ]+-----)/);
+        
+        if (beginMatch && endMatch) {
+          const header = beginMatch[1];
+          const footer = endMatch[1];
+          
+          // Extract the base64 content between header and footer
+          const startIdx = privateKey.indexOf(header) + header.length;
+          const endIdx = privateKey.indexOf(footer);
+          const base64Content = privateKey.substring(startIdx, endIdx).replace(/\s/g, '');
+          
+          // Reconstruct with 64-char lines
+          const lines = [];
+          for (let i = 0; i < base64Content.length; i += 64) {
+            lines.push(base64Content.substring(i, i + 64));
+          }
+          
+          privateKey = `${header}\n${lines.join('\n')}\n${footer}`;
+        }
+      }
 
       const now = new Date();
       const userId = uuidv4();
