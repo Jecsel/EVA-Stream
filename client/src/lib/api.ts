@@ -150,36 +150,4 @@ export const api = {
     if (!response.ok) throw new Error("Failed to fetch transcripts");
     return response.json();
   },
-
-  // Jitsi JaaS Integration
-  async getJitsiStatus(): Promise<{ configured: boolean; message: string }> {
-    const response = await fetch(`${API_BASE}/jitsi/status`);
-    if (!response.ok) throw new Error("Failed to check Jitsi status");
-    return response.json();
-  },
-
-  async getJitsiToken(roomName: string, userName: string, options?: {
-    userEmail?: string;
-    userId?: string;
-    isModerator?: boolean;
-  }): Promise<{
-    configured: boolean;
-    token?: string;
-    appId?: string;
-    roomName: string;
-    domain: string;
-    message?: string;
-  }> {
-    const response = await fetch(`${API_BASE}/jitsi/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomName,
-        userName,
-        ...options,
-      }),
-    });
-    if (!response.ok) throw new Error("Failed to get Jitsi token");
-    return response.json();
-  },
 };

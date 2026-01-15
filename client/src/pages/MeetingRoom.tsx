@@ -45,11 +45,6 @@ export default function MeetingRoom() {
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(0);
   const meetingStartTime = useRef(Date.now());
-
-  // Jitsi JaaS token state
-  const [jitsiToken, setJitsiToken] = useState<string | undefined>(undefined);
-  const [jitsiAppId, setJitsiAppId] = useState<string | undefined>(undefined);
-  const [jitsiReady, setJitsiReady] = useState(false);
   const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
 
 ## 1. Meeting Objective
@@ -94,32 +89,6 @@ export default function MeetingRoom() {
       meetingIdRef.current = meeting.id;
     }
   }, [meeting?.id]);
-
-  // Fetch Jitsi JaaS token when component mounts
-  useEffect(() => {
-    const fetchJitsiToken = async () => {
-      try {
-        const result = await api.getJitsiToken(`VideoAI-${roomId}`, "User", {
-          isModerator: true,
-        });
-        
-        if (result.configured && result.token) {
-          setJitsiToken(result.token);
-          setJitsiAppId(result.appId);
-          console.log("JaaS configured, using 8x8.vc domain");
-        } else {
-          console.log("JaaS not configured, using free Jitsi Meet server");
-        }
-        setJitsiReady(true);
-      } catch (error) {
-        console.error("Failed to get Jitsi token:", error);
-        // Fall back to free server
-        setJitsiReady(true);
-      }
-    };
-
-    fetchJitsiToken();
-  }, [roomId]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -467,23 +436,12 @@ export default function MeetingRoom() {
         {/* Video Area */}
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
-             {jitsiReady ? (
-               <JitsiMeeting 
-                 roomName={`VideoAI-${roomId}`}
-                 displayName="User"
-                 onApiReady={handleJitsiApiReady}
-                 className="bg-zinc-900"
-                 jwt={jitsiToken}
-                 appId={jitsiAppId}
-               />
-             ) : (
-               <div className="h-full w-full flex items-center justify-center bg-zinc-900">
-                 <div className="flex flex-col items-center gap-4">
-                   <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                   <p className="text-muted-foreground">Initializing meeting...</p>
-                 </div>
-               </div>
-             )}
+             <JitsiMeeting 
+               roomName={`VideoAI-${roomId}`}
+               displayName="User"
+               onApiReady={handleJitsiApiReady}
+               className="bg-zinc-900"
+             />
           </div>
 
           {/* Right Panel - AI Chat */}
