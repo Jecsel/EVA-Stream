@@ -362,15 +362,18 @@ export async function registerRoutes(
       const { roomName, userName, userEmail, userAvatar } = req.body;
 
       // JaaS configuration from environment - all required
-      const privateKey = process.env.JAAS_PRIVATE_KEY;
+      const rawPrivateKey = process.env.JAAS_PRIVATE_KEY;
       const appId = process.env.JAAS_APP_ID;
       const apiKey = process.env.JAAS_API_KEY;
 
       // All JaaS credentials must be configured
-      if (!privateKey || !appId || !apiKey) {
+      if (!rawPrivateKey || !appId || !apiKey) {
         res.status(503).json({ error: "JaaS not configured" });
         return;
       }
+
+      // Convert escaped newlines to actual newlines (secrets often store as single line)
+      const privateKey = rawPrivateKey.replace(/\\n/g, '\n');
 
       const now = new Date();
       const userId = uuidv4();
