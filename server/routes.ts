@@ -5,6 +5,8 @@ import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, in
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat } from "./gemini";
+import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -351,6 +353,59 @@ export async function registerRoutes(
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
+  // JaaS JWT Token Generation
+  app.post("/api/jaas/token", async (req, res) => {
+    try {
+      const { roomName, userName, userEmail, userAvatar } = req.body;
+
+      // JaaS configuration from environment
+      const privateKey = process.env.JAAS_PRIVATE_KEY;
+      const appId = process.env.JAAS_APP_ID || "vpaas-magic-cookie-c3964a049bba4dbc9c67778d2bc082d6";
+      const apiKey = process.env.JAAS_API_KEY || "vpaas-magic-cookie-c3964a049bba4dbc9c67778d2bc082d6/8f0aa1";
+
+      if (!privateKey) {
+        res.status(500).json({ error: "JaaS private key not configured" });
+        return;
+      }
+
+      const now = new Date();
+      const userId = uuidv4();
+
+      const token = jwt.sign(
+        {
+          aud: "jitsi",
+          context: {
+            user: {
+              id: userId,
+              name: userName || "Guest",
+              avatar: userAvatar || "",
+              email: userEmail || `${userId}@guest.local`,
+              moderator: "true",
+            },
+            features: {
+              livestreaming: "true",
+              recording: "true",
+              transcription: "true",
+              "outbound-call": "true",
+            },
+          },
+          iss: "chat",
+          room: roomName || "*",
+          sub: appId,
+          exp: Math.round(now.setHours(now.getHours() + 3) / 1000),
+          nbf: Math.round(new Date().getTime() / 1000) - 10,
+        },
+        privateKey,
+        { algorithm: "RS256", header: { kid: apiKey, typ: "JWT", alg: "RS256" } }
+      );
+
+      res.json({ token, appId });
+    } catch (error) {
+      console.error("JaaS token generation error:", error);
+      res.status(500).json({ error: "Failed to generate JaaS token" });
     }
   });
 

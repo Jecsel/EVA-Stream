@@ -83,6 +83,28 @@ export default function MeetingRoom() {
     queryFn: () => api.getMeetingByRoomId(roomId),
   });
 
+  // Fetch JaaS JWT token for authenticated Jitsi meetings
+  const { data: jaasToken } = useQuery({
+    queryKey: ["jaas-token", roomId],
+    queryFn: async () => {
+      const response = await fetch("/api/jaas/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomName: `VideoAI-${roomId}`,
+          userName: "User",
+        }),
+      });
+      if (!response.ok) {
+        // If JaaS token fails, return null (will fall back to public Jitsi)
+        return null;
+      }
+      return response.json();
+    },
+    retry: false,
+    staleTime: 1000 * 60 * 60 * 2, // Token valid for 2 hours
+  });
+
   // Update meeting ID ref when meeting loads
   useEffect(() => {
     if (meeting?.id) {
@@ -441,6 +463,8 @@ export default function MeetingRoom() {
                displayName="User"
                onApiReady={handleJitsiApiReady}
                className="bg-zinc-900"
+               jwt={jaasToken?.token}
+               appId={jaasToken?.appId}
              />
           </div>
 
