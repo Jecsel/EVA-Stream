@@ -30,13 +30,21 @@ export function JitsiMeeting({
   const domain = useJaaS ? "8x8.vc" : "meet.jit.si";
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    // Hide our loading overlay after 3 seconds to show Jitsi's own loading UI
+    const hideTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
+    const timeoutTimer = setTimeout(() => {
       if (loading) {
         setLoadTimeout(true);
       }
     }, 15000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(hideTimer);
+      clearTimeout(timeoutTimer);
+    };
   }, [loading]);
 
   const updateIframeSize = useCallback(() => {
