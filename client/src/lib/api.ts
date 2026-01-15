@@ -1,4 +1,4 @@
-import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment } from "@shared/schema";
+import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment, MeetingTranscription } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -148,6 +148,12 @@ export const api = {
   async getTranscripts(meetingId: string): Promise<TranscriptSegment[]> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/transcripts`);
     if (!response.ok) throw new Error("Failed to fetch transcripts");
+    return response.json();
+  },
+
+  async getMeetingTranscriptions(meetingId: string): Promise<MeetingTranscription[]> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/transcriptions`);
+    if (!response.ok) throw new Error("Failed to fetch meeting transcriptions");
     return response.json();
   },
 };
