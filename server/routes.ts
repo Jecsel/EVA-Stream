@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema } from "@shared/schema";
@@ -8,11 +8,94 @@ import { analyzeChat, analyzeTranscription } from "./gemini";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 
+// API Key authentication middleware for external API
+function validateApiKey(req: Request, res: Response, next: NextFunction) {
+  const apiKey = process.env.EXTERNAL_API_KEY;
+  
+  // If no API key is configured, allow all requests (development mode)
+  if (!apiKey) {
+    next();
+    return;
+  }
+  
+  // Check Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or invalid Authorization header. Use 'Bearer <API_KEY>'" });
+    return;
+  }
+  
+  const providedKey = authHeader.substring(7);
+  if (providedKey !== apiKey) {
+    res.status(403).json({ error: "Invalid API key" });
+    return;
+  }
+  
+  next();
+}
+
+// Generate a unique room ID
+function generateRoomId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const segments = [3, 4, 3]; // xxx-xxxx-xxx format
+  return segments
+    .map(len => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join(""))
+    .join("-");
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
+  // External API - Create meeting endpoint for other systems
+  const externalCreateMeetingSchema = z.object({
+    title: z.string().optional(),
+    scheduledDate: z.string().datetime().optional(),
+  });
+
+  app.post("/api/external/create-meeting", validateApiKey, async (req, res) => {
+    try {
+      const validated = externalCreateMeetingSchema.parse(req.body);
+      
+      const roomId = generateRoomId();
+      const title = validated.title || `Meeting ${roomId}`;
+      
+      // Create the meeting
+      const meeting = await storage.createMeeting({
+        title,
+        roomId,
+        status: validated.scheduledDate ? "scheduled" : "live",
+        scheduledDate: validated.scheduledDate ? new Date(validated.scheduledDate) : new Date(),
+      });
+      
+      // Build the full meeting link
+      const host = req.headers.host || "localhost:5000";
+      const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
+      const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+      
+      res.json({
+        success: true,
+        meeting: {
+          id: meeting.id,
+          title: meeting.title,
+          roomId: meeting.roomId,
+          status: meeting.status,
+          scheduledDate: meeting.scheduledDate,
+          createdAt: meeting.createdAt,
+        },
+        link: meetingLink,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("External create meeting error:", error);
+        res.status(500).json({ error: "Failed to create meeting" });
+      }
+    }
+  });
+
   // Meetings
   app.post("/api/meetings", async (req, res) => {
     try {
