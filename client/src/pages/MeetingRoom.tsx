@@ -474,19 +474,19 @@ export default function MeetingRoom() {
         </header>
 
         {/* Video Area */}
-        <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
-          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
+        <div className="flex-1 p-4 relative flex gap-4 overflow-hidden" style={{ minHeight: '500px' }}>
+          <div className="flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300" style={{ minHeight: '450px' }}>
              {jitsiReady ? (
                <JitsiMeeting 
                  roomName={`VideoAI-${roomId}`}
                  displayName="User"
                  onApiReady={handleJitsiApiReady}
-                 className="bg-zinc-900"
+                 className="bg-zinc-900 h-full"
                  jwt={jitsiToken}
                  appId={jitsiAppId}
                />
              ) : (
-               <div className="h-full w-full flex items-center justify-center bg-zinc-900">
+               <div className="h-full w-full flex items-center justify-center bg-zinc-900 min-h-[400px]">
                  <div className="flex flex-col items-center gap-4">
                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                    <p className="text-muted-foreground">Initializing meeting...</p>
