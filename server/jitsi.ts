@@ -58,9 +58,10 @@ export function generateJitsiToken(options: JitsiTokenOptions): JitsiTokenResult
       },
     },
     exp,
+    iat: now,
     iss: 'chat',
     nbf: now,
-    room: '*', // Allow access to any room - can be restricted to specific room name
+    room: '*',
     sub: appId,
   };
 
