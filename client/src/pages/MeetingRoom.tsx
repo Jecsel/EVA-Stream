@@ -333,8 +333,15 @@ export default function MeetingRoom() {
   const handleJitsiApiReady = (api: any) => {
     setJitsiApi(api);
     
-    // Listen for screen sharing events
+    // Listen for Jitsi events
     api.addEventListeners({
+      videoConferenceJoined: () => {
+        console.log("Video conference joined - auto-starting transcription");
+        // Auto-start transcription when user joins the meeting
+        if (!isTranscribing && meeting?.id) {
+          startTranscription();
+        }
+      },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
         
@@ -364,6 +371,7 @@ export default function MeetingRoom() {
       videoConferenceLeft: () => {
         stopObserving();
         stopScreenCapture();
+        stopTranscription();
       }
     });
   };
