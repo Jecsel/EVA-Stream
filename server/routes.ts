@@ -361,13 +361,14 @@ export async function registerRoutes(
     try {
       const { roomName, userName, userEmail, userAvatar } = req.body;
 
-      // JaaS configuration from environment
+      // JaaS configuration from environment - all required
       const privateKey = process.env.JAAS_PRIVATE_KEY;
-      const appId = process.env.JAAS_APP_ID || "vpaas-magic-cookie-c3964a049bba4dbc9c67778d2bc082d6";
-      const apiKey = process.env.JAAS_API_KEY || "vpaas-magic-cookie-c3964a049bba4dbc9c67778d2bc082d6/8f0aa1";
+      const appId = process.env.JAAS_APP_ID;
+      const apiKey = process.env.JAAS_API_KEY;
 
-      if (!privateKey) {
-        res.status(500).json({ error: "JaaS private key not configured" });
+      // All JaaS credentials must be configured
+      if (!privateKey || !appId || !apiKey) {
+        res.status(503).json({ error: "JaaS not configured" });
         return;
       }
 
