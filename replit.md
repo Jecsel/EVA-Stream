@@ -71,3 +71,38 @@ The server uses a storage abstraction layer (`server/storage.ts`) implementing t
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
 - `GEMINI_API_KEY`: Google Gemini API key for AI features
+- `EXTERNAL_API_KEY`: (Optional) API key to protect the external meeting creation endpoint
+
+## External API
+
+### POST /api/external/create-meeting
+
+Creates a new meeting and returns a shareable link. Other systems can call this endpoint to programmatically generate meeting links.
+
+**Authentication**: If `EXTERNAL_API_KEY` is configured, requests must include:
+```
+Authorization: Bearer <your-api-key>
+```
+
+**Request Body** (optional):
+```json
+{
+  "title": "Meeting Title",
+  "scheduledDate": "2026-01-20T14:00:00.000Z"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "meeting": {
+    "id": "uuid",
+    "title": "Meeting Title",
+    "roomId": "abc-defg-hij",
+    "status": "live",
+    "scheduledDate": "2026-01-15T10:00:00.000Z",
+    "createdAt": "2026-01-15T10:00:00.000Z"
+  },
+  "link": "https://your-domain.replit.dev/meeting/abc-defg-hij"
+}
