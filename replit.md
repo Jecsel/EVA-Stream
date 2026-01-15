@@ -57,7 +57,10 @@ The server uses a storage abstraction layer (`server/storage.ts`) implementing t
 
 ### Third-Party Services
 - **Google Gemini API**: AI analysis and SOP generation (requires `GEMINI_API_KEY`)
-- **Jitsi Meet**: Video conferencing (uses public `meet.jit.si` or JaaS with JWT)
+- **Jitsi JaaS (8x8)**: Video conferencing via JaaS (Jitsi as a Service) with JWT authentication
+  - Uses `8x8.vc` domain when JaaS credentials are configured
+  - Falls back to public `meet.jit.si` if not configured
+  - JWT generation uses RS256 algorithm with proper claims (aud, context, exp, iat, iss, nbf, room, sub)
 
 ### Key NPM Dependencies
 - `@jitsi/react-sdk`: Jitsi video integration
@@ -71,3 +74,6 @@ The server uses a storage abstraction layer (`server/storage.ts`) implementing t
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
 - `GEMINI_API_KEY`: Google Gemini API key for AI features
+- `JAAS_APP_ID`: JaaS Application ID (optional - starts with "vpaas-magic-cookie-...")
+- `JAAS_API_KEY`: JaaS API Key ID (optional - format: "vpaas-magic-cookie-.../abc123")
+- `JAAS_PRIVATE_KEY`: JaaS Private Key in PEM format (optional - used for JWT signing)
