@@ -6,8 +6,6 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat } from "./gemini";
 import { generateJitsiToken, isJaaSConfigured } from "./jitsi";
-import * as sessionController from "./sessionController";
-import { transcribeAudio } from "./sessionController";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -354,121 +352,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
-    }
-  });
-
-  // Session Management - Initialize AI session for meeting
-  app.post("/api/meetings/:meetingId/session/start", async (req, res) => {
-    try {
-      const session = await sessionController.initializeSession(req.params.meetingId);
-      res.json({ success: true, sopDocumentId: session.sopDocumentId });
-    } catch (error) {
-      console.error("Session start error:", error);
-      res.status(500).json({ error: "Failed to start session" });
-    }
-  });
-
-  app.post("/api/meetings/:meetingId/session/end", async (req, res) => {
-    try {
-      sessionController.endSession(req.params.meetingId);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to end session" });
-    }
-  });
-
-  // OpenAI-powered EVA chat (enhanced)
-  app.post("/api/meetings/:meetingId/eva/chat", async (req, res) => {
-    try {
-      const { message, context } = req.body;
-      const response = await sessionController.chat(
-        req.params.meetingId,
-        message,
-        context
-      );
-      res.json(response);
-    } catch (error) {
-      console.error("EVA chat error:", error);
-      res.status(500).json({ error: "Failed to process chat message" });
-    }
-  });
-
-  // Transcription endpoint - processes audio and adds to transcript
-  app.post("/api/meetings/:meetingId/transcribe", express.raw({ type: 'audio/*', limit: '10mb' }), async (req, res) => {
-    try {
-      const audioBuffer = req.body as Buffer;
-      const format = (req.query.format as "wav" | "mp3" | "webm") || "wav";
-      const speaker = (req.query.speaker as string) || "User";
-      
-      const transcript = await transcribeAudio(audioBuffer, format);
-      const segment = await sessionController.addTranscriptSegment(
-        req.params.meetingId,
-        transcript,
-        speaker
-      );
-      
-      res.json({ transcript, segment });
-    } catch (error) {
-      console.error("Transcription error:", error);
-      res.status(500).json({ error: "Failed to transcribe audio" });
-    }
-  });
-
-  // Manual SOP analysis trigger
-  app.post("/api/meetings/:meetingId/sop/analyze", async (req, res) => {
-    try {
-      const version = await sessionController.analyzeAndUpdateSOP(req.params.meetingId);
-      if (!version) {
-        res.status(200).json({ message: "No updates needed or analysis in progress" });
-        return;
-      }
-      res.json({ version });
-    } catch (error) {
-      console.error("SOP analysis error:", error);
-      res.status(500).json({ error: "Failed to analyze SOP" });
-    }
-  });
-
-  // Get SOP document with versions
-  app.get("/api/meetings/:meetingId/sop", async (req, res) => {
-    try {
-      const result = await sessionController.getSopDocument(req.params.meetingId);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get SOP document" });
-    }
-  });
-
-  // Get SOP version history
-  app.get("/api/meetings/:meetingId/sop/versions", async (req, res) => {
-    try {
-      const doc = await storage.getSopDocumentByMeeting(req.params.meetingId);
-      if (!doc) {
-        res.json([]);
-        return;
-      }
-      const versions = await storage.getSopVersionsByDocument(doc.id);
-      res.json(versions);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get SOP versions" });
-    }
-  });
-
-  // Rollback SOP to specific version
-  app.post("/api/meetings/:meetingId/sop/rollback/:versionId", async (req, res) => {
-    try {
-      const result = await sessionController.rollbackSop(
-        req.params.meetingId,
-        req.params.versionId
-      );
-      if (!result) {
-        res.status(404).json({ error: "Version not found or invalid" });
-        return;
-      }
-      res.json({ success: true, document: result });
-    } catch (error) {
-      console.error("SOP rollback error:", error);
-      res.status(500).json({ error: "Failed to rollback SOP" });
     }
   });
 

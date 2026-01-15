@@ -9,17 +9,11 @@ import {
   type InsertChatMessage,
   type TranscriptSegment,
   type InsertTranscriptSegment,
-  type SopDocument,
-  type InsertSopDocument,
-  type SopVersion,
-  type InsertSopVersion,
   users,
   meetings,
   recordings,
   chatMessages,
-  transcriptSegments,
-  sopDocuments,
-  sopVersions
+  transcriptSegments
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc } from "drizzle-orm";
@@ -53,19 +47,6 @@ export interface IStorage {
   // Transcript Segments
   createTranscriptSegment(segment: InsertTranscriptSegment): Promise<TranscriptSegment>;
   getTranscriptsByMeeting(meetingId: string): Promise<TranscriptSegment[]>;
-
-  // SOP Documents
-  getSopDocument(id: string): Promise<SopDocument | undefined>;
-  getSopDocumentByMeeting(meetingId: string): Promise<SopDocument | undefined>;
-  createSopDocument(document: InsertSopDocument): Promise<SopDocument>;
-  updateSopDocument(id: string, update: Partial<InsertSopDocument>): Promise<SopDocument | undefined>;
-
-  // SOP Versions
-  getSopVersion(id: string): Promise<SopVersion | undefined>;
-  getSopVersionsByDocument(documentId: string): Promise<SopVersion[]>;
-  createSopVersion(version: InsertSopVersion): Promise<SopVersion>;
-  getLatestSopVersion(documentId: string): Promise<SopVersion | undefined>;
-  rollbackToVersion(documentId: string, versionId: string): Promise<SopDocument | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -194,79 +175,6 @@ export class DatabaseStorage implements IStorage {
       .from(transcriptSegments)
       .where(eq(transcriptSegments.meetingId, meetingId))
       .orderBy(transcriptSegments.createdAt);
-  }
-
-  // SOP Documents
-  async getSopDocument(id: string): Promise<SopDocument | undefined> {
-    const [doc] = await db.select().from(sopDocuments).where(eq(sopDocuments.id, id));
-    return doc;
-  }
-
-  async getSopDocumentByMeeting(meetingId: string): Promise<SopDocument | undefined> {
-    const [doc] = await db.select().from(sopDocuments).where(eq(sopDocuments.meetingId, meetingId));
-    return doc;
-  }
-
-  async createSopDocument(insertDoc: InsertSopDocument): Promise<SopDocument> {
-    const [doc] = await db.insert(sopDocuments).values(insertDoc).returning();
-    return doc;
-  }
-
-  async updateSopDocument(id: string, updateData: Partial<InsertSopDocument>): Promise<SopDocument | undefined> {
-    const [doc] = await db
-      .update(sopDocuments)
-      .set({ ...updateData, updatedAt: new Date() })
-      .where(eq(sopDocuments.id, id))
-      .returning();
-    return doc;
-  }
-
-  // SOP Versions
-  async getSopVersion(id: string): Promise<SopVersion | undefined> {
-    const [version] = await db.select().from(sopVersions).where(eq(sopVersions.id, id));
-    return version;
-  }
-
-  async getSopVersionsByDocument(documentId: string): Promise<SopVersion[]> {
-    return db
-      .select()
-      .from(sopVersions)
-      .where(eq(sopVersions.documentId, documentId))
-      .orderBy(desc(sopVersions.createdAt));
-  }
-
-  async createSopVersion(insertVersion: InsertSopVersion): Promise<SopVersion> {
-    const [version] = await db.insert(sopVersions).values(insertVersion).returning();
-    await db
-      .update(sopDocuments)
-      .set({ currentVersionId: version.id, updatedAt: new Date() })
-      .where(eq(sopDocuments.id, insertVersion.documentId));
-    return version;
-  }
-
-  async getLatestSopVersion(documentId: string): Promise<SopVersion | undefined> {
-    const [version] = await db
-      .select()
-      .from(sopVersions)
-      .where(eq(sopVersions.documentId, documentId))
-      .orderBy(desc(sopVersions.createdAt))
-      .limit(1);
-    return version;
-  }
-
-  async rollbackToVersion(documentId: string, versionId: string): Promise<SopDocument | undefined> {
-    const targetVersion = await this.getSopVersion(versionId);
-    if (!targetVersion || targetVersion.documentId !== documentId) {
-      return undefined;
-    }
-    
-    const [doc] = await db
-      .update(sopDocuments)
-      .set({ currentVersionId: versionId, updatedAt: new Date() })
-      .where(eq(sopDocuments.id, documentId))
-      .returning();
-    
-    return doc;
   }
 }
 

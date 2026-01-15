@@ -1,45 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import type { TranscriptSegment } from "@shared/schema";
 
 interface TranscriptMessage {
   type: "transcript" | "status" | "error";
   content: string;
   isFinal?: boolean;
   speaker?: string;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message: string;
-}
-
-interface SpeechRecognitionType {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onstart: ((this: SpeechRecognitionType, ev: Event) => void) | null;
-  onresult: ((this: SpeechRecognitionType, ev: SpeechRecognitionEvent) => void) | null;
-  onerror: ((this: SpeechRecognitionType, ev: SpeechRecognitionErrorEvent) => void) | null;
-  onend: ((this: SpeechRecognitionType, ev: Event) => void) | null;
-}
-
-interface SpeechRecognitionConstructor {
-  new(): SpeechRecognitionType;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition: SpeechRecognitionConstructor;
-    webkitSpeechRecognition: SpeechRecognitionConstructor;
-  }
 }
 
 interface UseAudioTranscriptOptions {
@@ -53,172 +19,160 @@ export function useAudioTranscript({
   onTranscript,
   onStatusChange,
 }: UseAudioTranscriptOptions) {
+  const wsRef = useRef<WebSocket | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionType | null>(null);
-  const shouldRestartRef = useRef(false);
-  const pendingSyncRef = useRef<string[]>([]);
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const SpeechRecognitionAPI = 
-    typeof window !== 'undefined' 
-      ? window.SpeechRecognition || window.webkitSpeechRecognition 
-      : null;
-
-  const isSupported = Boolean(SpeechRecognitionAPI);
-
-  const syncToServer = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-    
-    pendingSyncRef.current.push(text.trim());
-    
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-    
-    syncTimeoutRef.current = setTimeout(async () => {
-      const textsToSync = [...pendingSyncRef.current];
-      pendingSyncRef.current = [];
-      
-      for (const t of textsToSync) {
-        try {
-          await fetch(`/api/meetings/${meetingId}/transcripts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ speaker: 'User', text: t, isFinal: true }),
-          });
-        } catch (err) {
-          console.error('Failed to sync transcript:', err);
-        }
-      }
-    }, 500);
-  }, [meetingId]);
-
-  const startTranscription = useCallback(async () => {
-    if (!SpeechRecognitionAPI) {
-      onStatusChange?.("error");
-      return false;
-    }
-
-    if (!meetingId) {
-      console.error("Cannot start transcription without a valid meeting ID");
-      onStatusChange?.("error");
-      return false;
-    }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
-    }
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     onStatusChange?.("connecting");
-    shouldRestartRef.current = true;
+    
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws/eva?meetingId=${meetingId}`;
+    
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-    const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsTranscribing(true);
+    ws.onopen = () => {
       setIsConnected(true);
-      onStatusChange?.("transcribing");
+      onStatusChange?.("idle");
     };
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        const text = result[0].transcript;
-
-        if (result.isFinal) {
-          onTranscript?.({
-            type: "transcript",
-            content: text.trim(),
-            isFinal: true,
-            speaker: "User",
-          });
-          
-          syncToServer(text);
-        } else {
-          onTranscript?.({
-            type: "transcript",
-            content: text,
-            isFinal: false,
-            speaker: "User",
-          });
+    ws.onmessage = (event) => {
+      try {
+        const message: TranscriptMessage = JSON.parse(event.data);
+        
+        if (message.type === "transcript") {
+          onTranscript?.(message);
         }
+      } catch (error) {
+        console.error("Failed to parse transcript message:", error);
       }
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        return;
-      }
-      console.error('Speech recognition error:', event.error);
-      if (event.error === 'not-allowed') {
-        onStatusChange?.("error");
-        shouldRestartRef.current = false;
-      }
+    ws.onclose = () => {
+      setIsConnected(false);
+      setIsTranscribing(false);
+      onStatusChange?.("idle");
     };
 
-    recognition.onend = () => {
-      if (shouldRestartRef.current) {
-        try {
-          recognition.start();
-        } catch {
-        }
-      } else {
-        setIsTranscribing(false);
-        onStatusChange?.("idle");
-      }
+    ws.onerror = (error) => {
+      console.error("Transcript WebSocket error:", error);
+      onStatusChange?.("error");
     };
+  }, [meetingId, onTranscript, onStatusChange]);
 
-    recognitionRef.current = recognition;
+  const disconnect = useCallback(() => {
+    stopTranscription();
+    wsRef.current?.close();
+    wsRef.current = null;
+    setIsConnected(false);
+  }, []);
+
+  const startTranscription = useCallback(async () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("WebSocket not connected");
+      return false;
+    }
 
     try {
-      recognition.start();
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        } 
+      });
+      streamRef.current = stream;
+
+      wsRef.current.send(JSON.stringify({ 
+        type: "control", 
+        command: "start_transcription" 
+      }));
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") 
+          ? "audio/webm;codecs=opus" 
+          : "audio/webm",
+      });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = (reader.result as string).split(",")[1];
+            if (base64 && wsRef.current?.readyState === WebSocket.OPEN) {
+              const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+              wsRef.current.send(JSON.stringify({
+                type: "audio_transcribe",
+                data: base64url,
+                mimeType: "audio/webm",
+              }));
+            }
+          };
+          reader.readAsDataURL(event.data);
+        }
+      };
+
+      mediaRecorder.start();
+
+      recordingIntervalRef.current = setInterval(() => {
+        if (mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+          mediaRecorder.start();
+        }
+      }, 3000);
+
+      setIsTranscribing(true);
+      onStatusChange?.("transcribing");
       return true;
-    } catch (e) {
-      console.error('Failed to start speech recognition:', e);
+    } catch (error) {
+      console.error("Failed to start transcription:", error);
       onStatusChange?.("error");
       return false;
     }
-  }, [SpeechRecognitionAPI, meetingId, onTranscript, onStatusChange, syncToServer]);
+  }, [onStatusChange]);
 
   const stopTranscription = useCallback(() => {
-    shouldRestartRef.current = false;
-    
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
-      recognitionRef.current = null;
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
     }
-    
+
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ 
+        type: "control", 
+        command: "stop_transcription" 
+      }));
+    }
+
     setIsTranscribing(false);
     onStatusChange?.("idle");
   }, [onStatusChange]);
 
   useEffect(() => {
-    if (isSupported) {
-      setIsConnected(true);
-      onStatusChange?.("idle");
-    } else {
-      setIsConnected(false);
-      onStatusChange?.("error");
+    if (meetingId) {
+      connect();
     }
-  }, [isSupported, onStatusChange]);
-
-  useEffect(() => {
     return () => {
-      shouldRestartRef.current = false;
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-        recognitionRef.current = null;
-      }
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-      }
+      disconnect();
     };
-  }, []);
+  }, [meetingId, connect, disconnect]);
 
   return {
     isConnected,

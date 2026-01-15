@@ -95,11 +95,30 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id]);
 
-  // Use public Jitsi Meet server (no JWT) for faster connections
+  // Fetch Jitsi JaaS token when component mounts
   useEffect(() => {
-    console.log("Using public Jitsi Meet server (meet.jit.si) for faster connections");
-    // Skip JWT token fetching - use public server directly
-    setJitsiReady(true);
+    const fetchJitsiToken = async () => {
+      try {
+        const result = await api.getJitsiToken(`VideoAI-${roomId}`, "User", {
+          isModerator: true,
+        });
+        
+        if (result.configured && result.token) {
+          setJitsiToken(result.token);
+          setJitsiAppId(result.appId);
+          console.log("JaaS configured, using 8x8.vc domain");
+        } else {
+          console.log("JaaS not configured, using free Jitsi Meet server");
+        }
+        setJitsiReady(true);
+      } catch (error) {
+        console.error("Failed to get Jitsi token:", error);
+        // Fall back to free server
+        setJitsiReady(true);
+      }
+    };
+
+    fetchJitsiToken();
   }, [roomId]);
 
   const formatDuration = (seconds: number) => {
@@ -234,37 +253,28 @@ export default function MeetingRoom() {
     onStatusChange: setEvaStatus,
   });
 
-  const interimIdRef = useRef("interim-current");
-  
   const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
     if (message.type === "transcript" && message.content) {
-      if (message.isFinal) {
-        const newEntry = {
-          id: `transcript-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      const newEntry = {
+        id: `transcript-${Date.now()}`,
+        text: message.content,
+        speaker: message.speaker || "User",
+        timestamp: new Date(),
+        isFinal: message.isFinal ?? true,
+      };
+      setTranscripts(prev => [...prev, newEntry]);
+
+      if (message.isFinal && meeting?.id) {
+        api.createTranscriptSegment(meeting.id, {
           text: message.content,
           speaker: message.speaker || "User",
-          timestamp: new Date(),
           isFinal: true,
-        };
-        setTranscripts(prev => {
-          const withoutInterim = prev.filter(t => t.id !== interimIdRef.current);
-          return [...withoutInterim, newEntry];
-        });
-      } else {
-        setTranscripts(prev => {
-          const withoutCurrentInterim = prev.filter(t => t.id !== interimIdRef.current);
-          const interimEntry = {
-            id: interimIdRef.current,
-            text: message.content,
-            speaker: message.speaker || "User",
-            timestamp: new Date(),
-            isFinal: false,
-          };
-          return [...withoutCurrentInterim, interimEntry];
+        }).catch(err => {
+          console.error("Failed to save transcript segment:", err);
         });
       }
     }
-  }, []);
+  }, [meeting?.id]);
 
   const {
     isConnected: transcriptConnected,
@@ -314,15 +324,8 @@ export default function MeetingRoom() {
   const handleJitsiApiReady = (api: any) => {
     setJitsiApi(api);
     
-    // Listen for Jitsi events
+    // Listen for screen sharing events
     api.addEventListeners({
-      videoConferenceJoined: () => {
-        console.log("Video conference joined - auto-starting transcription");
-        // Auto-start transcription when user joins the meeting
-        if (!isTranscribing && meeting?.id) {
-          startTranscription();
-        }
-      },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
         
@@ -352,7 +355,6 @@ export default function MeetingRoom() {
       videoConferenceLeft: () => {
         stopObserving();
         stopScreenCapture();
-        stopTranscription();
       }
     });
   };
@@ -463,19 +465,19 @@ export default function MeetingRoom() {
         </header>
 
         {/* Video Area */}
-        <div className="flex-1 p-4 relative flex gap-4 overflow-hidden" style={{ minHeight: '500px' }}>
-          <div className="flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300" style={{ minHeight: '450px' }}>
+        <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
+          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
              {jitsiReady ? (
                <JitsiMeeting 
                  roomName={`VideoAI-${roomId}`}
                  displayName="User"
                  onApiReady={handleJitsiApiReady}
-                 className="bg-zinc-900 h-full"
+                 className="bg-zinc-900"
                  jwt={jitsiToken}
                  appId={jitsiAppId}
                />
              ) : (
-               <div className="h-full w-full flex items-center justify-center bg-zinc-900 min-h-[400px]">
+               <div className="h-full w-full flex items-center justify-center bg-zinc-900">
                  <div className="flex flex-col items-center gap-4">
                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                    <p className="text-muted-foreground">Initializing meeting...</p>
