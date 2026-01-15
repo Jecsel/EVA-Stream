@@ -20,6 +20,7 @@ export function JitsiMeeting({
   appId
 }: JitsiMeetingProps) {
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState("Initializing...");
   const [error, setError] = useState<string | null>(null);
   const [loadTimeout, setLoadTimeout] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,19 +31,30 @@ export function JitsiMeeting({
   const domain = useJaaS ? "8x8.vc" : "meet.jit.si";
 
   useEffect(() => {
-    // Hide our loading overlay after 3 seconds to show Jitsi's own loading UI
-    const hideTimer = setTimeout(() => {
-      setLoading(false);
-    }, 3000);
+    // Update status messages to show progress
+    const statusTimer1 = setTimeout(() => {
+      if (loading) setConnectionStatus("Loading video components...");
+    }, 2000);
+    
+    const statusTimer2 = setTimeout(() => {
+      if (loading) setConnectionStatus("Establishing secure connection...");
+    }, 5000);
+    
+    const statusTimer3 = setTimeout(() => {
+      if (loading) setConnectionStatus("Connecting to conference...");
+    }, 10000);
 
     const timeoutTimer = setTimeout(() => {
       if (loading) {
         setLoadTimeout(true);
+        setConnectionStatus("Still connecting... Please wait.");
       }
-    }, 15000);
+    }, 20000);
 
     return () => {
-      clearTimeout(hideTimer);
+      clearTimeout(statusTimer1);
+      clearTimeout(statusTimer2);
+      clearTimeout(statusTimer3);
       clearTimeout(timeoutTimer);
     };
   }, [loading]);
@@ -64,7 +76,7 @@ export function JitsiMeeting({
 
   const handleApiReady = (externalApi: any) => {
     console.log("Jitsi API ready, domain:", domain, "room:", roomName, "useJaaS:", useJaaS);
-    setLoading(false);
+    setConnectionStatus("Joining conference room...");
     setError(null);
     
     setTimeout(updateIframeSize, 100);
@@ -74,6 +86,7 @@ export function JitsiMeeting({
     externalApi.addEventListeners({
       videoConferenceJoined: () => {
         console.log("Jitsi: Video conference joined");
+        setLoading(false);
         updateIframeSize();
       },
       readyToClose: () => {
@@ -113,11 +126,11 @@ export function JitsiMeeting({
           <div className="flex flex-col items-center gap-4">
             <Video className="h-12 w-12 text-primary animate-pulse" />
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-white font-medium">Joining Secure Meeting...</p>
+            <p className="text-white font-medium">{connectionStatus}</p>
             <p className="text-muted-foreground text-sm">Connecting to {domain}</p>
             {loadTimeout && (
               <p className="text-yellow-500 text-xs mt-2">
-                Taking longer than expected. Please wait...
+                Connection is taking longer than usual. This is normal for first-time connections.
               </p>
             )}
           </div>
