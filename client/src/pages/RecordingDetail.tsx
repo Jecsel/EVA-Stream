@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -53,9 +53,14 @@ export default function RecordingDetail() {
   const [, setLocation] = useLocation();
   const recordingId = params?.id || "";
   const flowchartRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [renderedSopContent, setRenderedSopContent] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedSopContent, setEditedSopContent] = useState("");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -100,6 +105,62 @@ export default function RecordingDetail() {
       toast.error("Failed to delete recording. Please try again.");
     },
   });
+
+  const togglePlay = async () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        try {
+          await videoRef.current.play();
+        } catch (err) {
+          toast.error("Unable to play video. Please try again.");
+          console.error("Video play error:", err);
+        }
+      }
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const handleFullscreen = () => {
+    if (videoRef.current) {
+      if (videoRef.current.requestFullscreen) {
+        videoRef.current.requestFullscreen();
+      }
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const generateFlowchartFromSOP = (sopContent: string): string => {
     const lines = sopContent.split("\n");
@@ -283,6 +344,109 @@ export default function RecordingDetail() {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-6">
+        {recording.videoUrl && (
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-video-player">
+            <div className="relative bg-black">
+              <video
+                ref={videoRef}
+                src={recording.videoUrl}
+                className="w-full aspect-video"
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={handleLoadedMetadata}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+                data-testid="video-player"
+              />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                {!isPlaying && (
+                  <div className="w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center shadow-lg">
+                    <Play className="w-8 h-8 text-white fill-current ml-1" />
+                  </div>
+                )}
+              </div>
+              <div 
+                className="absolute inset-0 cursor-pointer"
+                onClick={togglePlay}
+                data-testid="video-overlay"
+              />
+            </div>
+            <div className="p-4 bg-muted/30 border-t border-border">
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={togglePlay}
+                  className="h-10 w-10"
+                  data-testid="button-play-pause"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5 fill-current" />
+                  )}
+                </Button>
+                
+                <div className="flex-1 flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground min-w-[40px]">
+                    {formatTime(currentTime)}
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={duration || 100}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    className="flex-1 h-1 bg-muted rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
+                    data-testid="video-seek-bar"
+                  />
+                  <span className="text-xs text-muted-foreground min-w-[40px]">
+                    {formatTime(duration)}
+                  </span>
+                </div>
+                
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleMute}
+                  className="h-10 w-10"
+                  data-testid="button-mute"
+                >
+                  {isMuted ? (
+                    <VolumeX className="w-5 h-5" />
+                  ) : (
+                    <Volume2 className="w-5 h-5" />
+                  )}
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleFullscreen}
+                  className="h-10 w-10"
+                  data-testid="button-fullscreen"
+                >
+                  <Maximize className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!recording.videoUrl && (
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-no-video">
+            <div className="aspect-video bg-muted/30 flex flex-col items-center justify-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                <Video className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-muted-foreground">Video recording not available</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">The video for this meeting was not recorded or has been removed</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-gradient-to-br from-card via-card to-primary/5 border border-border rounded-xl p-5 mb-6" data-testid="section-ai-summary">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
