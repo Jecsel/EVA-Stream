@@ -246,16 +246,59 @@ export default function MeetingRoom() {
 
   const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
     if (message.type === "transcript" && message.content) {
-      const newEntry = {
-        id: `transcript-${Date.now()}`,
-        text: message.content,
-        speaker: message.speaker || "User",
-        timestamp: new Date(),
-        isFinal: message.isFinal ?? true,
-      };
-      setTranscripts(prev => [...prev, newEntry]);
+      const isFinal = message.isFinal ?? false;
+      
+      setTranscripts(prev => {
+        // If this is an interim result, update the last non-final entry or add new one
+        if (!isFinal) {
+          const lastIndex = prev.length - 1;
+          if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
+            // Update the last interim entry
+            const updated = [...prev];
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              text: message.content,
+              timestamp: new Date(),
+            };
+            return updated;
+          } else {
+            // Add new interim entry
+            return [...prev, {
+              id: `transcript-${Date.now()}`,
+              text: message.content,
+              speaker: message.speaker || "User",
+              timestamp: new Date(),
+              isFinal: false,
+            }];
+          }
+        } else {
+          // Final result - replace last interim or add as new
+          const lastIndex = prev.length - 1;
+          if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
+            // Replace interim with final
+            const updated = [...prev];
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              text: message.content,
+              timestamp: new Date(),
+              isFinal: true,
+            };
+            return updated;
+          } else {
+            // Add new final entry
+            return [...prev, {
+              id: `transcript-${Date.now()}`,
+              text: message.content,
+              speaker: message.speaker || "User",
+              timestamp: new Date(),
+              isFinal: true,
+            }];
+          }
+        }
+      });
 
-      if (message.isFinal && meeting?.id) {
+      // Only save final transcripts to database
+      if (isFinal && meeting?.id) {
         api.createTranscriptSegment(meeting.id, {
           text: message.content,
           speaker: message.speaker || "User",
