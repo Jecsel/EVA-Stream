@@ -60,7 +60,6 @@ export function JitsiMeeting({
             'feedback',
             'filmstrip',
             'fullscreen',
-            'hangup',
             'help',
             'highlight',
             'invite',
