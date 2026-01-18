@@ -46,6 +46,7 @@ export const recordings = pgTable("recordings", {
   duration: text("duration").notNull(),
   summary: text("summary"),
   sopContent: text("sop_content"),
+  videoUrl: text("video_url"),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 });
 
