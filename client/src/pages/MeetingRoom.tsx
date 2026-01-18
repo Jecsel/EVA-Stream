@@ -182,6 +182,7 @@ export default function MeetingRoom() {
       // Stop all active features
       stopObserving();
       stopScreenCapture();
+      stopTranscription();
       
       // End meeting and create recording
       const duration = formatDuration(meetingDuration);
