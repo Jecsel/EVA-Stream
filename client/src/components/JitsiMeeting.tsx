@@ -49,6 +49,18 @@ export function JitsiMeeting({
           theme: {
             default: 'dark',
           },
+          // Enable cloud recording features
+          fileRecordingsEnabled: true,
+          localRecording: {
+            enabled: false,
+          },
+          recordingService: {
+            enabled: true,
+            sharingEnabled: true,
+          },
+          // Enable live streaming/recording transcription
+          liveStreamingEnabled: true,
+          transcribingEnabled: true,
           toolbarButtons: [
             'camera',
             'chat',
@@ -96,6 +108,27 @@ export function JitsiMeeting({
         }}
         onApiReady={(externalApi) => {
           setLoading(false);
+          
+          // Auto-start cloud recording when using JaaS
+          if (jwt) {
+            // Wait for the conference to be joined, then start recording
+            externalApi.addEventListener('videoConferenceJoined', () => {
+              console.log('Conference joined, starting cloud recording...');
+              // Small delay to ensure connection is stable
+              setTimeout(() => {
+                try {
+                  externalApi.executeCommand('startRecording', {
+                    mode: 'file', // Cloud recording mode
+                    shouldShare: true,
+                  });
+                  console.log('Cloud recording started automatically');
+                } catch (err) {
+                  console.error('Failed to start recording:', err);
+                }
+              }, 2000);
+            });
+          }
+          
           if (onApiReady) onApiReady(externalApi);
         }}
         getIFrameRef={(iframeRef) => {
