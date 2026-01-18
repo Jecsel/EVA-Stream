@@ -637,8 +637,8 @@ export async function registerRoutes(
             const meeting = await storage.getMeetingByRoomId(roomName);
             if (meeting) {
               // Find existing recording for this meeting
-              const recordings = await storage.getRecordings();
-              const existingRecording = recordings.find(r => r.meetingId === meeting.id);
+              const recordings = await storage.getRecordingsByMeeting(meeting.id);
+              const existingRecording = recordings[0];
               
               if (existingRecording) {
                 // Update existing recording with video URL
