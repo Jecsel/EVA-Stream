@@ -629,6 +629,38 @@ export async function registerRoutes(
           break;
         }
 
+        case "RECORDING_UPLOADED": {
+          console.log(`Recording uploaded, URL: ${data?.preAuthenticatedLink}`);
+          
+          // Find associated meeting and update recording with video URL
+          if (roomName && data?.preAuthenticatedLink) {
+            const meeting = await storage.getMeetingByRoomId(roomName);
+            if (meeting) {
+              // Find existing recording for this meeting
+              const recordings = await storage.getRecordings();
+              const existingRecording = recordings.find(r => r.meetingId === meeting.id);
+              
+              if (existingRecording) {
+                // Update existing recording with video URL
+                await storage.updateRecording(existingRecording.id, {
+                  videoUrl: data.preAuthenticatedLink
+                });
+                console.log(`Updated recording ${existingRecording.id} with video URL`);
+              } else {
+                // Create new recording with video URL
+                await storage.createRecording({
+                  meetingId: meeting.id,
+                  title: meeting.title,
+                  duration: "Unknown",
+                  videoUrl: data.preAuthenticatedLink,
+                });
+                console.log(`Created new recording for meeting ${meeting.id} with video URL`);
+              }
+            }
+          }
+          break;
+        }
+
         case "TRANSCRIPTION_UPLOADED": {
           console.log(`Transcription uploaded, downloading from: ${data?.preAuthenticatedLink}`);
           
