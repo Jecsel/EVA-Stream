@@ -1,6 +1,7 @@
 import { 
   type User, 
   type InsertUser,
+  type UpdateUser,
   type Meeting,
   type InsertMeeting,
   type Recording,
@@ -13,22 +14,38 @@ import {
   type InsertWebhookEvent,
   type MeetingTranscription,
   type InsertMeetingTranscription,
+  type Prompt,
+  type InsertPrompt,
+  type UpdatePrompt,
   users,
   meetings,
   recordings,
   chatMessages,
   transcriptSegments,
   webhookEvents,
-  meetingTranscriptions
+  meetingTranscriptions,
+  prompts
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, ilike, or, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: UpdateUser): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
+  listUsers(search?: string): Promise<User[]>;
+
+  // Prompts
+  getPrompt(id: string): Promise<Prompt | undefined>;
+  createPrompt(prompt: InsertPrompt): Promise<Prompt>;
+  updatePrompt(id: string, prompt: UpdatePrompt): Promise<Prompt | undefined>;
+  deletePrompt(id: string): Promise<boolean>;
+  listPrompts(type?: string): Promise<Prompt[]>;
+  getActivePromptByType(type: string): Promise<Prompt | undefined>;
 
   // Meetings
   getMeeting(id: string): Promise<Meeting | undefined>;
@@ -77,9 +94,89 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUser(id: string, updateData: UpdateUser): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async listUsers(search?: string): Promise<User[]> {
+    if (search) {
+      return db
+        .select()
+        .from(users)
+        .where(
+          or(
+            ilike(users.username, `%${search}%`),
+            ilike(users.email, `%${search}%`)
+          )
+        )
+        .orderBy(desc(users.createdAt));
+    }
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  // Prompts
+  async getPrompt(id: string): Promise<Prompt | undefined> {
+    const [prompt] = await db.select().from(prompts).where(eq(prompts.id, id));
+    return prompt;
+  }
+
+  async createPrompt(insertPrompt: InsertPrompt): Promise<Prompt> {
+    const [prompt] = await db.insert(prompts).values(insertPrompt).returning();
+    return prompt;
+  }
+
+  async updatePrompt(id: string, updateData: UpdatePrompt): Promise<Prompt | undefined> {
+    const [prompt] = await db
+      .update(prompts)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(prompts.id, id))
+      .returning();
+    return prompt;
+  }
+
+  async deletePrompt(id: string): Promise<boolean> {
+    const result = await db.delete(prompts).where(eq(prompts.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async listPrompts(type?: string): Promise<Prompt[]> {
+    if (type) {
+      return db
+        .select()
+        .from(prompts)
+        .where(eq(prompts.type, type))
+        .orderBy(desc(prompts.createdAt));
+    }
+    return db.select().from(prompts).orderBy(desc(prompts.createdAt));
+  }
+
+  async getActivePromptByType(type: string): Promise<Prompt | undefined> {
+    const [prompt] = await db
+      .select()
+      .from(prompts)
+      .where(and(eq(prompts.type, type), eq(prompts.isActive, true)))
+      .limit(1);
+    return prompt;
   }
 
   // Meetings

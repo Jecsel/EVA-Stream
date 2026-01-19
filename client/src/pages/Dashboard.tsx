@@ -106,9 +106,11 @@ export default function Dashboard() {
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
                 <HelpCircle className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-                <Settings className="w-5 h-5" />
-            </Button>
+            <Link href="/admin">
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" data-testid="button-admin">
+                  <Settings className="w-5 h-5" />
+              </Button>
+            </Link>
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10" />
         </div>
       </header>

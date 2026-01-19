@@ -1,12 +1,15 @@
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema } from "@shared/schema";
+import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat, analyzeTranscription, generateMermaidFlowchart } from "./gemini";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcrypt";
+
+const SALT_ROUNDS = 10;
 
 // API Key authentication middleware for external API
 function validateApiKey(req: Request, res: Response, next: NextFunction) {
@@ -713,6 +716,208 @@ export async function registerRoutes(
       res.json(transcriptions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch transcriptions" });
+    }
+  });
+
+  // ============================================
+  // Admin Routes - Users
+  // ============================================
+  
+  // List all users with optional search
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const usersList = await storage.listUsers(search);
+      // Don't return passwords
+      const safeUsers = usersList.map(({ password, ...user }) => user);
+      res.json(safeUsers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  // Get single user
+  app.get("/api/admin/users/:id", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  // Create user
+  app.post("/api/admin/users", async (req, res) => {
+    try {
+      const validated = insertUserSchema.parse(req.body);
+      
+      // Check if username or email already exists
+      const existingUsername = await storage.getUserByUsername(validated.username);
+      if (existingUsername) {
+        res.status(400).json({ error: "Username already exists" });
+        return;
+      }
+      const existingEmail = await storage.getUserByEmail(validated.email);
+      if (existingEmail) {
+        res.status(400).json({ error: "Email already exists" });
+        return;
+      }
+      
+      // Hash the password before storing
+      const hashedPassword = await bcrypt.hash(validated.password, SALT_ROUNDS);
+      const user = await storage.createUser({ ...validated, password: hashedPassword });
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        res.status(500).json({ error: "Failed to create user" });
+      }
+    }
+  });
+
+  // Update user
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    try {
+      const validated = updateUserSchema.parse(req.body);
+      
+      // If changing username, check it's not taken
+      if (validated.username) {
+        const existing = await storage.getUserByUsername(validated.username);
+        if (existing && existing.id !== req.params.id) {
+          res.status(400).json({ error: "Username already exists" });
+          return;
+        }
+      }
+      
+      // If changing email, check it's not taken
+      if (validated.email) {
+        const existing = await storage.getUserByEmail(validated.email);
+        if (existing && existing.id !== req.params.id) {
+          res.status(400).json({ error: "Email already exists" });
+          return;
+        }
+      }
+      
+      // Prepare update data - exclude empty password
+      const { password: inputPassword, ...otherFields } = validated;
+      let updateData: Record<string, unknown> = { ...otherFields };
+      
+      // Only update password if a non-empty value is provided
+      if (inputPassword && inputPassword.trim().length > 0) {
+        updateData.password = await bcrypt.hash(inputPassword, SALT_ROUNDS);
+      }
+      
+      const user = await storage.updateUser(req.params.id, updateData);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        res.status(500).json({ error: "Failed to update user" });
+      }
+    }
+  });
+
+  // Delete user
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteUser(req.params.id);
+      if (!success) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  // ============================================
+  // Admin Routes - Prompts
+  // ============================================
+  
+  // List all prompts with optional type filter
+  app.get("/api/admin/prompts", async (req, res) => {
+    try {
+      const type = req.query.type as string | undefined;
+      const promptsList = await storage.listPrompts(type);
+      res.json(promptsList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch prompts" });
+    }
+  });
+
+  // Get single prompt
+  app.get("/api/admin/prompts/:id", async (req, res) => {
+    try {
+      const prompt = await storage.getPrompt(req.params.id);
+      if (!prompt) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+      res.json(prompt);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch prompt" });
+    }
+  });
+
+  // Create prompt
+  app.post("/api/admin/prompts", async (req, res) => {
+    try {
+      const validated = insertPromptSchema.parse(req.body);
+      const prompt = await storage.createPrompt(validated);
+      res.json(prompt);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        res.status(500).json({ error: "Failed to create prompt" });
+      }
+    }
+  });
+
+  // Update prompt
+  app.patch("/api/admin/prompts/:id", async (req, res) => {
+    try {
+      const validated = updatePromptSchema.parse(req.body);
+      const prompt = await storage.updatePrompt(req.params.id, validated);
+      if (!prompt) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+      res.json(prompt);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        res.status(500).json({ error: "Failed to update prompt" });
+      }
+    }
+  });
+
+  // Delete prompt
+  app.delete("/api/admin/prompts/:id", async (req, res) => {
+    try {
+      const success = await storage.deletePrompt(req.params.id);
+      if (!success) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete prompt" });
     }
   });
 
