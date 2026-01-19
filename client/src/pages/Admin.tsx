@@ -450,12 +450,12 @@ export default function Admin() {
         {activeTab === "prompts" && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row gap-4 justify-between">
-              <Select value={promptTypeFilter} onValueChange={setPromptTypeFilter}>
+              <Select value={promptTypeFilter || "all"} onValueChange={(val) => setPromptTypeFilter(val === "all" ? "" : val)}>
                 <SelectTrigger className="w-[200px]" data-testid="select-prompt-type-filter">
                   <SelectValue placeholder="All types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All types</SelectItem>
+                  <SelectItem value="all">All types</SelectItem>
                   <SelectItem value="chat">Chat</SelectItem>
                   <SelectItem value="summary">Summary</SelectItem>
                   <SelectItem value="analysis">Analysis</SelectItem>
