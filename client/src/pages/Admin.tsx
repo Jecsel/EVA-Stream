@@ -153,7 +153,7 @@ const AGENT_TYPES = [
 ];
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<Tab>("users");
+  const [activeTab, setActiveTab] = useState<Tab>("agents");
   const [searchQuery, setSearchQuery] = useState("");
   const [promptTypeFilter, setPromptTypeFilter] = useState<string>("");
   const [agentTypeFilter, setAgentTypeFilter] = useState<string>("");
@@ -563,16 +563,16 @@ export default function Admin() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-8">
         <div className="flex gap-4 mb-6 border-b border-border">
           <button
-            onClick={() => setActiveTab("users")}
+            onClick={() => setActiveTab("agents")}
             className={`pb-4 px-2 flex items-center gap-2 border-b-2 transition-colors ${
-              activeTab === "users"
+              activeTab === "agents"
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
-            data-testid="tab-users"
+            data-testid="tab-agents"
           >
-            <Users className="w-4 h-4" />
-            Users
+            <Bot className="w-4 h-4" />
+            Agents
           </button>
           <button
             onClick={() => setActiveTab("prompts")}
@@ -587,16 +587,16 @@ export default function Admin() {
             Prompts
           </button>
           <button
-            onClick={() => setActiveTab("agents")}
+            onClick={() => setActiveTab("users")}
             className={`pb-4 px-2 flex items-center gap-2 border-b-2 transition-colors ${
-              activeTab === "agents"
+              activeTab === "users"
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
-            data-testid="tab-agents"
+            data-testid="tab-users"
           >
-            <Bot className="w-4 h-4" />
-            Agents
+            <Users className="w-4 h-4" />
+            Users
           </button>
         </div>
 
