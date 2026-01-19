@@ -371,79 +371,124 @@ export default function Admin() {
               </Button>
             </div>
 
-            <div className="border rounded-lg overflow-x-auto">
-              <Table className="min-w-[600px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">Username</TableHead>
-                    <TableHead className="whitespace-nowrap">Email</TableHead>
-                    <TableHead className="whitespace-nowrap">Role</TableHead>
-                    <TableHead className="whitespace-nowrap">Status</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {usersLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Loading...
-                      </TableCell>
-                    </TableRow>
-                  ) : users.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        No users found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    users.map((user) => (
-                      <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
-                        <TableCell className="font-medium">{user.username}</TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-                            {user.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              user.status === "active"
-                                ? "default"
-                                : user.status === "inactive"
-                                ? "secondary"
-                                : "destructive"
-                            }
-                          >
-                            {user.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditUser(user)}
-                              data-testid={`button-edit-user-${user.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => deleteUserMutation.mutate(user.id)}
-                              data-testid={`button-delete-user-${user.id}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
+            {usersLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : users.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No users found</div>
+            ) : (
+              <>
+                <div className="hidden md:block border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Username</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
+                          <TableCell className="font-medium">{user.username}</TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                              {user.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                user.status === "active"
+                                  ? "default"
+                                  : user.status === "inactive"
+                                  ? "secondary"
+                                  : "destructive"
+                              }
+                            >
+                              {user.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEditUser(user)}
+                                data-testid={`button-edit-user-${user.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteUserMutation.mutate(user.id)}
+                                data-testid={`button-delete-user-${user.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="md:hidden space-y-3">
+                  {users.map((user) => (
+                    <div
+                      key={user.id}
+                      className="border rounded-lg p-4 space-y-3"
+                      data-testid={`card-user-${user.id}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium text-foreground">{user.username}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditUser(user)}
+                            data-testid={`button-edit-user-mobile-${user.id}`}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteUserMutation.mutate(user.id)}
+                            data-testid={`button-delete-user-mobile-${user.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                          {user.role}
+                        </Badge>
+                        <Badge
+                          variant={
+                            user.status === "active"
+                              ? "default"
+                              : user.status === "inactive"
+                              ? "secondary"
+                              : "destructive"
+                          }
+                        >
+                          {user.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -475,73 +520,112 @@ export default function Admin() {
               </Button>
             </div>
 
-            <div className="border rounded-lg overflow-x-auto">
-              <Table className="min-w-[600px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">Name</TableHead>
-                    <TableHead className="whitespace-nowrap">Type</TableHead>
-                    <TableHead className="whitespace-nowrap">Description</TableHead>
-                    <TableHead className="whitespace-nowrap">Active</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {promptsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Loading...
-                      </TableCell>
-                    </TableRow>
-                  ) : prompts.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        No prompts found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    prompts.map((prompt) => (
-                      <TableRow key={prompt.id} data-testid={`row-prompt-${prompt.id}`}>
-                        <TableCell className="font-medium">{prompt.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{prompt.type}</Badge>
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate">
-                          {prompt.description || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {prompt.isActive ? (
-                            <Check className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <X className="w-4 h-4 text-muted-foreground" />
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditPrompt(prompt)}
-                              data-testid={`button-edit-prompt-${prompt.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => deletePromptMutation.mutate(prompt.id)}
-                              data-testid={`button-delete-prompt-${prompt.id}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
+            {promptsLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : prompts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No prompts found</div>
+            ) : (
+              <>
+                <div className="hidden md:block border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Active</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {prompts.map((prompt) => (
+                        <TableRow key={prompt.id} data-testid={`row-prompt-${prompt.id}`}>
+                          <TableCell className="font-medium">{prompt.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{prompt.type}</Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate">
+                            {prompt.description || "-"}
+                          </TableCell>
+                          <TableCell>
+                            {prompt.isActive ? (
+                              <Check className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <X className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEditPrompt(prompt)}
+                                data-testid={`button-edit-prompt-${prompt.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deletePromptMutation.mutate(prompt.id)}
+                                data-testid={`button-delete-prompt-${prompt.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="md:hidden space-y-3">
+                  {prompts.map((prompt) => (
+                    <div
+                      key={prompt.id}
+                      className="border rounded-lg p-4 space-y-3"
+                      data-testid={`card-prompt-${prompt.id}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-foreground">{prompt.name}</p>
+                            {prompt.isActive ? (
+                              <Check className="w-4 h-4 text-green-500 shrink-0" />
+                            ) : (
+                              <X className="w-4 h-4 text-muted-foreground shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {prompt.description || "No description"}
+                          </p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditPrompt(prompt)}
+                            data-testid={`button-edit-prompt-mobile-${prompt.id}`}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deletePromptMutation.mutate(prompt.id)}
+                            data-testid={`button-delete-prompt-mobile-${prompt.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                      <Badge variant="outline">{prompt.type}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </main>
