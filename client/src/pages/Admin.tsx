@@ -97,9 +97,11 @@ interface Agent {
   description: string | null;
   capabilities: string[] | null;
   icon: string | null;
+  promptId: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
+  prompt?: Prompt | null;
 }
 
 async function fetchUsers(search?: string): Promise<User[]> {
@@ -170,7 +172,7 @@ export default function Admin() {
 
   const [userForm, setUserForm] = useState({ username: "", email: "", password: "", role: "user", status: "active" });
   const [promptForm, setPromptForm] = useState({ name: "", type: "chat", content: "", description: "", isActive: true });
-  const [agentForm, setAgentForm] = useState({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active" });
+  const [agentForm, setAgentForm] = useState({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active", promptId: "" });
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users", searchQuery],
@@ -194,6 +196,11 @@ export default function Admin() {
     queryKey: ["admin-agents", agentSearchQuery, agentTypeFilter],
     queryFn: () => fetchAgents(agentSearchQuery || undefined, agentTypeFilter || undefined),
     enabled: activeTab === "agents",
+  });
+
+  const { data: allPrompts = [] } = useQuery({
+    queryKey: ["all-prompts-for-agents"],
+    queryFn: () => fetchPrompts(),
   });
 
   const createUserMutation = useMutation({
@@ -419,7 +426,7 @@ export default function Admin() {
   };
 
   const resetAgentForm = () => {
-    setAgentForm({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active" });
+    setAgentForm({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active", promptId: "" });
   };
 
   const openEditUser = (user: User) => {
@@ -461,6 +468,7 @@ export default function Admin() {
       capabilities: agent.capabilities?.join(", ") || "",
       icon: agent.icon || "Bot",
       status: agent.status,
+      promptId: agent.promptId || "",
     });
     setIsAgentDialogOpen(true);
   };
@@ -479,6 +487,7 @@ export default function Admin() {
       capabilities,
       icon: agentForm.icon,
       status: agentForm.status,
+      promptId: agentForm.promptId || null,
     };
     
     if (editingAgent) {
@@ -943,6 +952,7 @@ export default function Admin() {
                       <TableRow>
                         <TableHead>Agent</TableHead>
                         <TableHead>Type</TableHead>
+                        <TableHead>Prompt</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead>Capabilities</TableHead>
                         <TableHead>Status</TableHead>
@@ -966,6 +976,15 @@ export default function Admin() {
                               <Badge variant="outline">
                                 {AGENT_TYPES.find((t) => t.value === agent.type)?.label || agent.type}
                               </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {agent.prompt ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  {agent.prompt.name}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">Not linked</span>
+                              )}
                             </TableCell>
                             <TableCell className="max-w-[200px] truncate">
                               {agent.description || "-"}
@@ -1444,6 +1463,26 @@ export default function Admin() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agent-prompt">Linked Prompt</Label>
+              <Select
+                value={agentForm.promptId}
+                onValueChange={(value) => setAgentForm({ ...agentForm, promptId: value })}
+              >
+                <SelectTrigger data-testid="select-agent-prompt">
+                  <SelectValue placeholder="Select a prompt..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No prompt linked</SelectItem>
+                  {allPrompts.filter(p => p.isActive).map((prompt) => (
+                    <SelectItem key={prompt.id} value={prompt.id}>
+                      {prompt.name} ({prompt.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Select an active prompt to control this agent's behavior</p>
             </div>
             <DialogFooter>
               <DialogClose asChild>

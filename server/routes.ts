@@ -1029,12 +1029,12 @@ export async function registerRoutes(
   // Admin Routes - Agents
   // ============================================
   
-  // List all agents with optional search and type filter
+  // List all agents with optional search and type filter (includes linked prompts)
   app.get("/api/admin/agents", async (req, res) => {
     try {
       const search = req.query.search as string | undefined;
       const type = req.query.type as string | undefined;
-      const agentsList = await storage.listAgents(search, type);
+      const agentsList = await storage.listAgentsWithPrompts(search, type);
       res.json(agentsList);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch agents" });
