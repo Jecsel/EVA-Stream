@@ -888,22 +888,111 @@ export async function registerRoutes(
     }
   });
 
-  // Update prompt
+  // Update prompt (with version history)
   app.patch("/api/admin/prompts/:id", async (req, res) => {
     try {
       const validated = updatePromptSchema.parse(req.body);
-      const prompt = await storage.updatePrompt(req.params.id, validated);
-      if (!prompt) {
+      
+      // Get current prompt to save as version before updating
+      const currentPrompt = await storage.getPrompt(req.params.id);
+      if (!currentPrompt) {
         res.status(404).json({ error: "Prompt not found" });
         return;
       }
+      
+      // Get next version number
+      const latestVersion = await storage.getLatestVersionNumber(req.params.id);
+      const nextVersion = (latestVersion + 1).toString();
+      
+      // Save current state as a version before updating
+      await storage.createPromptVersion({
+        promptId: currentPrompt.id,
+        version: nextVersion,
+        name: currentPrompt.name,
+        type: currentPrompt.type,
+        content: currentPrompt.content,
+        description: currentPrompt.description,
+        isActive: currentPrompt.isActive,
+      });
+      
+      // Update the prompt
+      const prompt = await storage.updatePrompt(req.params.id, validated);
       res.json(prompt);
     } catch (error) {
       if (error instanceof z.ZodError) {
         res.status(400).json({ error: fromZodError(error).message });
       } else {
+        console.error("Update prompt error:", error);
         res.status(500).json({ error: "Failed to update prompt" });
       }
+    }
+  });
+
+  // Get prompt version history
+  app.get("/api/admin/prompts/:id/versions", async (req, res) => {
+    try {
+      const prompt = await storage.getPrompt(req.params.id);
+      if (!prompt) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+      const versions = await storage.getPromptVersions(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch prompt versions" });
+    }
+  });
+
+  // Revert prompt to a specific version
+  app.post("/api/admin/prompts/:id/revert/:versionId", async (req, res) => {
+    try {
+      const { id: promptId, versionId } = req.params;
+      
+      // Get the version to revert to
+      const version = await storage.getPromptVersion(versionId);
+      if (!version) {
+        res.status(404).json({ error: "Version not found" });
+        return;
+      }
+      
+      // Verify the version belongs to the correct prompt
+      if (version.promptId !== promptId) {
+        res.status(400).json({ error: "Version does not belong to this prompt" });
+        return;
+      }
+      
+      // Get current prompt to save before reverting
+      const currentPrompt = await storage.getPrompt(promptId);
+      if (!currentPrompt) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+      
+      // Save current state as a new version before reverting
+      const latestVersion = await storage.getLatestVersionNumber(promptId);
+      await storage.createPromptVersion({
+        promptId: currentPrompt.id,
+        version: (latestVersion + 1).toString(),
+        name: currentPrompt.name,
+        type: currentPrompt.type,
+        content: currentPrompt.content,
+        description: currentPrompt.description,
+        isActive: currentPrompt.isActive,
+      });
+      
+      // Revert by updating with version data
+      const updatedPrompt = await storage.updatePrompt(promptId, {
+        name: version.name,
+        type: version.type,
+        content: version.content,
+        description: version.description,
+        isActive: version.isActive,
+      });
+      
+      res.json(updatedPrompt);
+    } catch (error) {
+      console.error("Revert prompt error:", error);
+      res.status(500).json({ error: "Failed to revert prompt" });
     }
   });
 

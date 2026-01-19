@@ -51,6 +51,27 @@ export type InsertPrompt = z.infer<typeof insertPromptSchema>;
 export type UpdatePrompt = z.infer<typeof updatePromptSchema>;
 export type Prompt = typeof prompts.$inferSelect;
 
+// Prompt Versions table (for version history and rollback)
+export const promptVersions = pgTable("prompt_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").notNull().references(() => prompts.id, { onDelete: 'cascade' }),
+  version: text("version").notNull(), // e.g., "1", "2", "3"
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  content: text("content").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPromptVersionSchema = createInsertSchema(promptVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPromptVersion = z.infer<typeof insertPromptVersionSchema>;
+export type PromptVersion = typeof promptVersions.$inferSelect;
+
 // Meetings table
 export const meetings = pgTable("meetings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

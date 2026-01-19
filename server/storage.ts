@@ -17,6 +17,8 @@ import {
   type Prompt,
   type InsertPrompt,
   type UpdatePrompt,
+  type PromptVersion,
+  type InsertPromptVersion,
   users,
   meetings,
   recordings,
@@ -24,7 +26,8 @@ import {
   transcriptSegments,
   webhookEvents,
   meetingTranscriptions,
-  prompts
+  prompts,
+  promptVersions
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -46,6 +49,12 @@ export interface IStorage {
   deletePrompt(id: string): Promise<boolean>;
   listPrompts(type?: string): Promise<Prompt[]>;
   getActivePromptByType(type: string): Promise<Prompt | undefined>;
+
+  // Prompt Versions
+  createPromptVersion(version: InsertPromptVersion): Promise<PromptVersion>;
+  getPromptVersions(promptId: string): Promise<PromptVersion[]>;
+  getPromptVersion(id: string): Promise<PromptVersion | undefined>;
+  getLatestVersionNumber(promptId: string): Promise<number>;
 
   // Meetings
   getMeeting(id: string): Promise<Meeting | undefined>;
@@ -177,6 +186,37 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(prompts.type, type), eq(prompts.isActive, true)))
       .limit(1);
     return prompt;
+  }
+
+  // Prompt Versions
+  async createPromptVersion(insertVersion: InsertPromptVersion): Promise<PromptVersion> {
+    const [version] = await db.insert(promptVersions).values(insertVersion).returning();
+    return version;
+  }
+
+  async getPromptVersions(promptId: string): Promise<PromptVersion[]> {
+    return db
+      .select()
+      .from(promptVersions)
+      .where(eq(promptVersions.promptId, promptId))
+      .orderBy(desc(promptVersions.createdAt));
+  }
+
+  async getPromptVersion(id: string): Promise<PromptVersion | undefined> {
+    const [version] = await db.select().from(promptVersions).where(eq(promptVersions.id, id));
+    return version;
+  }
+
+  async getLatestVersionNumber(promptId: string): Promise<number> {
+    const versions = await db
+      .select({ version: promptVersions.version })
+      .from(promptVersions)
+      .where(eq(promptVersions.promptId, promptId))
+      .orderBy(desc(promptVersions.createdAt))
+      .limit(1);
+    
+    if (versions.length === 0) return 0;
+    return parseInt(versions[0].version, 10) || 0;
   }
 
   // Meetings
