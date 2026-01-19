@@ -5,7 +5,7 @@ import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
-import { MessageSquare, Video, Mic, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText } from "lucide-react";
+import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -583,28 +583,6 @@ export default function MeetingRoom() {
 
         {/* Bottom Controls */}
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-12 w-12 rounded-full border-2 border-border bg-card hover:bg-muted">
-                    <Mic className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Mute</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-12 w-12 rounded-full border-2 border-border bg-card hover:bg-muted">
-                    <Video className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Stop Video</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
