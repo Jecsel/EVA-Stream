@@ -13,10 +13,13 @@ import {
   ChevronLeft,
   Check,
   X,
+  History,
+  RotateCcw,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -69,6 +72,18 @@ interface Prompt {
   updatedAt: string;
 }
 
+interface PromptVersion {
+  id: string;
+  promptId: string;
+  version: string;
+  name: string;
+  type: string;
+  content: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 async function fetchUsers(search?: string): Promise<User[]> {
   const url = search ? `/api/admin/users?search=${encodeURIComponent(search)}` : "/api/admin/users";
   const res = await fetch(url);
@@ -83,6 +98,12 @@ async function fetchPrompts(type?: string): Promise<Prompt[]> {
   return res.json();
 }
 
+async function fetchPromptVersions(promptId: string): Promise<PromptVersion[]> {
+  const res = await fetch(`/api/admin/prompts/${promptId}/versions`);
+  if (!res.ok) throw new Error("Failed to fetch prompt versions");
+  return res.json();
+}
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<Tab>("users");
   const [searchQuery, setSearchQuery] = useState("");
@@ -92,8 +113,10 @@ export default function Admin() {
 
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
+  const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [historyPromptId, setHistoryPromptId] = useState<string | null>(null);
 
   const [userForm, setUserForm] = useState({ username: "", email: "", password: "", role: "user", status: "active" });
   const [promptForm, setPromptForm] = useState({ name: "", type: "chat", content: "", description: "", isActive: true });
@@ -108,6 +131,12 @@ export default function Admin() {
     queryKey: ["admin-prompts", promptTypeFilter],
     queryFn: () => fetchPrompts(promptTypeFilter || undefined),
     enabled: activeTab === "prompts",
+  });
+
+  const { data: promptVersions = [], isLoading: versionsLoading } = useQuery({
+    queryKey: ["prompt-versions", historyPromptId],
+    queryFn: () => fetchPromptVersions(historyPromptId!),
+    enabled: !!historyPromptId && isHistoryDialogOpen,
   });
 
   const createUserMutation = useMutation({
@@ -238,6 +267,28 @@ export default function Admin() {
     },
   });
 
+  const revertPromptMutation = useMutation({
+    mutationFn: async ({ promptId, versionId }: { promptId: string; versionId: string }) => {
+      const res = await fetch(`/api/admin/prompts/${promptId}/revert/${versionId}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to revert prompt");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["prompt-versions"] });
+      setIsHistoryDialogOpen(false);
+      toast({ title: "Prompt reverted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetUserForm = () => {
     setUserForm({ username: "", email: "", password: "", role: "user", status: "active" });
   };
@@ -270,6 +321,16 @@ export default function Admin() {
     setIsPromptDialogOpen(true);
   };
 
+  const openHistoryDialog = (prompt: Prompt) => {
+    setHistoryPromptId(prompt.id);
+    setEditingPrompt(prompt);
+    setIsHistoryDialogOpen(true);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+
   const handleUserSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingUser) {
@@ -287,6 +348,13 @@ export default function Admin() {
 
   const handlePromptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const cleanContent = promptForm.content.replace(/<[^>]*>/g, '').trim();
+    if (!cleanContent) {
+      toast({ title: "Error", description: "Prompt content cannot be empty", variant: "destructive" });
+      return;
+    }
+    
     if (editingPrompt) {
       updatePromptMutation.mutate({ id: editingPrompt.id, data: promptForm });
     } else {
@@ -559,6 +627,15 @@ export default function Admin() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={() => openHistoryDialog(prompt)}
+                                data-testid={`button-history-prompt-${prompt.id}`}
+                                title="View history"
+                              >
+                                <History className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => openEditPrompt(prompt)}
                                 data-testid={`button-edit-prompt-${prompt.id}`}
                               >
@@ -602,6 +679,14 @@ export default function Admin() {
                           </p>
                         </div>
                         <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openHistoryDialog(prompt)}
+                            data-testid={`button-history-prompt-mobile-${prompt.id}`}
+                          >
+                            <History className="w-4 h-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -774,14 +859,10 @@ export default function Admin() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="content">Prompt Content</Label>
-              <Textarea
-                id="content"
+              <RichTextEditor
                 value={promptForm.content}
-                onChange={(e) => setPromptForm({ ...promptForm, content: e.target.value })}
-                rows={8}
-                required
+                onChange={(value) => setPromptForm({ ...promptForm, content: value })}
                 placeholder="Enter the AI prompt template..."
-                data-testid="input-prompt-content"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -808,6 +889,83 @@ export default function Admin() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isHistoryDialogOpen} onOpenChange={setIsHistoryDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Version History
+            </DialogTitle>
+            <DialogDescription>
+              {editingPrompt ? `View and restore previous versions of "${editingPrompt.name}"` : "Version history"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 py-4">
+            {versionsLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading versions...</div>
+            ) : promptVersions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                <p>No version history yet</p>
+                <p className="text-sm mt-1">Versions are created when you edit a prompt</p>
+              </div>
+            ) : (
+              promptVersions.map((version) => (
+                <div
+                  key={version.id}
+                  className="border rounded-lg p-4 space-y-3"
+                  data-testid={`version-${version.id}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">v{version.version}</Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {formatDate(version.createdAt)}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium mt-2">{version.name}</p>
+                      {version.description && (
+                        <p className="text-sm text-muted-foreground">{version.description}</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => revertPromptMutation.mutate({ 
+                        promptId: version.promptId, 
+                        versionId: version.id 
+                      })}
+                      disabled={revertPromptMutation.isPending}
+                      data-testid={`button-revert-${version.id}`}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Restore
+                    </Button>
+                  </div>
+                  <details className="cursor-pointer">
+                    <summary className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                      View content
+                    </summary>
+                    <div 
+                      className="mt-2 p-3 bg-muted/50 rounded text-sm prose prose-invert prose-sm max-w-none max-h-[200px] overflow-y-auto"
+                      dangerouslySetInnerHTML={{ __html: version.content }}
+                    />
+                  </details>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Close
+              </Button>
+            </DialogClose>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

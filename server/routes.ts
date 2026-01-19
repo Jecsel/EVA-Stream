@@ -877,6 +877,13 @@ export async function registerRoutes(
   app.post("/api/admin/prompts", async (req, res) => {
     try {
       const validated = insertPromptSchema.parse(req.body);
+      
+      const cleanContent = validated.content?.replace(/<[^>]*>/g, '').trim();
+      if (!cleanContent) {
+        res.status(400).json({ error: "Prompt content cannot be empty" });
+        return;
+      }
+      
       const prompt = await storage.createPrompt(validated);
       res.json(prompt);
     } catch (error) {
@@ -892,6 +899,14 @@ export async function registerRoutes(
   app.patch("/api/admin/prompts/:id", async (req, res) => {
     try {
       const validated = updatePromptSchema.parse(req.body);
+      
+      if (validated.content !== undefined) {
+        const cleanContent = validated.content.replace(/<[^>]*>/g, '').trim();
+        if (!cleanContent) {
+          res.status(400).json({ error: "Prompt content cannot be empty" });
+          return;
+        }
+      }
       
       // Get current prompt to save as version before updating
       const currentPrompt = await storage.getPrompt(req.params.id);
