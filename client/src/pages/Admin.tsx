@@ -874,7 +874,23 @@ export default function Admin() {
               />
               <Label htmlFor="isActive">Active</Label>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              {editingPrompt && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setHistoryPromptId(editingPrompt.id);
+                    setIsPromptDialogOpen(false);
+                    setIsHistoryDialogOpen(true);
+                  }}
+                  className="w-full sm:w-auto sm:mr-auto"
+                  data-testid="button-view-history"
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  View History
+                </Button>
+              )}
               <DialogClose asChild>
                 <Button type="button" variant="outline">
                   Cancel
