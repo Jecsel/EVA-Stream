@@ -85,6 +85,19 @@ export default function MeetingRoom() {
     queryFn: () => api.getMeetingByRoomId(roomId),
   });
 
+  // Load available agents
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+  });
+
+  // Helper to check if an agent of a specific type is selected
+  const isAgentTypeSelected = useCallback((agentType: string): boolean => {
+    return agents.some(agent => 
+      agent.type === agentType && selectedAgents.includes(agent.id)
+    );
+  }, [agents, selectedAgents]);
+
   // Fetch JaaS JWT token for authenticated Jitsi meetings
   const { data: jaasToken } = useQuery({
     queryKey: ["jaas-token", roomId],
@@ -498,19 +511,21 @@ export default function MeetingRoom() {
                  onAgentsChange={setSelectedAgents}
                />
              )}
-             {/* EVA Status Indicator */}
-             <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
-               evaConnected ? 'border-green-500/50' : 'border-border'
-             }`}>
-                <span className={`w-2 h-2 rounded-full ${
-                  evaStatus === "connected" ? "bg-green-500 animate-pulse" :
-                  evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
-                  "bg-gray-500"
-                }`} />
-                <span className="text-xs font-medium text-muted-foreground">
-                  EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
-                </span>
-             </div>
+             {/* EVA Status Indicator - only show if SOP agent is selected */}
+             {isAgentTypeSelected("sop") && (
+               <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
+                 evaConnected ? 'border-green-500/50' : 'border-border'
+               }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    evaStatus === "connected" ? "bg-green-500 animate-pulse" :
+                    evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
+                    "bg-gray-500"
+                  }`} />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
+                  </span>
+               </div>
+             )}
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-xs font-medium text-muted-foreground">{formatDuration(meetingDuration)}</span>
@@ -531,68 +546,76 @@ export default function MeetingRoom() {
              />
           </div>
 
-          {/* Right Panel - AI Chat */}
-          <div 
-            className={`
-              transition-all duration-500 ease-in-out transform origin-right
-              ${isChatOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-              rounded-2xl overflow-hidden shadow-xl border border-border
-            `}
-          >
-            <AIChatPanel 
-              messages={displayMessages} 
-              onSendMessage={handleSendMessage}
-              isScreenSharing={isScreenSharing}
-              className="h-full"
-            />
-          </div>
-
-          {/* SOP Document */}
-          <div 
-            className={`
-              transition-all duration-500 ease-in-out transform origin-right
-              ${isSOPOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-              rounded-2xl overflow-hidden shadow-xl border border-border
-            `}
-          >
-            <SOPDocument 
-                content={sopContent}
-                isUpdating={isSopUpdating}
-                onContentChange={setSopContent}
+          {/* Right Panel - AI Chat - only show if SOP agent selected */}
+          {isAgentTypeSelected("sop") && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isChatOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <AIChatPanel 
+                messages={displayMessages} 
+                onSendMessage={handleSendMessage}
+                isScreenSharing={isScreenSharing}
                 className="h-full"
-            />
-          </div>
+              />
+            </div>
+          )}
 
-          {/* SOP Flowchart */}
-          <div 
-            className={`
-              transition-all duration-500 ease-in-out transform origin-right
-              ${isFlowchartOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-              rounded-2xl overflow-hidden shadow-xl border border-border
-            `}
-          >
-            <SOPFlowchart 
-                sopContent={sopContent}
-                className="h-full"
-            />
-          </div>
+          {/* SOP Document - only show if SOP agent selected */}
+          {isAgentTypeSelected("sop") && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isSOPOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <SOPDocument 
+                  content={sopContent}
+                  isUpdating={isSopUpdating}
+                  onContentChange={setSopContent}
+                  className="h-full"
+              />
+            </div>
+          )}
 
-          {/* Live Transcript */}
-          <div 
-            className={`
-              transition-all duration-500 ease-in-out transform origin-right
-              ${isTranscriptOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-              rounded-2xl overflow-hidden shadow-xl border border-border
-            `}
-          >
-            <LiveTranscriptPanel 
-                transcripts={transcripts}
-                isTranscribing={isTranscribing}
-                onToggleTranscription={handleToggleTranscription}
-                status={transcriptStatus}
-                className="h-full"
-            />
-          </div>
+          {/* SOP Flowchart - only show if flowchart agent selected */}
+          {isAgentTypeSelected("flowchart") && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isFlowchartOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <SOPFlowchart 
+                  sopContent={sopContent}
+                  className="h-full"
+              />
+            </div>
+          )}
+
+          {/* Live Transcript - only show if transcription agent selected */}
+          {isAgentTypeSelected("transcription") && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isTranscriptOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <LiveTranscriptPanel 
+                  transcripts={transcripts}
+                  isTranscribing={isTranscribing}
+                  onToggleTranscription={handleToggleTranscription}
+                  status={transcriptStatus}
+                  className="h-full"
+              />
+            </div>
+          )}
         </div>
 
         {/* Bottom Controls */}
@@ -619,88 +642,102 @@ export default function MeetingRoom() {
 
             <div className="w-px h-8 bg-border mx-2" />
 
-            {/* EVA Observation Toggle */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isObserving ? "default" : "outline"} 
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-purple-600 border-purple-600 hover:bg-purple-700' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={toggleEvaObservation}
-                    disabled={!evaConnected}
-                  >
-                    {isObserving ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{isObserving ? "Stop EVA Observation" : "Start EVA Observation"}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* EVA Observation Toggle - only show if SOP agent is selected */}
+            {isAgentTypeSelected("sop") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isObserving ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-purple-600 border-purple-600 hover:bg-purple-700' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={toggleEvaObservation}
+                      disabled={!evaConnected}
+                    >
+                      {isObserving ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{isObserving ? "Stop EVA Observation" : "Start EVA Observation"}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isChatOpen ? "default" : "outline"} 
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isChatOpen ? 'bg-primary border-primary hover:bg-primary/90' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={() => setIsChatOpen(!isChatOpen)}
-                  >
-                    <MessageSquare className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Toggle EVA SOP Assistant</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* Chat Panel - only show if SOP agent is selected */}
+            {isAgentTypeSelected("sop") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isChatOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isChatOpen ? 'bg-primary border-primary hover:bg-primary/90' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsChatOpen(!isChatOpen)}
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle EVA SOP Assistant</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isSOPOpen ? "default" : "outline"} 
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isSOPOpen ? 'bg-secondary border-secondary hover:bg-secondary/90' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={() => setIsSOPOpen(!isSOPOpen)}
-                  >
-                    <FileText className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Toggle SOP Document</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* SOP Document - only show if SOP agent is selected */}
+            {isAgentTypeSelected("sop") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isSOPOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isSOPOpen ? 'bg-secondary border-secondary hover:bg-secondary/90' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsSOPOpen(!isSOPOpen)}
+                    >
+                      <FileText className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle SOP Document</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isTranscriptOpen ? "default" : "outline"} 
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isTranscriptOpen ? 'bg-cyan-500 border-cyan-500 hover:bg-cyan-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={() => setIsTranscriptOpen(!isTranscriptOpen)}
-                    data-testid="button-toggle-transcript"
-                  >
-                    <ScrollText className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Toggle Live Transcript</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* Live Transcript - only show if transcription agent is selected */}
+            {isAgentTypeSelected("transcription") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isTranscriptOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isTranscriptOpen ? 'bg-cyan-500 border-cyan-500 hover:bg-cyan-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsTranscriptOpen(!isTranscriptOpen)}
+                      data-testid="button-toggle-transcript"
+                    >
+                      <ScrollText className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle Live Transcript</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isFlowchartOpen ? "default" : "outline"} 
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isFlowchartOpen ? 'bg-orange-500 border-orange-500 hover:bg-orange-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={() => setIsFlowchartOpen(!isFlowchartOpen)}
-                  >
-                    <GitGraph className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Toggle SOP Flowchart</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* Flowchart - only show if flowchart agent is selected */}
+            {isAgentTypeSelected("flowchart") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isFlowchartOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isFlowchartOpen ? 'bg-orange-500 border-orange-500 hover:bg-orange-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsFlowchartOpen(!isFlowchartOpen)}
+                    >
+                      <GitGraph className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle SOP Flowchart</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             
             <TooltipProvider>
               <Tooltip>
