@@ -16,6 +16,8 @@ Key features:
 
 Preferred communication style: Simple, everyday language.
 
+**Important Note:** Every feature, UI/UX and design should be mobile-first.
+
 ## System Architecture
 
 ### Frontend Architecture
