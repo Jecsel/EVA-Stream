@@ -5,6 +5,7 @@ import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
+import { AgentSelector } from "@/components/AgentSelector";
 import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,7 @@ export default function MeetingRoom() {
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
   const [transcripts, setTranscripts] = useState<Array<{id: string; text: string; speaker: string; timestamp: Date; isFinal: boolean;}>>([]);
@@ -105,12 +107,15 @@ export default function MeetingRoom() {
     staleTime: 1000 * 60 * 60 * 2, // Token valid for 2 hours
   });
 
-  // Update meeting ID ref when meeting loads
+  // Update meeting ID ref and selected agents when meeting loads
   useEffect(() => {
     if (meeting?.id) {
       meetingIdRef.current = meeting.id;
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        setSelectedAgents(meeting.selectedAgents);
+      }
     }
-  }, [meeting?.id]);
+  }, [meeting?.id, meeting?.selectedAgents]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -484,6 +489,15 @@ export default function MeetingRoom() {
           </div>
           
           <div className="flex items-center gap-2">
+             {/* Agent Selector */}
+             {meeting?.id && (
+               <AgentSelector
+                 meetingId={meeting.id}
+                 roomId={roomId}
+                 selectedAgents={selectedAgents}
+                 onAgentsChange={setSelectedAgents}
+               />
+             )}
              {/* EVA Status Indicator */}
              <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                evaConnected ? 'border-green-500/50' : 'border-border'

@@ -1,4 +1,4 @@
-import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment, MeetingTranscription } from "@shared/schema";
+import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment, MeetingTranscription, Agent } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -165,6 +165,24 @@ export const api = {
       body: JSON.stringify({ sopContent }),
     });
     if (!response.ok) throw new Error("Failed to generate flowchart");
+    return response.json();
+  },
+
+  // Agents
+  async listAgents(): Promise<Agent[]> {
+    const response = await fetch(`${API_BASE}/agents`);
+    if (!response.ok) throw new Error("Failed to fetch agents");
+    return response.json();
+  },
+
+  // Update meeting with selected agents
+  async updateMeetingAgents(meetingId: string, selectedAgents: string[]): Promise<Meeting> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selectedAgents }),
+    });
+    if (!response.ok) throw new Error("Failed to update meeting agents");
     return response.json();
   },
 };

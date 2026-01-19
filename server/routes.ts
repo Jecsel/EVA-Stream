@@ -1026,6 +1026,22 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // Public Routes - Agents (for meeting room)
+  // ============================================
+  
+  // List all active agents for agent selection in meetings
+  app.get("/api/agents", async (req, res) => {
+    try {
+      const agentsList = await storage.listAgents(undefined, undefined);
+      // Only return active agents
+      const activeAgents = agentsList.filter(a => a.status === "active");
+      res.json(activeAgents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agents" });
+    }
+  });
+
+  // ============================================
   // Admin Routes - Agents
   // ============================================
   

@@ -79,6 +79,7 @@ export const meetings = pgTable("meetings", {
   roomId: text("room_id").notNull().unique(),
   scheduledDate: timestamp("scheduled_date"),
   status: text("status").notNull().default("scheduled"), // scheduled, live, completed, cancelled
+  selectedAgents: text("selected_agents").array(), // array of agent IDs selected for this meeting
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -199,6 +200,7 @@ export const agents = pgTable("agents", {
   icon: text("icon"), // lucide icon name
   promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'set null' }),
   status: text("status").notNull().default("active"), // active, inactive
+  isDefault: boolean("is_default").notNull().default(false), // whether agent is selected by default in meetings
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
