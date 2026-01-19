@@ -1467,14 +1467,14 @@ export default function Admin() {
             <div className="space-y-2">
               <Label htmlFor="agent-prompt">Linked Prompt</Label>
               <Select
-                value={agentForm.promptId}
-                onValueChange={(value) => setAgentForm({ ...agentForm, promptId: value })}
+                value={agentForm.promptId || "_none"}
+                onValueChange={(value) => setAgentForm({ ...agentForm, promptId: value === "_none" ? "" : value })}
               >
                 <SelectTrigger data-testid="select-agent-prompt">
                   <SelectValue placeholder="Select a prompt..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No prompt linked</SelectItem>
+                  <SelectItem value="_none">No prompt linked</SelectItem>
                   {allPrompts.filter(p => p.isActive).map((prompt) => (
                     <SelectItem key={prompt.id} value={prompt.id}>
                       {prompt.name} ({prompt.type})
