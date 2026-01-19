@@ -10,6 +10,7 @@ Key features:
 - WebSocket-based live AI communication
 - Automatic SOP generation and flowchart visualization
 - Meeting scheduling, recordings, and chat history
+- Admin panel for user and prompt management
 
 ## User Preferences
 
@@ -52,8 +53,14 @@ The server uses a storage abstraction layer (`server/storage.ts`) implementing t
 ### Database
 - **PostgreSQL**: Primary data store
 - **ORM**: Drizzle ORM with `drizzle-kit` for migrations
-- **Schema**: Defined in `shared/schema.ts` (users, meetings, recordings, chat messages)
+- **Schema**: Defined in `shared/schema.ts` (users, meetings, recordings, chat messages, prompts)
 - **Connection**: Uses `pg` driver with connection pooling
+
+### Admin Panel
+- **Route**: `/admin` - accessible via Settings icon in header
+- **User Management**: Full CRUD with role (admin/user) and status (active/inactive/suspended)
+- **Prompt Management**: Configure AI prompts by type (chat, summary, analysis, sop)
+- **Security**: Bcrypt password hashing, passwords never returned in API responses
 
 ### Third-Party Services
 - **Google Gemini API**: AI analysis and SOP generation (requires `GEMINI_API_KEY`)
