@@ -19,6 +19,9 @@ import {
   type UpdatePrompt,
   type PromptVersion,
   type InsertPromptVersion,
+  type Agent,
+  type InsertAgent,
+  type UpdateAgent,
   users,
   meetings,
   recordings,
@@ -27,7 +30,8 @@ import {
   webhookEvents,
   meetingTranscriptions,
   prompts,
-  promptVersions
+  promptVersions,
+  agents
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -89,6 +93,14 @@ export interface IStorage {
   getTranscriptionBySessionId(sessionId: string): Promise<MeetingTranscription | undefined>;
   updateMeetingTranscription(id: string, data: Partial<InsertMeetingTranscription>): Promise<MeetingTranscription | undefined>;
   getTranscriptionsByMeetingId(meetingId: string): Promise<MeetingTranscription[]>;
+
+  // Agents
+  getAgent(id: string): Promise<Agent | undefined>;
+  getAgentByName(name: string): Promise<Agent | undefined>;
+  createAgent(agent: InsertAgent): Promise<Agent>;
+  updateAgent(id: string, agent: UpdateAgent): Promise<Agent | undefined>;
+  deleteAgent(id: string): Promise<boolean>;
+  listAgents(search?: string, type?: string): Promise<Agent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -367,6 +379,75 @@ export class DatabaseStorage implements IStorage {
       .from(meetingTranscriptions)
       .where(eq(meetingTranscriptions.meetingId, meetingId))
       .orderBy(desc(meetingTranscriptions.createdAt));
+  }
+
+  // Agents
+  async getAgent(id: string): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+    return agent;
+  }
+
+  async getAgentByName(name: string): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.name, name));
+    return agent;
+  }
+
+  async createAgent(insertAgent: InsertAgent): Promise<Agent> {
+    const [agent] = await db.insert(agents).values(insertAgent).returning();
+    return agent;
+  }
+
+  async updateAgent(id: string, updateData: UpdateAgent): Promise<Agent | undefined> {
+    const [agent] = await db
+      .update(agents)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(agents.id, id))
+      .returning();
+    return agent;
+  }
+
+  async deleteAgent(id: string): Promise<boolean> {
+    const result = await db.delete(agents).where(eq(agents.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async listAgents(search?: string, type?: string): Promise<Agent[]> {
+    let query = db.select().from(agents);
+    
+    if (search && type) {
+      return db
+        .select()
+        .from(agents)
+        .where(
+          and(
+            or(
+              ilike(agents.name, `%${search}%`),
+              ilike(agents.description, `%${search}%`)
+            ),
+            eq(agents.type, type)
+          )
+        )
+        .orderBy(desc(agents.createdAt));
+    } else if (search) {
+      return db
+        .select()
+        .from(agents)
+        .where(
+          or(
+            ilike(agents.name, `%${search}%`),
+            ilike(agents.description, `%${search}%`)
+          )
+        )
+        .orderBy(desc(agents.createdAt));
+    } else if (type) {
+      return db
+        .select()
+        .from(agents)
+        .where(eq(agents.type, type))
+        .orderBy(desc(agents.createdAt));
+    }
+    
+    return db.select().from(agents).orderBy(desc(agents.createdAt));
   }
 }
 

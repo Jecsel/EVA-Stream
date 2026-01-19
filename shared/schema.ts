@@ -188,3 +188,28 @@ export const insertMeetingTranscriptionSchema = createInsertSchema(meetingTransc
 
 export type InsertMeetingTranscription = z.infer<typeof insertMeetingTranscriptionSchema>;
 export type MeetingTranscription = typeof meetingTranscriptions.$inferSelect;
+
+// AI Agents table (for managing AI agent configurations)
+export const agents = pgTable("agents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // sop, flowchart, analysis, transcription, etc.
+  description: text("description"),
+  capabilities: text("capabilities").array(),
+  icon: text("icon"), // lucide icon name
+  status: text("status").notNull().default("active"), // active, inactive
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertAgentSchema = createInsertSchema(agents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateAgentSchema = insertAgentSchema.partial();
+
+export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type UpdateAgent = z.infer<typeof updateAgentSchema>;
+export type Agent = typeof agents.$inferSelect;

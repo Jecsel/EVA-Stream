@@ -1,7 +1,7 @@
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema } from "@shared/schema";
+import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat, analyzeTranscription, generateMermaidFlowchart } from "./gemini";
@@ -1022,6 +1022,120 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete prompt" });
+    }
+  });
+
+  // ============================================
+  // Admin Routes - Agents
+  // ============================================
+  
+  // List all agents with optional search and type filter
+  app.get("/api/admin/agents", async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const type = req.query.type as string | undefined;
+      const agentsList = await storage.listAgents(search, type);
+      res.json(agentsList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agents" });
+    }
+  });
+
+  // Get single agent
+  app.get("/api/admin/agents/:id", async (req, res) => {
+    try {
+      const agent = await storage.getAgent(req.params.id);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      res.json(agent);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agent" });
+    }
+  });
+
+  // Create agent
+  app.post("/api/admin/agents", async (req, res) => {
+    try {
+      // Ensure capabilities is an array
+      const body = {
+        ...req.body,
+        capabilities: Array.isArray(req.body.capabilities) 
+          ? req.body.capabilities 
+          : req.body.capabilities?.split(",").map((c: string) => c.trim()).filter((c: string) => c) || []
+      };
+      
+      const validated = insertAgentSchema.parse(body);
+      
+      // Check if name already exists
+      const existingName = await storage.getAgentByName(validated.name);
+      if (existingName) {
+        res.status(400).json({ error: "Agent name already exists" });
+        return;
+      }
+      
+      const agent = await storage.createAgent(validated);
+      res.json(agent);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Create agent error:", error);
+        res.status(500).json({ error: "Failed to create agent" });
+      }
+    }
+  });
+
+  // Update agent
+  app.patch("/api/admin/agents/:id", async (req, res) => {
+    try {
+      // Ensure capabilities is an array if provided
+      const body = { ...req.body };
+      if (body.capabilities !== undefined) {
+        body.capabilities = Array.isArray(body.capabilities) 
+          ? body.capabilities 
+          : body.capabilities?.split(",").map((c: string) => c.trim()).filter((c: string) => c) || [];
+      }
+      
+      const validated = updateAgentSchema.parse(body);
+      
+      // If changing name, check it's not taken
+      if (validated.name) {
+        const existing = await storage.getAgentByName(validated.name);
+        if (existing && existing.id !== req.params.id) {
+          res.status(400).json({ error: "Agent name already exists" });
+          return;
+        }
+      }
+      
+      const agent = await storage.updateAgent(req.params.id, validated);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      res.json(agent);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Update agent error:", error);
+        res.status(500).json({ error: "Failed to update agent" });
+      }
+    }
+  });
+
+  // Delete agent
+  app.delete("/api/admin/agents/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteAgent(req.params.id);
+      if (!success) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete agent" });
     }
   });
 

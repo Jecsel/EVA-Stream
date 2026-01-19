@@ -16,6 +16,12 @@ import {
   History,
   RotateCcw,
   Clock,
+  Bot,
+  Sparkles,
+  FileText,
+  GitBranch,
+  Mic,
+  Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +55,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "users" | "prompts";
+type Tab = "users" | "prompts" | "agents";
 
 interface User {
   id: string;
@@ -84,6 +90,18 @@ interface PromptVersion {
   createdAt: string;
 }
 
+interface Agent {
+  id: string;
+  name: string;
+  type: string;
+  description: string | null;
+  capabilities: string[] | null;
+  icon: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 async function fetchUsers(search?: string): Promise<User[]> {
   const url = search ? `/api/admin/users?search=${encodeURIComponent(search)}` : "/api/admin/users";
   const res = await fetch(url);
@@ -104,22 +122,55 @@ async function fetchPromptVersions(promptId: string): Promise<PromptVersion[]> {
   return res.json();
 }
 
+async function fetchAgents(search?: string, type?: string): Promise<Agent[]> {
+  const params = new URLSearchParams();
+  if (search) params.append("search", search);
+  if (type) params.append("type", type);
+  const queryString = params.toString();
+  const url = queryString ? `/api/admin/agents?${queryString}` : "/api/admin/agents";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch agents");
+  return res.json();
+}
+
+const AGENT_ICONS: Record<string, typeof Bot> = {
+  Bot,
+  Sparkles,
+  FileText,
+  GitBranch,
+  Mic,
+  Brain,
+};
+
+const AGENT_TYPES = [
+  { value: "sop", label: "SOP Builder" },
+  { value: "flowchart", label: "Flowchart" },
+  { value: "analysis", label: "Analysis" },
+  { value: "transcription", label: "Transcription" },
+  { value: "assistant", label: "Assistant" },
+];
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<Tab>("users");
   const [searchQuery, setSearchQuery] = useState("");
   const [promptTypeFilter, setPromptTypeFilter] = useState<string>("");
+  const [agentTypeFilter, setAgentTypeFilter] = useState<string>("");
+  const [agentSearchQuery, setAgentSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
+  const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [historyPromptId, setHistoryPromptId] = useState<string | null>(null);
 
   const [userForm, setUserForm] = useState({ username: "", email: "", password: "", role: "user", status: "active" });
   const [promptForm, setPromptForm] = useState({ name: "", type: "chat", content: "", description: "", isActive: true });
+  const [agentForm, setAgentForm] = useState({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active" });
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users", searchQuery],
@@ -137,6 +188,12 @@ export default function Admin() {
     queryKey: ["prompt-versions", historyPromptId],
     queryFn: () => fetchPromptVersions(historyPromptId!),
     enabled: !!historyPromptId && isHistoryDialogOpen,
+  });
+
+  const { data: agents = [], isLoading: agentsLoading } = useQuery({
+    queryKey: ["admin-agents", agentSearchQuery, agentTypeFilter],
+    queryFn: () => fetchAgents(agentSearchQuery || undefined, agentTypeFilter || undefined),
+    enabled: activeTab === "agents",
   });
 
   const createUserMutation = useMutation({
@@ -289,12 +346,80 @@ export default function Admin() {
     },
   });
 
+  const createAgentMutation = useMutation({
+    mutationFn: async (data: { name: string; type: string; description: string; capabilities: string[]; icon: string; status: string }) => {
+      const res = await fetch("/api/admin/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to create agent");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-agents"] });
+      setIsAgentDialogOpen(false);
+      resetAgentForm();
+      toast({ title: "Agent created successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ name: string; type: string; description: string; capabilities: string[]; icon: string; status: string }> }) => {
+      const res = await fetch(`/api/admin/agents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to update agent");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-agents"] });
+      setIsAgentDialogOpen(false);
+      setEditingAgent(null);
+      resetAgentForm();
+      toast({ title: "Agent updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteAgentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/agents/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete agent");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-agents"] });
+      toast({ title: "Agent deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete agent", variant: "destructive" });
+    },
+  });
+
   const resetUserForm = () => {
     setUserForm({ username: "", email: "", password: "", role: "user", status: "active" });
   };
 
   const resetPromptForm = () => {
     setPromptForm({ name: "", type: "chat", content: "", description: "", isActive: true });
+  };
+
+  const resetAgentForm = () => {
+    setAgentForm({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active" });
   };
 
   const openEditUser = (user: User) => {
@@ -325,6 +450,47 @@ export default function Admin() {
     setHistoryPromptId(prompt.id);
     setEditingPrompt(prompt);
     setIsHistoryDialogOpen(true);
+  };
+
+  const openEditAgent = (agent: Agent) => {
+    setEditingAgent(agent);
+    setAgentForm({
+      name: agent.name,
+      type: agent.type,
+      description: agent.description || "",
+      capabilities: agent.capabilities?.join(", ") || "",
+      icon: agent.icon || "Bot",
+      status: agent.status,
+    });
+    setIsAgentDialogOpen(true);
+  };
+
+  const handleAgentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const capabilities = agentForm.capabilities
+      .split(",")
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+    
+    const agentData = {
+      name: agentForm.name,
+      type: agentForm.type,
+      description: agentForm.description,
+      capabilities,
+      icon: agentForm.icon,
+      status: agentForm.status,
+    };
+    
+    if (editingAgent) {
+      updateAgentMutation.mutate({ id: editingAgent.id, data: agentData });
+    } else {
+      createAgentMutation.mutate(agentData);
+    }
+  };
+
+  const getAgentIcon = (iconName: string | null) => {
+    const IconComponent = AGENT_ICONS[iconName || "Bot"] || Bot;
+    return IconComponent;
   };
 
   const formatDate = (dateString: string) => {
@@ -410,6 +576,18 @@ export default function Admin() {
           >
             <MessageSquare className="w-4 h-4" />
             Prompts
+          </button>
+          <button
+            onClick={() => setActiveTab("agents")}
+            className={`pb-4 px-2 flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === "agents"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-agents"
+          >
+            <Bot className="w-4 h-4" />
+            Agents
           </button>
         </div>
 
@@ -713,6 +891,190 @@ export default function Admin() {
             )}
           </div>
         )}
+
+        {activeTab === "agents" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 justify-between">
+              <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search agents..."
+                    value={agentSearchQuery}
+                    onChange={(e) => setAgentSearchQuery(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-agents"
+                  />
+                </div>
+                <Select value={agentTypeFilter || "all"} onValueChange={(val) => setAgentTypeFilter(val === "all" ? "" : val)}>
+                  <SelectTrigger className="w-[180px]" data-testid="select-agent-type-filter">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {AGENT_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={() => {
+                  setEditingAgent(null);
+                  resetAgentForm();
+                  setIsAgentDialogOpen(true);
+                }}
+                data-testid="button-add-agent"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Agent
+              </Button>
+            </div>
+
+            {agentsLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : agents.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No agents found</div>
+            ) : (
+              <>
+                <div className="hidden md:block border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Agent</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Capabilities</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {agents.map((agent) => {
+                        const IconComponent = getAgentIcon(agent.icon);
+                        return (
+                          <TableRow key={agent.id} data-testid={`row-agent-${agent.id}`}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                  <IconComponent className="w-4 h-4 text-primary" />
+                                </div>
+                                <span className="font-medium">{agent.name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {AGENT_TYPES.find((t) => t.value === agent.type)?.label || agent.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">
+                              {agent.description || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1">
+                                {(agent.capabilities || []).slice(0, 2).map((cap, i) => (
+                                  <Badge key={i} variant="secondary" className="text-xs">{cap}</Badge>
+                                ))}
+                                {(agent.capabilities || []).length > 2 && (
+                                  <Badge variant="secondary" className="text-xs">+{(agent.capabilities || []).length - 2}</Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={agent.status === "active" ? "default" : "secondary"}>
+                                {agent.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditAgent(agent)}
+                                  data-testid={`button-edit-agent-${agent.id}`}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteAgentMutation.mutate(agent.id)}
+                                  data-testid={`button-delete-agent-${agent.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="md:hidden space-y-3">
+                  {agents.map((agent) => {
+                    const IconComponent = getAgentIcon(agent.icon);
+                    return (
+                      <div
+                        key={agent.id}
+                        className="border rounded-lg p-4 space-y-3"
+                        data-testid={`card-agent-${agent.id}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-lg">
+                              <IconComponent className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-foreground">{agent.name}</p>
+                              <p className="text-sm text-muted-foreground truncate">
+                                {agent.description || "No description"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditAgent(agent)}
+                              data-testid={`button-edit-agent-mobile-${agent.id}`}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteAgentMutation.mutate(agent.id)}
+                              data-testid={`button-delete-agent-mobile-${agent.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <Badge variant="outline">
+                            {AGENT_TYPES.find((t) => t.value === agent.type)?.label || agent.type}
+                          </Badge>
+                          <Badge variant={agent.status === "active" ? "default" : "secondary"}>
+                            {agent.status}
+                          </Badge>
+                        </div>
+                        {(agent.capabilities || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {agent.capabilities!.map((cap, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs">{cap}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </main>
 
       <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>
@@ -982,6 +1344,122 @@ export default function Admin() {
               </Button>
             </DialogClose>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingAgent ? "Edit Agent" : "Add New Agent"}</DialogTitle>
+            <DialogDescription>
+              {editingAgent ? "Update agent configuration." : "Create a new AI agent."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAgentSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="agent-name">Name</Label>
+              <Input
+                id="agent-name"
+                value={agentForm.name}
+                onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })}
+                required
+                placeholder="e.g., EVA SOP Assistant"
+                data-testid="input-agent-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="agent-type">Type</Label>
+                <Select
+                  value={agentForm.type}
+                  onValueChange={(value) => setAgentForm({ ...agentForm, type: value })}
+                >
+                  <SelectTrigger data-testid="select-agent-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="agent-icon">Icon</Label>
+                <Select
+                  value={agentForm.icon}
+                  onValueChange={(value) => setAgentForm({ ...agentForm, icon: value })}
+                >
+                  <SelectTrigger data-testid="select-agent-icon">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(AGENT_ICONS).map((iconName) => {
+                      const IconComp = AGENT_ICONS[iconName];
+                      return (
+                        <SelectItem key={iconName} value={iconName}>
+                          <div className="flex items-center gap-2">
+                            <IconComp className="w-4 h-4" />
+                            {iconName}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agent-description">Description</Label>
+              <Input
+                id="agent-description"
+                value={agentForm.description}
+                onChange={(e) => setAgentForm({ ...agentForm, description: e.target.value })}
+                placeholder="Brief description of what this agent does..."
+                data-testid="input-agent-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agent-capabilities">Capabilities</Label>
+              <Input
+                id="agent-capabilities"
+                value={agentForm.capabilities}
+                onChange={(e) => setAgentForm({ ...agentForm, capabilities: e.target.value })}
+                placeholder="Comma-separated: Screen analysis, SOP generation, ..."
+                data-testid="input-agent-capabilities"
+              />
+              <p className="text-xs text-muted-foreground">Enter capabilities separated by commas</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agent-status">Status</Label>
+              <Select
+                value={agentForm.status}
+                onValueChange={(value) => setAgentForm({ ...agentForm, status: value })}
+              >
+                <SelectTrigger data-testid="select-agent-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                type="submit"
+                disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
+                data-testid="button-submit-agent"
+              >
+                {editingAgent ? "Update" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
