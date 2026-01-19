@@ -36,6 +36,8 @@ import {
 import { db } from "../db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
 
+export type AgentWithPrompt = Agent & { prompt?: Prompt | null };
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
@@ -101,6 +103,7 @@ export interface IStorage {
   updateAgent(id: string, agent: UpdateAgent): Promise<Agent | undefined>;
   deleteAgent(id: string): Promise<boolean>;
   listAgents(search?: string, type?: string): Promise<Agent[]>;
+  listAgentsWithPrompts(search?: string, type?: string): Promise<AgentWithPrompt[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -448,6 +451,23 @@ export class DatabaseStorage implements IStorage {
     }
     
     return db.select().from(agents).orderBy(desc(agents.createdAt));
+  }
+
+  async listAgentsWithPrompts(search?: string, type?: string): Promise<AgentWithPrompt[]> {
+    const agentsList = await this.listAgents(search, type);
+    
+    const agentsWithPrompts: AgentWithPrompt[] = await Promise.all(
+      agentsList.map(async (agent) => {
+        let prompt: Prompt | null = null;
+        if (agent.promptId) {
+          const foundPrompt = await this.getPrompt(agent.promptId);
+          prompt = foundPrompt || null;
+        }
+        return { ...agent, prompt };
+      })
+    );
+    
+    return agentsWithPrompts;
   }
 }
 

@@ -197,6 +197,7 @@ export const agents = pgTable("agents", {
   description: text("description"),
   capabilities: text("capabilities").array(),
   icon: text("icon"), // lucide icon name
+  promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'set null' }),
   status: text("status").notNull().default("active"), // active, inactive
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
