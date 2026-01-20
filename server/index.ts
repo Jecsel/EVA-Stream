@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { processLiveInput, type GeminiLiveMessage, type GeminiLiveResponse } from "./gemini-live";
+import { seedAgents } from "./seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -101,6 +102,8 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  
+  await seedAgents();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
