@@ -751,6 +751,21 @@ export async function registerRoutes(
   // Admin Routes - Users
   // ============================================
   
+  // Get current user by email (for role checking)
+  app.get("/api/admin/users/by-email/:email", async (req, res) => {
+    try {
+      const user = await storage.getUserByEmail(req.params.email);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+  
   // List all users with optional search
   app.get("/api/admin/users", async (req, res) => {
     try {

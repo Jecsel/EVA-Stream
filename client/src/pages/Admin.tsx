@@ -155,8 +155,18 @@ const AGENT_TYPES = [
   { value: "assistant", label: "Assistant" },
 ];
 
+async function fetchCurrentUser(email: string): Promise<User | null> {
+  try {
+    const res = await fetch(`/api/admin/users/by-email/${encodeURIComponent(email)}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export default function Admin() {
-  const { user } = useAuth();
+  const { user: firebaseUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("agents");
   const [searchQuery, setSearchQuery] = useState("");
   const [promptTypeFilter, setPromptTypeFilter] = useState<string>("");
@@ -164,6 +174,15 @@ export default function Admin() {
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch current user's role from database
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user", firebaseUser?.email],
+    queryFn: () => fetchCurrentUser(firebaseUser!.email!),
+    enabled: !!firebaseUser?.email,
+  });
+
+  const isAdmin = currentUser?.role === "admin";
 
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
@@ -561,10 +580,10 @@ export default function Admin() {
         </div>
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-muted-foreground" />
-          {user?.photoURL ? (
+          {firebaseUser?.photoURL ? (
             <img 
-              src={user.photoURL} 
-              alt={user.displayName || "User"} 
+              src={firebaseUser.photoURL} 
+              alt={firebaseUser.displayName || "User"} 
               className="w-8 h-8 rounded-full object-cover ml-2"
             />
           ) : (
@@ -628,17 +647,19 @@ export default function Admin() {
                   data-testid="input-search-users"
                 />
               </div>
-              <Button
-                onClick={() => {
-                  setEditingUser(null);
-                  resetUserForm();
-                  setIsUserDialogOpen(true);
-                }}
-                data-testid="button-add-user"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add User
-              </Button>
+              {isAdmin && (
+                <Button
+                  onClick={() => {
+                    setEditingUser(null);
+                    resetUserForm();
+                    setIsUserDialogOpen(true);
+                  }}
+                  data-testid="button-add-user"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add User
+                </Button>
+              )}
             </div>
 
             {usersLoading ? (
