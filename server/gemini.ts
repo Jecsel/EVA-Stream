@@ -188,6 +188,125 @@ Generate the Mermaid flowchart code:`;
   }
 }
 
+export interface RecordingTranscript {
+  fullTranscript: string;
+  segments: {
+    speaker: string;
+    timestamp: string;
+    text: string;
+  }[];
+  summary: string;
+  actionItems: string[];
+  keyTopics: string[];
+}
+
+export async function transcribeRecording(
+  videoUrl: string,
+  meetingTitle?: string
+): Promise<RecordingTranscript> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return {
+        fullTranscript: "",
+        segments: [],
+        summary: "Transcription unavailable (no API key configured).",
+        actionItems: [],
+        keyTopics: [],
+      };
+    }
+
+    console.log(`Starting AI transcription for recording: ${meetingTitle || "Unknown"}`);
+    console.log(`Video URL: ${videoUrl.substring(0, 100)}...`);
+
+    const prompt = `You are a professional transcription service. Transcribe this video/audio recording with the following requirements:
+
+1. **Speaker Identification**: Identify different speakers as "Speaker 1", "Speaker 2", etc. If you can identify names from context, use those instead.
+2. **Timestamps**: Provide approximate timestamps in MM:SS format for each speaker change.
+3. **Accuracy**: Transcribe speech accurately, including filler words only if significant.
+4. **Structure**: Format as a natural conversation with clear speaker labels.
+
+After the transcription, also provide:
+- A concise summary (2-3 paragraphs)
+- Key action items mentioned
+- Main topics discussed
+
+Meeting Title: ${meetingTitle || "Unknown Meeting"}
+
+Respond in the following JSON format:
+{
+  "fullTranscript": "Complete transcription as continuous text with speaker labels",
+  "segments": [
+    {"speaker": "Speaker 1", "timestamp": "00:00", "text": "What they said..."},
+    {"speaker": "Speaker 2", "timestamp": "00:15", "text": "Their response..."}
+  ],
+  "summary": "Meeting summary...",
+  "actionItems": ["Action 1", "Action 2"],
+  "keyTopics": ["Topic 1", "Topic 2"]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          parts: [
+            {
+              fileData: {
+                fileUri: videoUrl,
+                mimeType: videoUrl.includes(".mp4") ? "video/mp4" : 
+                         videoUrl.includes(".webm") ? "video/webm" :
+                         videoUrl.includes(".mp3") ? "audio/mpeg" :
+                         videoUrl.includes(".wav") ? "audio/wav" :
+                         "video/mp4"
+              }
+            },
+            {
+              text: prompt
+            }
+          ]
+        }
+      ]
+    });
+
+    const text = response.text || "";
+    console.log(`Received transcription response: ${text.substring(0, 200)}...`);
+    
+    // Parse JSON response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          fullTranscript: parsed.fullTranscript || "",
+          segments: Array.isArray(parsed.segments) ? parsed.segments : [],
+          summary: parsed.summary || "No summary generated.",
+          actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+          keyTopics: Array.isArray(parsed.keyTopics) ? parsed.keyTopics : [],
+        };
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError);
+      }
+    }
+
+    // Fallback: treat entire response as transcript
+    return {
+      fullTranscript: text,
+      segments: [{ speaker: "Speaker", timestamp: "00:00", text }],
+      summary: "Transcription complete.",
+      actionItems: [],
+      keyTopics: [],
+    };
+  } catch (error) {
+    console.error("Gemini recording transcription error:", error);
+    return {
+      fullTranscript: "",
+      segments: [],
+      summary: "Error transcribing recording.",
+      actionItems: [],
+      keyTopics: [],
+    };
+  }
+}
+
 export async function analyzeTranscription(
   transcriptText: string,
   meetingTitle?: string,

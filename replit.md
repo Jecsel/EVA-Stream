@@ -41,7 +41,16 @@ The server uses a storage abstraction layer (`server/storage.ts`) implementing t
 ### AI Integration
 - **Provider**: Google Gemini API via `@google/genai`
 - **Communication**: Dual-mode - HTTP for chat analysis, WebSocket for live observation
-- **Capabilities**: Screen analysis, conversation understanding, SOP generation
+- **Capabilities**: Screen analysis, conversation understanding, SOP generation, post-meeting video transcription
+
+### Post-Meeting AI Transcription
+When a meeting recording is uploaded (via JaaS webhook), the system automatically:
+1. Sends the video URL to Gemini for audio analysis
+2. Generates a full transcript with speaker identification and timestamps
+3. Creates a meeting summary, action items, and key topics
+4. Saves transcript segments to the database for display
+
+Users can also manually trigger transcription from the Recording Detail page using the "Generate Transcript" button.
 
 ### Data Flow
 1. User creates/joins meeting via Dashboard

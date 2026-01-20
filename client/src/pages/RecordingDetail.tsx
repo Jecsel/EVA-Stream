@@ -112,6 +112,20 @@ export default function RecordingDetail() {
     },
   });
 
+  const transcribeMutation = useMutation({
+    mutationFn: () => api.transcribeRecording(recordingId),
+    onSuccess: () => {
+      toast.success("Transcription started! It will appear here shortly.");
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
+        queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
+      }, 5000);
+    },
+    onError: () => {
+      toast.error("Failed to start transcription. Please try again.");
+    },
+  });
+
   const togglePlay = async () => {
     if (videoRef.current) {
       if (isPlaying) {
@@ -624,7 +638,7 @@ export default function RecordingDetail() {
 
           <TabsContent value="transcript" className="mt-0">
             <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-muted/30">
+              <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-primary" />
                   Meeting Transcript
@@ -633,11 +647,23 @@ export default function RecordingDetail() {
                       {localTranscripts.length > 0 
                         ? `(${localTranscripts.length} segments)` 
                         : jaasTranscriptions.length > 0 
-                          ? '(JaaS transcription available)' 
+                          ? '(AI transcription available)' 
                           : `(${chatMessages.length} messages)`}
                     </span>
                   )}
                 </h2>
+                {recording?.videoUrl && localTranscripts.length === 0 && jaasTranscriptions.length === 0 && (
+                  <Button
+                    size="sm"
+                    onClick={() => transcribeMutation.mutate()}
+                    disabled={transcribeMutation.isPending}
+                    className="gap-2"
+                    data-testid="btn-transcribe-recording"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {transcribeMutation.isPending ? "Starting..." : "Generate Transcript"}
+                  </Button>
+                )}
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-4 space-y-4" data-testid="content-transcript">
@@ -766,7 +792,25 @@ export default function RecordingDetail() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-muted-foreground italic text-center py-8">No transcript available for this meeting.</p>
+                    <div className="text-center py-8 space-y-4">
+                      <p className="text-muted-foreground italic">No transcript available for this meeting.</p>
+                      {recording?.videoUrl && (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                            This recording has a video. You can generate an AI transcript from it.
+                          </p>
+                          <Button
+                            onClick={() => transcribeMutation.mutate()}
+                            disabled={transcribeMutation.isPending}
+                            className="gap-2"
+                            data-testid="btn-transcribe-empty"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            {transcribeMutation.isPending ? "Starting Transcription..." : "Generate AI Transcript"}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </ScrollArea>

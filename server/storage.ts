@@ -86,6 +86,7 @@ export interface IStorage {
   // Transcript Segments
   createTranscriptSegment(segment: InsertTranscriptSegment): Promise<TranscriptSegment>;
   getTranscriptsByMeeting(meetingId: string): Promise<TranscriptSegment[]>;
+  deleteTranscriptsByMeeting(meetingId: string): Promise<number>;
 
   // Webhook Events (idempotency)
   getWebhookEventByIdempotencyKey(idempotencyKey: string): Promise<WebhookEvent | undefined>;
@@ -96,6 +97,8 @@ export interface IStorage {
   getTranscriptionBySessionId(sessionId: string): Promise<MeetingTranscription | undefined>;
   updateMeetingTranscription(id: string, data: Partial<InsertMeetingTranscription>): Promise<MeetingTranscription | undefined>;
   getTranscriptionsByMeetingId(meetingId: string): Promise<MeetingTranscription[]>;
+  deleteTranscriptionsByMeeting(meetingId: string): Promise<number>;
+  deleteTranscriptionBySessionId(sessionId: string): Promise<number>;
 
   // Agents
   getAgent(id: string): Promise<Agent | undefined>;
@@ -351,6 +354,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(transcriptSegments.createdAt);
   }
 
+  async deleteTranscriptsByMeeting(meetingId: string): Promise<number> {
+    const result = await db.delete(transcriptSegments).where(eq(transcriptSegments.meetingId, meetingId)).returning();
+    return result.length;
+  }
+
   // Webhook Events
   async getWebhookEventByIdempotencyKey(idempotencyKey: string): Promise<WebhookEvent | undefined> {
     const [event] = await db.select().from(webhookEvents).where(eq(webhookEvents.idempotencyKey, idempotencyKey));
@@ -388,6 +396,16 @@ export class DatabaseStorage implements IStorage {
       .from(meetingTranscriptions)
       .where(eq(meetingTranscriptions.meetingId, meetingId))
       .orderBy(desc(meetingTranscriptions.createdAt));
+  }
+
+  async deleteTranscriptionsByMeeting(meetingId: string): Promise<number> {
+    const result = await db.delete(meetingTranscriptions).where(eq(meetingTranscriptions.meetingId, meetingId)).returning();
+    return result.length;
+  }
+
+  async deleteTranscriptionBySessionId(sessionId: string): Promise<number> {
+    const result = await db.delete(meetingTranscriptions).where(eq(meetingTranscriptions.sessionId, sessionId)).returning();
+    return result.length;
   }
 
   // Agents

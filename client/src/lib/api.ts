@@ -95,6 +95,14 @@ export const api = {
     return response.json();
   },
 
+  async transcribeRecording(id: string): Promise<{ success: boolean; message: string; recordingId: string }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/transcribe`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("Failed to start transcription");
+    return response.json();
+  },
+
   // Chat Messages
   async createChatMessage(meetingId: string, data: Omit<InsertChatMessage, "meetingId">): Promise<ChatMessage> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/messages`, {

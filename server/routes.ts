@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording } from "./gemini";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
@@ -247,6 +247,42 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete recording" });
+    }
+  });
+
+  // Trigger AI transcription for a recording
+  app.post("/api/recordings/:id/transcribe", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      if (!recording.videoUrl) {
+        res.status(400).json({ error: "Recording has no video URL to transcribe" });
+        return;
+      }
+
+      const meeting = await storage.getMeeting(recording.meetingId);
+      const meetingTitle = meeting?.title || recording.title || "Meeting";
+
+      // Trigger transcription asynchronously
+      processRecordingTranscription(
+        recording.id,
+        recording.videoUrl,
+        recording.meetingId,
+        meetingTitle
+      ).catch(err => console.error("Recording transcription error:", err));
+
+      res.json({ 
+        success: true, 
+        message: "Transcription started. It will be available shortly.",
+        recordingId: recording.id 
+      });
+    } catch (error) {
+      console.error("Failed to start transcription:", error);
+      res.status(500).json({ error: "Failed to start transcription" });
     }
   });
 
@@ -772,22 +808,33 @@ export async function registerRoutes(
               const recordings = await storage.getRecordingsByMeeting(meeting.id);
               const existingRecording = recordings[0];
               
+              let recordingId: string;
               if (existingRecording) {
                 // Update existing recording with video URL
                 await storage.updateRecording(existingRecording.id, {
                   videoUrl: data.preAuthenticatedLink
                 });
+                recordingId = existingRecording.id;
                 console.log(`Updated recording ${existingRecording.id} with video URL`);
               } else {
                 // Create new recording with video URL
-                await storage.createRecording({
+                const newRecording = await storage.createRecording({
                   meetingId: meeting.id,
                   title: meeting.title,
                   duration: "Unknown",
                   videoUrl: data.preAuthenticatedLink,
                 });
+                recordingId = newRecording.id;
                 console.log(`Created new recording for meeting ${meeting.id} with video URL`);
               }
+
+              // Trigger AI transcription of the recording asynchronously
+              processRecordingTranscription(
+                recordingId,
+                data.preAuthenticatedLink,
+                meeting.id,
+                meeting.title
+              ).catch(err => console.error("Recording transcription error:", err));
             }
           }
           break;
@@ -1406,4 +1453,65 @@ function parseTranscription(rawText: string): { speaker: string; text: string; t
   }
 
   return segments;
+}
+
+// Process recording transcription using AI
+async function processRecordingTranscription(
+  recordingId: string,
+  videoUrl: string,
+  meetingId: string,
+  meetingTitle: string
+): Promise<void> {
+  try {
+    console.log(`Starting AI transcription for recording ${recordingId}`);
+    console.log(`Video URL: ${videoUrl.substring(0, 100)}...`);
+    
+    // Clear existing AI transcriptions for THIS RECORDING only (scoped idempotency)
+    // Uses recordingId as sessionId to only delete transcripts for this specific recording
+    const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
+    console.log(`Cleared ${deletedTranscriptions} existing AI transcription for recording ${recordingId}`);
+    
+    // Transcribe the recording using Gemini
+    const transcription = await transcribeRecording(videoUrl, meetingTitle);
+    
+    if (!transcription.fullTranscript && transcription.segments.length === 0) {
+      console.error(`Transcription returned empty for recording ${recordingId}`);
+      await storage.updateRecording(recordingId, {
+        summary: "Transcription failed - no audio detected or unable to process video.",
+      });
+      return;
+    }
+    
+    console.log(`Transcription complete: ${transcription.segments.length} segments found`);
+    console.log(`Summary: ${transcription.summary.substring(0, 100)}...`);
+    
+    // Update the recording with the transcription data
+    await storage.updateRecording(recordingId, {
+      summary: transcription.summary,
+    });
+
+    // Store transcript in the meeting_transcriptions table
+    // Note: We do NOT add to transcript_segments to avoid mixing with live browser transcripts
+    await storage.createMeetingTranscription({
+      meetingId,
+      sessionId: recordingId,
+      fqn: `recording-${recordingId}`,
+      rawTranscript: transcription.fullTranscript,
+      parsedTranscript: transcription.segments,
+      aiSummary: transcription.summary,
+      actionItems: transcription.actionItems,
+    });
+
+    console.log(`Recording ${recordingId} transcription processed successfully`);
+  } catch (error) {
+    console.error(`Error processing recording transcription ${recordingId}:`, error);
+    // Update recording to indicate failure
+    try {
+      await storage.updateRecording(recordingId, {
+        summary: "Transcription failed - an error occurred during processing.",
+      });
+    } catch (updateError) {
+      console.error(`Failed to update recording with error status:`, updateError);
+    }
+  }
 }
