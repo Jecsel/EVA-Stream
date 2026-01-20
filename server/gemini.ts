@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-const SYSTEM_PROMPT = `You are EVA, an AI SOP (Standard Operating Procedure) Assistant integrated into a video meeting platform. Your role is to:
+const DEFAULT_SYSTEM_PROMPT = `You are EVA, an AI SOP (Standard Operating Procedure) Assistant integrated into a video meeting platform. Your role is to:
 
 1. Help users document and create SOPs during meetings
 2. Analyze discussions and extract key action items
@@ -25,7 +25,8 @@ export interface GeminiResponse {
 export async function analyzeChat(
   userMessage: string,
   meetingContext: string,
-  isScreenSharing: boolean
+  isScreenSharing: boolean,
+  customSystemPrompt?: string
 ): Promise<GeminiResponse> {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -38,7 +39,9 @@ export async function analyzeChat(
       ? "The user is currently sharing their screen. Consider any visual context they may be referring to."
       : "No screen is currently being shared.";
 
-    const prompt = `${SYSTEM_PROMPT}
+    const systemPrompt = customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
+
+    const prompt = `${systemPrompt}
 
 Meeting Context: ${meetingContext}
 Screen Sharing Status: ${contextInfo}
@@ -115,15 +118,7 @@ export interface TranscriptionAnalysis {
   keyTopics: string[];
 }
 
-export async function generateMermaidFlowchart(
-  sopContent: string
-): Promise<string> {
-  try {
-    if (!process.env.GEMINI_API_KEY) {
-      return 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> End';
-    }
-
-    const prompt = `Convert the following SOP (Standard Operating Procedure) document into a Mermaid.js flowchart diagram.
+const DEFAULT_FLOWCHART_PROMPT = `Convert the following SOP (Standard Operating Procedure) document into a Mermaid.js flowchart diagram.
 
 Rules for the flowchart:
 1. Use "graph TD" for top-down flow
@@ -138,7 +133,32 @@ Rules for the flowchart:
    - Step nodes: style StepN fill:#292A2D,stroke:#3c4043,color:#E8EAED
 8. Connect nodes with arrows: NodeA --> NodeB
 9. Maximum 8-10 steps to keep the flowchart readable
-10. Return ONLY the Mermaid code, no explanations or markdown code blocks
+10. Return ONLY the Mermaid code, no explanations or markdown code blocks`;
+
+const DEFAULT_TRANSCRIPTION_PROMPT = `Analyze the following meeting transcription and provide:
+1. A concise summary (2-3 paragraphs)
+2. A list of action items mentioned
+3. Key topics discussed
+
+Respond in the following JSON format:
+{
+  "summary": "...",
+  "actionItems": ["action 1", "action 2", ...],
+  "keyTopics": ["topic 1", "topic 2", ...]
+}`;
+
+export async function generateMermaidFlowchart(
+  sopContent: string,
+  customPrompt?: string
+): Promise<string> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return 'graph TD\n    Start(("Start"))\n    style Start fill:#1967D2,stroke:none,color:#fff\n    End(("End"))\n    style End fill:#34A853,stroke:none,color:#fff\n    Start --> End';
+    }
+
+    const flowchartInstructions = customPrompt || DEFAULT_FLOWCHART_PROMPT;
+
+    const prompt = `${flowchartInstructions}
 
 SOP Content:
 ${sopContent.slice(0, 8000)}
@@ -170,7 +190,8 @@ Generate the Mermaid flowchart code:`;
 
 export async function analyzeTranscription(
   transcriptText: string,
-  meetingTitle?: string
+  meetingTitle?: string,
+  customPrompt?: string
 ): Promise<TranscriptionAnalysis> {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -181,22 +202,14 @@ export async function analyzeTranscription(
       };
     }
 
-    const prompt = `Analyze the following meeting transcription and provide:
-1. A concise summary (2-3 paragraphs)
-2. A list of action items mentioned
-3. Key topics discussed
+    const transcriptionInstructions = customPrompt || DEFAULT_TRANSCRIPTION_PROMPT;
+
+    const prompt = `${transcriptionInstructions}
 
 Meeting Title: ${meetingTitle || "Unknown Meeting"}
 
 Transcription:
-${transcriptText.slice(0, 30000)}
-
-Respond in the following JSON format:
-{
-  "summary": "...",
-  "actionItems": ["action 1", "action 2", ...],
-  "keyTopics": ["topic 1", "topic 2", ...]
-}`;
+${transcriptText.slice(0, 30000)}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",

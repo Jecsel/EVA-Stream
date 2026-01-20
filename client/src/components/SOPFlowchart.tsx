@@ -6,10 +6,11 @@ import { api } from "@/lib/api";
 
 interface SOPFlowchartProps {
   sopContent: string;
+  meetingId?: string;
   className?: string;
 }
 
-export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
+export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [svgContent, setSvgContent] = useState<string>('');
@@ -53,7 +54,7 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
 
     setIsUpdating(true);
     try {
-      const response = await api.generateFlowchart(content);
+      const response = await api.generateFlowchart(content, meetingId);
       await renderMermaidChart(response.mermaidCode);
     } catch (error) {
       console.error('Failed to generate flowchart:', error);
@@ -63,7 +64,7 @@ export function SOPFlowchart({ sopContent, className }: SOPFlowchartProps) {
       setLastProcessedContent(content);
       setIsUpdating(false);
     }
-  }, [renderMermaidChart]);
+  }, [renderMermaidChart, meetingId]);
 
   useEffect(() => {
     if (!containerRef.current) return;

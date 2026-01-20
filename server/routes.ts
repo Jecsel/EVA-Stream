@@ -307,6 +307,18 @@ export async function registerRoutes(
       const meeting = await storage.getMeeting(meetingId);
       const meetingContext = meeting ? `Meeting: ${meeting.title}` : "General Meeting";
 
+      // Get the SOP agent's prompt if one is selected for this meeting
+      let customPrompt: string | undefined;
+      if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
+        const agentsWithPrompts = await storage.listAgentsWithPrompts();
+        const sopAgent = agentsWithPrompts.find(
+          a => a.type === "sop" && meeting.selectedAgents?.includes(a.id)
+        );
+        if (sopAgent?.prompt?.content) {
+          customPrompt = sopAgent.prompt.content;
+        }
+      }
+
       // Save user message
       await storage.createChatMessage({
         meetingId,
@@ -314,8 +326,8 @@ export async function registerRoutes(
         content: message,
       });
 
-      // Get AI response from Gemini
-      const aiResponse = await analyzeChat(message, meetingContext, isScreenSharing);
+      // Get AI response from Gemini with custom prompt if available
+      const aiResponse = await analyzeChat(message, meetingContext, isScreenSharing, customPrompt);
 
       // Save AI response
       const savedMessage = await storage.createChatMessage({
@@ -339,14 +351,29 @@ export async function registerRoutes(
   // Generate Mermaid flowchart from SOP content
   app.post("/api/generate-flowchart", async (req, res) => {
     try {
-      const { sopContent } = req.body;
+      const { sopContent, meetingId } = req.body;
       
       if (!sopContent || typeof sopContent !== 'string') {
         res.status(400).json({ error: "sopContent is required" });
         return;
       }
 
-      const mermaidCode = await generateMermaidFlowchart(sopContent);
+      // Get the flowchart agent's prompt if available
+      let customPrompt: string | undefined;
+      if (meetingId) {
+        const meeting = await storage.getMeeting(meetingId);
+        if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
+          const agentsWithPrompts = await storage.listAgentsWithPrompts();
+          const flowchartAgent = agentsWithPrompts.find(
+            a => a.type === "flowchart" && meeting.selectedAgents?.includes(a.id)
+          );
+          if (flowchartAgent?.prompt?.content) {
+            customPrompt = flowchartAgent.prompt.content;
+          }
+        }
+      }
+
+      const mermaidCode = await generateMermaidFlowchart(sopContent, customPrompt);
       res.json({ mermaidCode });
     } catch (error) {
       console.error("Flowchart generation error:", error);
@@ -687,7 +714,8 @@ export async function registerRoutes(
             processTranscription(
               transcription.id,
               data.preAuthenticatedLink,
-              roomName
+              roomName,
+              meetingId ?? undefined
             ).catch(err => console.error("Transcription processing error:", err));
           }
           break;
@@ -1162,7 +1190,8 @@ export async function registerRoutes(
 async function processTranscription(
   transcriptionId: string,
   downloadUrl: string,
-  roomName?: string
+  roomName?: string,
+  meetingId?: string
 ): Promise<void> {
   try {
     console.log(`Downloading transcription from: ${downloadUrl}`);
@@ -1182,8 +1211,23 @@ async function processTranscription(
     // Get meeting title for context
     let meetingTitle = roomName || "Meeting";
     
-    // Analyze with Gemini
-    const analysis = await analyzeTranscription(rawTranscript, meetingTitle);
+    // Get the transcription agent's prompt if available
+    let customPrompt: string | undefined;
+    if (meetingId) {
+      const meeting = await storage.getMeeting(meetingId);
+      if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
+        const agentsWithPrompts = await storage.listAgentsWithPrompts();
+        const transcriptionAgent = agentsWithPrompts.find(
+          a => a.type === "transcription" && meeting.selectedAgents?.includes(a.id)
+        );
+        if (transcriptionAgent?.prompt?.content) {
+          customPrompt = transcriptionAgent.prompt.content;
+        }
+      }
+    }
+    
+    // Analyze with Gemini using custom prompt if available
+    const analysis = await analyzeTranscription(rawTranscript, meetingTitle, customPrompt);
     
     console.log(`Transcription analyzed: ${analysis.actionItems.length} action items found`);
 

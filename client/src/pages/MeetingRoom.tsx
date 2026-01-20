@@ -593,6 +593,7 @@ export default function MeetingRoom() {
             >
               <SOPFlowchart 
                   sopContent={sopContent}
+                  meetingId={meeting?.id}
                   className="h-full"
               />
             </div>
