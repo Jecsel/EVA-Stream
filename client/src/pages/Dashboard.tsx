@@ -40,7 +40,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MeetingCard } from "@/components/MeetingCard";
 import { MeetingsList } from "@/components/MeetingsList";
-import { useQuery } from "@tanstack/react-query";
+import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format, formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,9 +49,11 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function Dashboard() {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
+  const queryClient = useQueryClient();
   const [meetingCode, setMeetingCode] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -190,7 +193,7 @@ export default function Dashboard() {
                                 <Plus className="w-4 h-4" />
                                 Start an instant meeting
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-3 py-3 cursor-pointer">
+                            <DropdownMenuItem onClick={() => setScheduleDialogOpen(true)} className="gap-3 py-3 cursor-pointer" data-testid="menu-schedule-calendar">
                                 <Calendar className="w-4 h-4" />
                                 Schedule in Calendar
                             </DropdownMenuItem>
@@ -319,6 +322,16 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Schedule Meeting Dialog */}
+      <ScheduleMeetingDialog 
+        open={scheduleDialogOpen} 
+        onOpenChange={setScheduleDialogOpen}
+        onSuccess={(link) => {
+          setGeneratedLink(link);
+          queryClient.invalidateQueries({ queryKey: ["meetings"] });
+        }}
+      />
     </div>
   );
 }

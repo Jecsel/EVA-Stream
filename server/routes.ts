@@ -5,6 +5,7 @@ import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, in
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording } from "./gemini";
+import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
@@ -557,6 +558,186 @@ export async function registerRoutes(
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
+  // Google Calendar OAuth - Get auth URL
+  app.post("/api/google/auth-url", async (req, res) => {
+    try {
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        res.status(503).json({ error: "Google Calendar not configured" });
+        return;
+      }
+      
+      const { userId } = req.body;
+      if (!userId) {
+        res.status(400).json({ error: "User ID required" });
+        return;
+      }
+      
+      const authUrl = getAuthUrl(userId);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("Google auth URL error:", error);
+      res.status(500).json({ error: "Failed to generate auth URL" });
+    }
+  });
+
+  // Google Calendar OAuth callback
+  app.get("/api/auth/google/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      
+      if (!code || typeof code !== "string") {
+        res.redirect("/?error=missing_code");
+        return;
+      }
+
+      if (!state || typeof state !== "string") {
+        res.redirect("/?error=invalid_state");
+        return;
+      }
+
+      const userId = validateOAuthState(state);
+      if (!userId) {
+        res.redirect("/?error=invalid_state");
+        return;
+      }
+
+      const tokens = await getTokensFromCode(code);
+      const userInfo = await getUserInfo(tokens.access_token!);
+
+      // Store tokens server-side in user record
+      await storage.updateUser(userId, {
+        googleAccessToken: tokens.access_token || undefined,
+        googleRefreshToken: tokens.refresh_token || undefined,
+        googleEmail: userInfo.email || undefined,
+      });
+
+      // Redirect back to app with success status only (no tokens in URL)
+      res.redirect(`/?google_auth=success&google_email=${encodeURIComponent(userInfo.email || "")}`);
+    } catch (error) {
+      console.error("Google OAuth callback error:", error);
+      res.redirect("/?error=auth_failed");
+    }
+  });
+
+  // Get user's Google Calendar status
+  app.get("/api/google/status/:userId", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.userId);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      res.json({
+        connected: !!user.googleAccessToken,
+        email: user.googleEmail || null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get Google status" });
+    }
+  });
+
+  // Disconnect Google Calendar
+  app.post("/api/google/disconnect/:userId", async (req, res) => {
+    try {
+      await storage.updateUser(req.params.userId, {
+        googleAccessToken: undefined,
+        googleRefreshToken: undefined,
+        googleEmail: undefined,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disconnect Google" });
+    }
+  });
+
+  // Schedule meeting with Google Calendar event
+  const scheduleWithCalendarSchema = z.object({
+    title: z.string().min(1),
+    scheduledDate: z.string(),
+    endDate: z.string().optional(),
+    attendeeEmails: z.array(z.string().email()).optional(),
+    description: z.string().optional(),
+    userId: z.string().optional(),
+  });
+
+  app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
+    try {
+      const validated = scheduleWithCalendarSchema.parse(req.body);
+      
+      const roomId = generateRoomId();
+      const startTime = new Date(validated.scheduledDate);
+      const endTime = validated.endDate 
+        ? new Date(validated.endDate) 
+        : new Date(startTime.getTime() + 60 * 60 * 1000); // Default 1 hour
+
+      // Build the full meeting link
+      const host = req.headers.host || "localhost:5000";
+      const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
+      const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+
+      // Create meeting in database
+      const meeting = await storage.createMeeting({
+        title: validated.title,
+        roomId,
+        status: "scheduled",
+        scheduledDate: startTime,
+        endDate: endTime,
+        attendeeEmails: validated.attendeeEmails || null,
+      });
+
+      let calendarEvent = null;
+      
+      // Get user's Google tokens from server-side storage
+      if (validated.userId) {
+        const user = await storage.getUser(validated.userId);
+        if (user?.googleAccessToken) {
+          try {
+            calendarEvent = await createCalendarEvent({
+              title: validated.title,
+              description: validated.description,
+              startTime,
+              endTime,
+              attendeeEmails: validated.attendeeEmails || [],
+              meetingLink,
+              accessToken: user.googleAccessToken,
+              refreshToken: user.googleRefreshToken || undefined,
+            });
+
+            // Update meeting with calendar event ID
+            await storage.updateMeeting(meeting.id, {
+              calendarEventId: calendarEvent.id || null,
+            });
+          } catch (calendarError) {
+            console.error("Failed to create calendar event:", calendarError);
+            // Continue without calendar event - meeting is still created
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        meeting: {
+          id: meeting.id,
+          title: meeting.title,
+          roomId: meeting.roomId,
+          scheduledDate: meeting.scheduledDate,
+          endDate: endTime,
+          attendeeEmails: meeting.attendeeEmails,
+          calendarEventId: calendarEvent?.id,
+        },
+        link: meetingLink,
+        calendarEventCreated: !!calendarEvent,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Schedule meeting error:", error);
+        res.status(500).json({ error: "Failed to schedule meeting" });
+      }
     }
   });
 

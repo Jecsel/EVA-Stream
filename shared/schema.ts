@@ -11,6 +11,9 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   role: text("role").notNull().default("user"), // admin, user
   status: text("status").notNull().default("active"), // active, inactive, suspended
+  googleAccessToken: text("google_access_token"),
+  googleRefreshToken: text("google_refresh_token"),
+  googleEmail: text("google_email"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -78,8 +81,11 @@ export const meetings = pgTable("meetings", {
   title: text("title").notNull(),
   roomId: text("room_id").notNull().unique(),
   scheduledDate: timestamp("scheduled_date"),
+  endDate: timestamp("end_date"),
   status: text("status").notNull().default("scheduled"), // scheduled, live, completed, cancelled
   selectedAgents: text("selected_agents").array(), // array of agent IDs selected for this meeting
+  attendeeEmails: text("attendee_emails").array(), // array of attendee email addresses
+  calendarEventId: text("calendar_event_id"), // Google Calendar event ID
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

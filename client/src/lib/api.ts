@@ -193,4 +193,61 @@ export const api = {
     if (!response.ok) throw new Error("Failed to update meeting agents");
     return response.json();
   },
+
+  // Google Calendar integration
+  async getGoogleAuthUrl(userId: string): Promise<{ authUrl: string }> {
+    const response = await fetch(`${API_BASE}/google/auth-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to get Google auth URL");
+    }
+    return response.json();
+  },
+
+  async getGoogleStatus(userId: string): Promise<{ connected: boolean; email: string | null }> {
+    const response = await fetch(`${API_BASE}/google/status/${userId}`);
+    if (!response.ok) {
+      return { connected: false, email: null };
+    }
+    return response.json();
+  },
+
+  async disconnectGoogle(userId: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE}/google/disconnect/${userId}`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to disconnect Google");
+    }
+    return response.json();
+  },
+
+  async scheduleWithCalendar(data: {
+    title: string;
+    scheduledDate: string;
+    endDate?: string;
+    attendeeEmails?: string[];
+    description?: string;
+    userId?: string;
+  }): Promise<{
+    success: boolean;
+    meeting: Meeting;
+    link: string;
+    calendarEventCreated: boolean;
+  }> {
+    const response = await fetch(`${API_BASE}/meetings/schedule-with-calendar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to schedule meeting");
+    }
+    return response.json();
+  },
 };
