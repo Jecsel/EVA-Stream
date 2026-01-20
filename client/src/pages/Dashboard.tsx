@@ -250,29 +250,6 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* Generated Link Dialog */}
-        <Dialog open={!!generatedLink} onOpenChange={(open) => !open && setGeneratedLink("")}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Here's the link to your meeting</DialogTitle>
-                    <DialogDescription>
-                        Copy this link and send it to people you want to meet with. Be sure to save it so you can use it later, too.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="flex items-center gap-2 bg-muted/50 p-3 rounded-md mt-2">
-                    <span className="text-sm flex-1 truncate font-mono text-muted-foreground">{generatedLink}</span>
-                    <Button variant="ghost" size="icon" onClick={copyLink} className="h-8 w-8">
-                        {isCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                </div>
-                <DialogFooter className="sm:justify-start">
-                    <DialogClose asChild>
-                         <Button type="button" variant="secondary">Close</Button>
-                    </DialogClose>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-
         {/* Recordings Section */}
         <div className="mt-12 md:mt-16 grid lg:grid-cols-3 gap-8 lg:gap-12">
             {/* Left Column: Recordings Grid (Takes up 2/3 space on large screens) */}
@@ -319,6 +296,29 @@ export default function Dashboard() {
             </div>
         </div>
       </main>
+
+      {/* Generated Link Dialog - placed at root level to avoid stacking context issues */}
+      <Dialog open={!!generatedLink} onOpenChange={(open) => !open && setGeneratedLink("")}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Here's the link to your meeting</DialogTitle>
+            <DialogDescription>
+              Copy this link and send it to people you want to meet with. Be sure to save it so you can use it later, too.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 bg-muted/50 p-3 rounded-md mt-2 overflow-hidden">
+            <span className="text-sm flex-1 truncate font-mono text-muted-foreground">{generatedLink}</span>
+            <Button variant="ghost" size="icon" onClick={copyLink} className="h-8 w-8 shrink-0">
+              {isCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
+          <DialogFooter className="sm:justify-start">
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
