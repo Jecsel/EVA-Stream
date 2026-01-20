@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Video,
@@ -22,7 +22,10 @@ import {
   GitBranch,
   Mic,
   Brain,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -153,6 +156,7 @@ const AGENT_TYPES = [
 ];
 
 export default function Admin() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("agents");
   const [searchQuery, setSearchQuery] = useState("");
   const [promptTypeFilter, setPromptTypeFilter] = useState<string>("");
@@ -557,6 +561,17 @@ export default function Admin() {
         </div>
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-muted-foreground" />
+          {user?.photoURL ? (
+            <img 
+              src={user.photoURL} 
+              alt={user.displayName || "User"} 
+              className="w-8 h-8 rounded-full object-cover ml-2"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10 flex items-center justify-center ml-2">
+              <User className="w-4 h-4 text-white" />
+            </div>
+          )}
         </div>
       </header>
 

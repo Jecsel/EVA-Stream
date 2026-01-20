@@ -12,6 +12,22 @@ import Dashboard from "@/pages/Dashboard";
 import RecordingDetail from "@/pages/RecordingDetail";
 import Admin from "@/pages/Admin";
 
+function ProtectedMeetingRoom() {
+  return (
+    <ProtectedRoute>
+      <MeetingRoom />
+    </ProtectedRoute>
+  );
+}
+
+function ProtectedRecordingDetail() {
+  return (
+    <ProtectedRoute>
+      <RecordingDetail />
+    </ProtectedRoute>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -26,20 +42,8 @@ function Router() {
           <Admin />
         </ProtectedRoute>
       </Route>
-      <Route path="/meeting/:id">
-        {(params) => (
-          <ProtectedRoute>
-            <MeetingRoom />
-          </ProtectedRoute>
-        )}
-      </Route>
-      <Route path="/recording/:id">
-        {(params) => (
-          <ProtectedRoute>
-            <RecordingDetail />
-          </ProtectedRoute>
-        )}
-      </Route>
+      <Route path="/meeting/:id" component={ProtectedMeetingRoom} />
+      <Route path="/recording/:id" component={ProtectedRecordingDetail} />
       <Route component={NotFound} />
     </Switch>
   );
