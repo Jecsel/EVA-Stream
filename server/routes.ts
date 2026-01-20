@@ -625,7 +625,46 @@ export async function registerRoutes(
       });
 
       // Extract room name from FQN (format: "AppID/roomName")
-      const roomName = fqn?.split("/")[1];
+      const rawRoomName = fqn?.split("/")[1];
+      
+      // Helper function to find meeting by room name with flexible matching
+      // JaaS room names may have prefixes like "videoai-" that need to be stripped
+      const findMeetingByFlexibleRoomId = async (roomNameToFind: string | undefined) => {
+        if (!roomNameToFind) return null;
+        
+        // Try exact match first
+        let meeting = await storage.getMeetingByRoomId(roomNameToFind);
+        if (meeting) {
+          console.log(`Found meeting by exact room match: ${roomNameToFind}`);
+          return meeting;
+        }
+        
+        // Try stripping common prefixes (e.g., "videoai-roomid" -> "roomid")
+        const parts = roomNameToFind.split("-");
+        if (parts.length > 1) {
+          // Try the last part (e.g., "videoai-y6xi7f" -> "y6xi7f")
+          const lastPart = parts[parts.length - 1];
+          meeting = await storage.getMeetingByRoomId(lastPart);
+          if (meeting) {
+            console.log(`Found meeting by stripping prefix: ${roomNameToFind} -> ${lastPart}`);
+            return meeting;
+          }
+          
+          // Try everything after the first hyphen (e.g., "prefix-room-id" -> "room-id")
+          const afterFirstHyphen = parts.slice(1).join("-");
+          meeting = await storage.getMeetingByRoomId(afterFirstHyphen);
+          if (meeting) {
+            console.log(`Found meeting by removing first prefix: ${roomNameToFind} -> ${afterFirstHyphen}`);
+            return meeting;
+          }
+        }
+        
+        console.log(`No meeting found for room: ${roomNameToFind}`);
+        return null;
+      };
+      
+      // Use the raw room name for logging, but use flexible matching for lookups
+      const roomName = rawRoomName;
 
       // Handle different event types
       switch (eventType) {
@@ -638,7 +677,7 @@ export async function registerRoutes(
           console.log(`Room destroyed: ${data?.conference}`);
           // Find and complete the meeting
           if (roomName) {
-            const meeting = await storage.getMeetingByRoomId(roomName);
+            const meeting = await findMeetingByFlexibleRoomId(roomName);
             if (meeting && meeting.status !== "completed") {
               await storage.updateMeeting(meeting.id, { status: "completed" });
             }
@@ -671,7 +710,7 @@ export async function registerRoutes(
           
           // Find associated meeting and update recording with video URL
           if (roomName && data?.preAuthenticatedLink) {
-            const meeting = await storage.getMeetingByRoomId(roomName);
+            const meeting = await findMeetingByFlexibleRoomId(roomName);
             if (meeting) {
               // Find existing recording for this meeting
               const recordings = await storage.getRecordingsByMeeting(meeting.id);
@@ -704,7 +743,7 @@ export async function registerRoutes(
           // Find associated meeting
           let meetingId: string | null = null;
           if (roomName) {
-            const meeting = await storage.getMeetingByRoomId(roomName);
+            const meeting = await findMeetingByFlexibleRoomId(roomName);
             meetingId = meeting?.id || null;
           }
 
