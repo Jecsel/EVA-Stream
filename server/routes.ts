@@ -415,12 +415,23 @@ export async function registerRoutes(
         return;
       }
 
-      // Get all chat messages for summary
+      // Get all chat messages and transcript segments for summary
       const messages = await storage.getChatMessagesByMeeting(meetingId);
+      const transcriptSegments = await storage.getTranscriptsByMeeting(meetingId);
       
       // Generate simple summary (no AI call to keep it fast)
       let summary = "Meeting ended (auto-saved).";
-      if (messages.length > 0) {
+      
+      // First try to use transcript segments for summary
+      if (transcriptSegments.length > 0) {
+        const finalSegments = transcriptSegments.filter(t => t.isFinal && t.text.trim().length > 0);
+        if (finalSegments.length > 0) {
+          const previewText = finalSegments.slice(0, 3).map(t => t.text.slice(0, 50)).join(", ");
+          summary = `Meeting with ${finalSegments.length} transcript segments. Topics: ${previewText}...`;
+        }
+      }
+      // Fall back to chat messages
+      else if (messages.length > 0) {
         const userMessages = messages.filter(m => m.role === "user");
         if (userMessages.length > 0) {
           summary = `Meeting with ${messages.length} messages. Topics discussed: ${userMessages.slice(0, 3).map(m => m.content.slice(0, 50)).join(", ")}...`;
@@ -460,12 +471,31 @@ export async function registerRoutes(
         return;
       }
 
-      // Get all chat messages for summary
+      // Get all chat messages and transcript segments for summary
       const messages = await storage.getChatMessagesByMeeting(meetingId);
+      const transcriptSegments = await storage.getTranscriptsByMeeting(meetingId);
       
       // Generate AI summary of the meeting
       let summary = "Meeting ended without discussion.";
-      if (messages.length > 0) {
+      
+      // First try to use transcript segments (local speech-to-text)
+      if (transcriptSegments.length > 0) {
+        const transcriptText = transcriptSegments
+          .filter(t => t.isFinal && t.text.trim().length > 0)
+          .map(t => `${t.speaker}: ${t.text}`)
+          .join("\n");
+        
+        if (transcriptText.length > 10) {
+          const summaryResponse = await analyzeChat(
+            `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${transcriptText.slice(0, 4000)}`,
+            `Meeting: ${meeting.title}`,
+            false
+          );
+          summary = summaryResponse.message;
+        }
+      }
+      // Fall back to chat messages if no transcript
+      else if (messages.length > 0) {
         const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
         const summaryResponse = await analyzeChat(
           `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,

@@ -82,6 +82,12 @@ export default function RecordingDetail() {
     enabled: !!meetingId,
   });
 
+  const { data: localTranscripts = [] } = useQuery({
+    queryKey: ["localTranscripts", meetingId],
+    queryFn: () => api.getTranscripts(meetingId!),
+    enabled: !!meetingId,
+  });
+
   const updateMutation = useMutation({
     mutationFn: (sopContent: string) => api.updateRecording(recordingId, { sopContent }),
     onSuccess: () => {
@@ -622,16 +628,39 @@ export default function RecordingDetail() {
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-primary" />
                   Meeting Transcript
-                  {(jaasTranscriptions.length > 0 || chatMessages.length > 0) && (
+                  {(localTranscripts.length > 0 || jaasTranscriptions.length > 0 || chatMessages.length > 0) && (
                     <span className="text-xs text-muted-foreground">
-                      {jaasTranscriptions.length > 0 ? '(JaaS transcription available)' : `(${chatMessages.length} messages)`}
+                      {localTranscripts.length > 0 
+                        ? `(${localTranscripts.length} segments)` 
+                        : jaasTranscriptions.length > 0 
+                          ? '(JaaS transcription available)' 
+                          : `(${chatMessages.length} messages)`}
                     </span>
                   )}
                 </h2>
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-4 space-y-4" data-testid="content-transcript">
-                  {jaasTranscriptions.length > 0 ? (
+                  {localTranscripts.length > 0 ? (
+                    <div className="space-y-3">
+                      {localTranscripts.map((segment) => (
+                        <div key={segment.id} className="flex gap-3">
+                          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                            <User className="w-4 h-4 text-foreground" />
+                          </div>
+                          <div className="flex-1 bg-muted/50 border border-border rounded-xl p-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium">{segment.speaker}</span>
+                              <span className="text-xs opacity-60">
+                                {format(new Date(segment.createdAt), "h:mm:ss a")}
+                              </span>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : jaasTranscriptions.length > 0 ? (
                     <div className="space-y-6">
                       {jaasTranscriptions.map((transcription) => (
                         <div key={transcription.id} className="space-y-4">
