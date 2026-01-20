@@ -51,7 +51,6 @@ export function AgentSelector({
       
       if (defaultAgentIds.length > 0) {
         onAgentsChange(defaultAgentIds);
-        updateMutation.mutate(defaultAgentIds);
       }
     }
   }, [agents]);

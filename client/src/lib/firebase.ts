@@ -7,6 +7,8 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence,
   User
 } from "firebase/auth";
 
@@ -20,6 +22,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 const googleProvider = new GoogleAuthProvider();
 

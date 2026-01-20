@@ -63,6 +63,13 @@ export default function Dashboard() {
     queryFn: () => api.listRecordings(10),
   });
 
+  // Pre-fetch agents list so it's cached when entering meetings
+  useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+    staleTime: 1000 * 60 * 5,
+  });
+
   const handleCreateInstant = () => {
     const randomId = Math.random().toString(36).substring(7);
     setLocation(`/meeting/${randomId}`);

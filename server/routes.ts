@@ -152,11 +152,18 @@ export async function registerRoutes(
       
       // Auto-create meeting if it doesn't exist (for ad-hoc meetings)
       if (!meeting) {
+        // Get default agents to pre-select them
+        const allAgents = await storage.listAgents();
+        const defaultAgentIds = allAgents
+          .filter(agent => agent.isDefault)
+          .map(agent => agent.id);
+        
         meeting = await storage.createMeeting({
           title: `Meeting ${req.params.roomId}`,
           roomId: req.params.roomId,
           status: "live",
           scheduledDate: new Date(),
+          selectedAgents: defaultAgentIds.length > 0 ? defaultAgentIds : null,
         });
       }
       
