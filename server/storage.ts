@@ -65,6 +65,7 @@ export interface IStorage {
   // Meetings
   getMeeting(id: string): Promise<Meeting | undefined>;
   getMeetingByRoomId(roomId: string): Promise<Meeting | undefined>;
+  getMeetingByRoomIdCaseInsensitive(roomId: string): Promise<Meeting | undefined>;
   createMeeting(meeting: InsertMeeting): Promise<Meeting>;
   updateMeeting(id: string, meeting: Partial<InsertMeeting>): Promise<Meeting | undefined>;
   listUpcomingMeetings(): Promise<Meeting[]>;
@@ -242,6 +243,11 @@ export class DatabaseStorage implements IStorage {
 
   async getMeetingByRoomId(roomId: string): Promise<Meeting | undefined> {
     const [meeting] = await db.select().from(meetings).where(eq(meetings.roomId, roomId));
+    return meeting;
+  }
+
+  async getMeetingByRoomIdCaseInsensitive(roomId: string): Promise<Meeting | undefined> {
+    const [meeting] = await db.select().from(meetings).where(ilike(meetings.roomId, roomId));
     return meeting;
   }
 

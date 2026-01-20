@@ -628,9 +628,11 @@ export async function registerRoutes(
       const rawRoomName = fqn?.split("/")[1];
       
       // Helper function to find meeting by room name with flexible matching
-      // JaaS room names may have prefixes like "videoai-" that need to be stripped
+      // JaaS room names may have prefixes like "VideoAI-" that need to be stripped (case-insensitive)
       const findMeetingByFlexibleRoomId = async (roomNameToFind: string | undefined) => {
         if (!roomNameToFind) return null;
+        
+        console.log(`Looking for meeting with room name: ${roomNameToFind}`);
         
         // Try exact match first
         let meeting = await storage.getMeetingByRoomId(roomNameToFind);
@@ -639,14 +641,28 @@ export async function registerRoutes(
           return meeting;
         }
         
-        // Try stripping common prefixes (e.g., "videoai-roomid" -> "roomid")
+        // Try case-insensitive exact match
+        meeting = await storage.getMeetingByRoomIdCaseInsensitive(roomNameToFind);
+        if (meeting) {
+          console.log(`Found meeting by case-insensitive match: ${roomNameToFind}`);
+          return meeting;
+        }
+        
+        // Try stripping common prefixes (e.g., "VideoAI-roomid" -> "roomid")
         const parts = roomNameToFind.split("-");
         if (parts.length > 1) {
-          // Try the last part (e.g., "videoai-y6xi7f" -> "y6xi7f")
+          // Try the last part (e.g., "VideoAI-y6xi7f" -> "y6xi7f")
           const lastPart = parts[parts.length - 1];
           meeting = await storage.getMeetingByRoomId(lastPart);
           if (meeting) {
             console.log(`Found meeting by stripping prefix: ${roomNameToFind} -> ${lastPart}`);
+            return meeting;
+          }
+          
+          // Try case-insensitive match on last part
+          meeting = await storage.getMeetingByRoomIdCaseInsensitive(lastPart);
+          if (meeting) {
+            console.log(`Found meeting by case-insensitive last part: ${roomNameToFind} -> ${lastPart}`);
             return meeting;
           }
           
@@ -655,6 +671,13 @@ export async function registerRoutes(
           meeting = await storage.getMeetingByRoomId(afterFirstHyphen);
           if (meeting) {
             console.log(`Found meeting by removing first prefix: ${roomNameToFind} -> ${afterFirstHyphen}`);
+            return meeting;
+          }
+          
+          // Try case-insensitive on after first hyphen
+          meeting = await storage.getMeetingByRoomIdCaseInsensitive(afterFirstHyphen);
+          if (meeting) {
+            console.log(`Found meeting by case-insensitive after prefix: ${roomNameToFind} -> ${afterFirstHyphen}`);
             return meeting;
           }
         }
@@ -706,11 +729,14 @@ export async function registerRoutes(
         }
 
         case "RECORDING_UPLOADED": {
-          console.log(`Recording uploaded, URL: ${data?.preAuthenticatedLink}`);
+          console.log(`=== RECORDING_UPLOADED webhook received ===`);
+          console.log(`Room name from FQN: ${roomName}`);
+          console.log(`Video URL: ${data?.preAuthenticatedLink}`);
           
           // Find associated meeting and update recording with video URL
           if (roomName && data?.preAuthenticatedLink) {
             const meeting = await findMeetingByFlexibleRoomId(roomName);
+            console.log(`Meeting lookup result: ${meeting ? `Found meeting ${meeting.id} (${meeting.title})` : 'No meeting found'}`);
             if (meeting) {
               // Find existing recording for this meeting
               const recordings = await storage.getRecordingsByMeeting(meeting.id);
