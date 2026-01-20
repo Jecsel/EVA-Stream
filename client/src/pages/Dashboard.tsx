@@ -14,7 +14,9 @@ import {
   Settings,
   HelpCircle,
   Menu,
-  Calendar
+  Calendar,
+  LogOut,
+  User
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,19 +35,27 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator
+  DropdownMenuSeparator,
+  DropdownMenuLabel
 } from "@/components/ui/dropdown-menu";
 import { MeetingCard } from "@/components/MeetingCard";
 import { MeetingsList } from "@/components/MeetingsList";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format, formatDistanceToNow } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Dashboard() {
   const [location, setLocation] = useLocation();
+  const { user, logout } = useAuth();
   const [meetingCode, setMeetingCode] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/login");
+  };
 
   // Fetch recordings from the API
   const { data: recordings = [], isLoading: recordingsLoading } = useQuery({
@@ -111,7 +121,36 @@ export default function Dashboard() {
                   <Settings className="w-5 h-5" />
               </Button>
             </Link>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
+                  {user?.photoURL ? (
+                    <img 
+                      src={user.photoURL} 
+                      alt={user.displayName || "User"} 
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10 flex items-center justify-center">
+                      <User className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-500 focus:text-red-500" data-testid="button-logout">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </header>
 
