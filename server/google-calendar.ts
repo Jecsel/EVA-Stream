@@ -1,15 +1,19 @@
 import { google, calendar_v3 } from "googleapis";
 import crypto from "crypto";
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI || "http://localhost:5000/api/google/callback"
-);
+function createOAuth2Client(redirectUri?: string) {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri
+  );
+}
 
-const pendingOAuthStates = new Map<string, { userId: string; expires: number }>();
+const oauth2Client = createOAuth2Client();
 
-export function getAuthUrl(userId: string): string {
+const pendingOAuthStates = new Map<string, { userId: string; redirectUri: string; expires: number }>();
+
+export function getAuthUrl(userId: string, requestHost: string): string {
   const scopes = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -17,7 +21,12 @@ export function getAuthUrl(userId: string): string {
   ];
 
   const state = crypto.randomBytes(32).toString("hex");
-  pendingOAuthStates.set(state, { userId, expires: Date.now() + 10 * 60 * 1000 });
+  
+  // Build redirect URI dynamically from request host
+  const protocol = requestHost.includes("localhost") ? "http" : "https";
+  const redirectUri = `${protocol}://${requestHost}/api/google/callback`;
+  
+  pendingOAuthStates.set(state, { userId, redirectUri, expires: Date.now() + 10 * 60 * 1000 });
 
   pendingOAuthStates.forEach((value, key) => {
     if (value.expires < Date.now()) {
@@ -25,7 +34,8 @@ export function getAuthUrl(userId: string): string {
     }
   });
 
-  return oauth2Client.generateAuthUrl({
+  const dynamicClient = createOAuth2Client(redirectUri);
+  return dynamicClient.generateAuthUrl({
     access_type: "offline",
     scope: scopes,
     prompt: "consent",
@@ -33,18 +43,19 @@ export function getAuthUrl(userId: string): string {
   });
 }
 
-export function validateOAuthState(state: string): string | null {
+export function validateOAuthState(state: string): { userId: string; redirectUri: string } | null {
   const pending = pendingOAuthStates.get(state);
   if (!pending || pending.expires < Date.now()) {
     pendingOAuthStates.delete(state);
     return null;
   }
   pendingOAuthStates.delete(state);
-  return pending.userId;
+  return { userId: pending.userId, redirectUri: pending.redirectUri };
 }
 
-export async function getTokensFromCode(code: string) {
-  const { tokens } = await oauth2Client.getToken(code);
+export async function getTokensFromCode(code: string, redirectUri: string) {
+  const dynamicClient = createOAuth2Client(redirectUri);
+  const { tokens } = await dynamicClient.getToken(code);
   return tokens;
 }
 

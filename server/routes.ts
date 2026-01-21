@@ -575,7 +575,9 @@ export async function registerRoutes(
         return;
       }
       
-      const authUrl = getAuthUrl(userId);
+      // Get host from request to build dynamic redirect URI
+      const host = req.get("host") || "localhost:5000";
+      const authUrl = getAuthUrl(userId, host);
       res.json({ authUrl });
     } catch (error) {
       console.error("Google auth URL error:", error);
@@ -598,13 +600,14 @@ export async function registerRoutes(
         return;
       }
 
-      const userId = validateOAuthState(state);
-      if (!userId) {
+      const stateResult = validateOAuthState(state);
+      if (!stateResult) {
         res.redirect("/?error=invalid_state");
         return;
       }
 
-      const tokens = await getTokensFromCode(code);
+      const { userId, redirectUri } = stateResult;
+      const tokens = await getTokensFromCode(code, redirectUri);
       const userInfo = await getUserInfo(tokens.access_token!);
 
       // Store tokens server-side in user record
