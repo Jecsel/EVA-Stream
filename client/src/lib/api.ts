@@ -208,17 +208,20 @@ export const api = {
     return response.json();
   },
 
-  async getGoogleStatus(userId: string): Promise<{ connected: boolean; email: string | null }> {
-    const response = await fetch(`${API_BASE}/google/status/${userId}`);
+  async getGoogleStatus(userId: string, userEmail?: string): Promise<{ connected: boolean; email: string | null }> {
+    const params = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
+    const response = await fetch(`${API_BASE}/google/status/${userId}${params}`);
     if (!response.ok) {
       return { connected: false, email: null };
     }
     return response.json();
   },
 
-  async disconnectGoogle(userId: string): Promise<{ success: boolean }> {
+  async disconnectGoogle(userId: string, userEmail?: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE}/google/disconnect/${userId}`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: userEmail }),
     });
     if (!response.ok) {
       throw new Error("Failed to disconnect Google");
@@ -233,6 +236,7 @@ export const api = {
     attendeeEmails?: string[];
     description?: string;
     userId?: string;
+    userEmail?: string;
   }): Promise<{
     success: boolean;
     meeting: Meeting;

@@ -50,7 +50,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess }: Schedul
       }
       
       try {
-        const status = await api.getGoogleStatus(user.uid);
+        const status = await api.getGoogleStatus(user.uid, user.email || undefined);
         setGoogleStatus(status);
       } catch (e) {
         console.error("Failed to get Google status");
@@ -101,7 +101,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess }: Schedul
     if (!user?.uid) return;
     
     try {
-      await api.disconnectGoogle(user.uid);
+      await api.disconnectGoogle(user.uid, user.email || undefined);
       setGoogleStatus({ connected: false, email: null });
       toast({
         title: "Disconnected",
@@ -165,6 +165,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess }: Schedul
         attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
         description: description || undefined,
         userId: user?.uid,
+        userEmail: user?.email || undefined,
       });
 
       toast({

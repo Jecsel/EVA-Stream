@@ -610,8 +610,14 @@ export async function registerRoutes(
       const tokens = await getTokensFromCode(code, redirectUri);
       const userInfo = await getUserInfo(tokens.access_token!);
 
-      // Check if user exists, create if not (upsert)
+      // Check if user exists by ID or email, create if not (upsert)
       let user = await storage.getUser(userId);
+      
+      // Also check by email if user not found by ID
+      if (!user && userInfo.email) {
+        user = await storage.getUserByEmail(userInfo.email);
+      }
+      
       if (!user) {
         // Create user with Firebase UID as the ID
         user = await storage.createUserWithId(userId, {
@@ -625,8 +631,8 @@ export async function registerRoutes(
           googleEmail: userInfo.email || null,
         });
       } else {
-        // Update existing user with Google tokens
-        await storage.updateUser(userId, {
+        // Update existing user with Google tokens (use their existing ID)
+        await storage.updateUser(user.id, {
           googleAccessToken: tokens.access_token || undefined,
           googleRefreshToken: tokens.refresh_token || undefined,
           googleEmail: userInfo.email || undefined,
@@ -644,9 +650,16 @@ export async function registerRoutes(
   // Get user's Google Calendar status
   app.get("/api/google/status/:userId", async (req, res) => {
     try {
-      const user = await storage.getUser(req.params.userId);
+      let user = await storage.getUser(req.params.userId);
+      
+      // Fallback: check by email query param if user not found by ID
+      if (!user && req.query.email) {
+        user = await storage.getUserByEmail(req.query.email as string);
+      }
+      
       if (!user) {
-        res.status(404).json({ error: "User not found" });
+        // Return not connected instead of 404 for cleaner frontend handling
+        res.json({ connected: false, email: null });
         return;
       }
       res.json({
@@ -661,7 +674,19 @@ export async function registerRoutes(
   // Disconnect Google Calendar
   app.post("/api/google/disconnect/:userId", async (req, res) => {
     try {
-      await storage.updateUser(req.params.userId, {
+      let user = await storage.getUser(req.params.userId);
+      
+      // Fallback: check by email if user not found by ID
+      if (!user && req.body.email) {
+        user = await storage.getUserByEmail(req.body.email);
+      }
+      
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      
+      await storage.updateUser(user.id, {
         googleAccessToken: undefined,
         googleRefreshToken: undefined,
         googleEmail: undefined,
@@ -680,6 +705,7 @@ export async function registerRoutes(
     attendeeEmails: z.array(z.string().email()).optional(),
     description: z.string().optional(),
     userId: z.string().optional(),
+    userEmail: z.string().email().optional(),
   });
 
   app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
@@ -709,30 +735,35 @@ export async function registerRoutes(
 
       let calendarEvent = null;
       
-      // Get user's Google tokens from server-side storage
+      // Get user's Google tokens from server-side storage (check by ID first, then email)
+      let user = null;
       if (validated.userId) {
-        const user = await storage.getUser(validated.userId);
-        if (user?.googleAccessToken) {
-          try {
-            calendarEvent = await createCalendarEvent({
-              title: validated.title,
-              description: validated.description,
-              startTime,
-              endTime,
-              attendeeEmails: validated.attendeeEmails || [],
-              meetingLink,
-              accessToken: user.googleAccessToken,
-              refreshToken: user.googleRefreshToken || undefined,
-            });
+        user = await storage.getUser(validated.userId);
+      }
+      if (!user && validated.userEmail) {
+        user = await storage.getUserByEmail(validated.userEmail);
+      }
+      
+      if (user?.googleAccessToken) {
+        try {
+          calendarEvent = await createCalendarEvent({
+            title: validated.title,
+            description: validated.description,
+            startTime,
+            endTime,
+            attendeeEmails: validated.attendeeEmails || [],
+            meetingLink,
+            accessToken: user.googleAccessToken,
+            refreshToken: user.googleRefreshToken || undefined,
+          });
 
-            // Update meeting with calendar event ID
-            await storage.updateMeeting(meeting.id, {
-              calendarEventId: calendarEvent.id || null,
-            });
-          } catch (calendarError) {
-            console.error("Failed to create calendar event:", calendarError);
-            // Continue without calendar event - meeting is still created
-          }
+          // Update meeting with calendar event ID
+          await storage.updateMeeting(meeting.id, {
+            calendarEventId: calendarEvent.id || null,
+          });
+        } catch (calendarError) {
+          console.error("Failed to create calendar event:", calendarError);
+          // Continue without calendar event - meeting is still created
         }
       }
 
