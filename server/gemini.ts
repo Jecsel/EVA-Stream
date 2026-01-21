@@ -362,3 +362,106 @@ ${transcriptText.slice(0, 30000)}`;
     };
   }
 }
+
+const DEFAULT_NOTETAKER_PROMPT = `You are a meeting NoteTaker assistant. Analyze the transcript segments provided and generate concise meeting notes.
+
+Your notes should include:
+1. Key discussion points - Main topics being discussed
+2. Decisions made - Any conclusions or agreements reached
+3. Action items - Tasks assigned or next steps mentioned
+4. Important quotes or statements
+
+Keep notes organized, clear, and actionable. Format using Markdown with appropriate headers and bullet points.`;
+
+export interface MeetingNote {
+  content: string;
+  keyPoints: string[];
+  actionItems: string[];
+}
+
+export async function generateMeetingNotes(
+  transcripts: { speaker: string; text: string; timestamp?: Date }[],
+  existingNotes: string,
+  customSystemPrompt?: string
+): Promise<MeetingNote> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return {
+        content: existingNotes || "Notes will appear here once transcription begins.",
+        keyPoints: [],
+        actionItems: [],
+      };
+    }
+
+    if (transcripts.length === 0) {
+      return {
+        content: existingNotes || "Waiting for meeting discussion...",
+        keyPoints: [],
+        actionItems: [],
+      };
+    }
+
+    const transcriptText = transcripts
+      .map(t => `${t.speaker}: ${t.text}`)
+      .join("\n")
+      .slice(0, 4000); // Cap transcript text to avoid overly large prompts
+
+    const systemPrompt = customSystemPrompt || DEFAULT_NOTETAKER_PROMPT;
+
+    const prompt = `${systemPrompt}
+
+${existingNotes ? `Previous Notes:\n${existingNotes}\n\n` : ""}New Transcript Segments:
+${transcriptText}
+
+Generate updated meeting notes incorporating the new transcript segments. Include:
+1. Updated key discussion points
+2. Any new decisions or action items
+3. Notable quotes or statements
+
+Respond in the following JSON format:
+{
+  "content": "Full updated notes in Markdown format",
+  "keyPoints": ["key point 1", "key point 2", ...],
+  "actionItems": ["action 1", "action 2", ...]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          content: parsed.content || existingNotes,
+          keyPoints: parsed.keyPoints || [],
+          actionItems: parsed.actionItems || [],
+        };
+      }
+    } catch (parseError) {
+      console.error("Failed to parse NoteTaker response as JSON, using raw text:", parseError);
+      return {
+        content: text,
+        keyPoints: [],
+        actionItems: [],
+      };
+    }
+
+    return {
+      content: text || existingNotes,
+      keyPoints: [],
+      actionItems: [],
+    };
+  } catch (error) {
+    console.error("Gemini NoteTaker error:", error);
+    return {
+      content: existingNotes || "Error generating notes.",
+      keyPoints: [],
+      actionItems: [],
+    };
+  }
+}
