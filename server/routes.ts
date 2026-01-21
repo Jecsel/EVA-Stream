@@ -584,7 +584,7 @@ export async function registerRoutes(
   });
 
   // Google Calendar OAuth callback
-  app.get("/api/auth/google/callback", async (req, res) => {
+  app.get("/api/google/callback", async (req, res) => {
     try {
       const { code, state } = req.query;
       
