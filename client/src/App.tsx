@@ -11,6 +11,7 @@ import MeetingRoom from "@/pages/MeetingRoom";
 import Dashboard from "@/pages/Dashboard";
 import RecordingDetail from "@/pages/RecordingDetail";
 import Admin from "@/pages/Admin";
+import Calendar from "@/pages/Calendar";
 
 function ProtectedMeetingRoom() {
   return (
@@ -40,6 +41,11 @@ function Router() {
       <Route path="/admin">
         <ProtectedRoute>
           <Admin />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/calendar">
+        <ProtectedRoute>
+          <Calendar />
         </ProtectedRoute>
       </Route>
       <Route path="/meeting/:id" component={ProtectedMeetingRoom} />

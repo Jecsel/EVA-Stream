@@ -54,9 +54,11 @@ export function MeetingsList() {
             <CalendarIcon className="w-4 h-4 text-primary" />
             Upcoming
           </h2>
-          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-primary">
-            View Calendar <ArrowRight className="w-3 h-3 ml-1" />
-          </Button>
+          <Link href="/calendar">
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-primary" data-testid="link-view-calendar">
+              View Calendar <ArrowRight className="w-3 h-3 ml-1" />
+            </Button>
+          </Link>
         </div>
         
         <div className="space-y-3">
