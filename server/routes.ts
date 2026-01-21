@@ -610,12 +610,28 @@ export async function registerRoutes(
       const tokens = await getTokensFromCode(code, redirectUri);
       const userInfo = await getUserInfo(tokens.access_token!);
 
-      // Store tokens server-side in user record
-      await storage.updateUser(userId, {
-        googleAccessToken: tokens.access_token || undefined,
-        googleRefreshToken: tokens.refresh_token || undefined,
-        googleEmail: userInfo.email || undefined,
-      });
+      // Check if user exists, create if not (upsert)
+      let user = await storage.getUser(userId);
+      if (!user) {
+        // Create user with Firebase UID as the ID
+        user = await storage.createUserWithId(userId, {
+          username: userInfo.email || userId,
+          email: userInfo.email || `${userId}@videoai.local`,
+          password: "", // Firebase users don't need password
+          role: "user",
+          status: "active",
+          googleAccessToken: tokens.access_token || null,
+          googleRefreshToken: tokens.refresh_token || null,
+          googleEmail: userInfo.email || null,
+        });
+      } else {
+        // Update existing user with Google tokens
+        await storage.updateUser(userId, {
+          googleAccessToken: tokens.access_token || undefined,
+          googleRefreshToken: tokens.refresh_token || undefined,
+          googleEmail: userInfo.email || undefined,
+        });
+      }
 
       // Redirect back to app with success status only (no tokens in URL)
       res.redirect(`/?google_auth=success&google_email=${encodeURIComponent(userInfo.email || "")}`);
