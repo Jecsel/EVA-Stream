@@ -426,7 +426,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
               <SelectTrigger className="w-auto min-w-[200px]" data-testid="select-recurrence">
                 <SelectValue placeholder="Does not repeat" />
               </SelectTrigger>
-              <SelectContent className="z-[100]" position="popper" sideOffset={4}>
+              <SelectContent className="z-[10000]" position="popper" sideOffset={4}>
                 {recurrenceOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
