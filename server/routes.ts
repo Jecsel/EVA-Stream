@@ -804,6 +804,9 @@ export async function registerRoutes(
     description: z.string().optional(),
     userId: z.string().optional(),
     userEmail: z.string().email().optional(),
+    eventType: z.enum(["event", "task"]).optional().default("event"),
+    isAllDay: z.boolean().optional().default(false),
+    recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays", "custom"]).optional().default("none"),
   });
 
   app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
@@ -829,6 +832,9 @@ export async function registerRoutes(
         scheduledDate: startTime,
         endDate: endTime,
         attendeeEmails: validated.attendeeEmails || null,
+        eventType: validated.eventType,
+        isAllDay: validated.isAllDay,
+        recurrence: validated.recurrence,
       });
 
       let calendarEvent = null;

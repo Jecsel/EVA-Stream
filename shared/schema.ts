@@ -86,6 +86,10 @@ export const meetings = pgTable("meetings", {
   selectedAgents: text("selected_agents").array(), // array of agent IDs selected for this meeting
   attendeeEmails: text("attendee_emails").array(), // array of attendee email addresses
   calendarEventId: text("calendar_event_id"), // Google Calendar event ID
+  eventType: text("event_type").notNull().default("event"), // event or task
+  isAllDay: boolean("is_all_day").notNull().default(false), // whether this is an all-day event
+  recurrence: text("recurrence").default("none"), // none, daily, weekly, monthly, annually, weekdays, custom
+  recurrenceEndDate: timestamp("recurrence_end_date"), // when the recurrence ends
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

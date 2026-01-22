@@ -237,6 +237,9 @@ export const api = {
     description?: string;
     userId?: string;
     userEmail?: string;
+    eventType?: "event" | "task";
+    isAllDay?: boolean;
+    recurrence?: "none" | "daily" | "weekly" | "monthly" | "annually" | "weekdays" | "custom";
   }): Promise<{
     success: boolean;
     meeting: Meeting;
