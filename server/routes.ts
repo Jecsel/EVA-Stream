@@ -859,6 +859,8 @@ export async function registerRoutes(
             meetingLink,
             accessToken: user.googleAccessToken,
             refreshToken: user.googleRefreshToken || undefined,
+            isAllDay: validated.isAllDay,
+            recurrence: validated.recurrence,
           });
 
           // Update meeting with calendar event ID

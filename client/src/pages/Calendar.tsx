@@ -243,6 +243,7 @@ export default function Calendar() {
       <ScheduleMeetingDialog 
         open={scheduleDialogOpen} 
         onOpenChange={setScheduleDialogOpen}
+        initialDate={selectedDate || undefined}
         onSuccess={() => {
           setScheduleDialogOpen(false);
           queryClient.invalidateQueries({ queryKey: ["upcomingMeetings"] });

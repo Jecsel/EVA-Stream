@@ -78,10 +78,10 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   const [isLoadingGoogleStatus, setIsLoadingGoogleStatus] = useState(true);
 
   useEffect(() => {
-    if (initialDate) {
+    if (open && initialDate) {
       setDate(format(initialDate, "yyyy-MM-dd"));
     }
-  }, [initialDate]);
+  }, [initialDate, open]);
 
   const recurrenceOptions = useMemo(() => {
     if (!date) {

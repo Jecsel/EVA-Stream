@@ -78,10 +78,40 @@ interface CalendarEventParams {
   meetingLink: string;
   accessToken: string;
   refreshToken?: string;
+  isAllDay?: boolean;
+  recurrence?: "none" | "daily" | "weekly" | "monthly" | "annually" | "weekdays" | "custom";
+}
+
+function buildRecurrenceRule(recurrence: string, startTime: Date): string[] | undefined {
+  if (!recurrence || recurrence === "none") {
+    return undefined;
+  }
+
+  const dayOfWeek = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][startTime.getDay()];
+  const dayOfMonth = startTime.getDate();
+  const weekOfMonth = Math.ceil(dayOfMonth / 7);
+  const month = startTime.getMonth() + 1;
+
+  switch (recurrence) {
+    case "daily":
+      return ["RRULE:FREQ=DAILY"];
+    case "weekly":
+      return [`RRULE:FREQ=WEEKLY;BYDAY=${dayOfWeek}`];
+    case "monthly":
+      return [`RRULE:FREQ=MONTHLY;BYDAY=${weekOfMonth}${dayOfWeek}`];
+    case "annually":
+      return [`RRULE:FREQ=YEARLY;BYMONTH=${month};BYMONTHDAY=${dayOfMonth}`];
+    case "weekdays":
+      return ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"];
+    case "custom":
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 export async function createCalendarEvent(params: CalendarEventParams): Promise<calendar_v3.Schema$Event> {
-  const { title, description, startTime, endTime, attendeeEmails, meetingLink, accessToken, refreshToken } = params;
+  const { title, description, startTime, endTime, attendeeEmails, meetingLink, accessToken, refreshToken, isAllDay, recurrence } = params;
 
   oauth2Client.setCredentials({
     access_token: accessToken,
@@ -90,17 +120,17 @@ export async function createCalendarEvent(params: CalendarEventParams): Promise<
 
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
+  const recurrenceRule = buildRecurrenceRule(recurrence || "none", startTime);
+
   const event: calendar_v3.Schema$Event = {
     summary: title,
     description: description || `Join the meeting: ${meetingLink}`,
-    start: {
-      dateTime: startTime.toISOString(),
-      timeZone: "UTC",
-    },
-    end: {
-      dateTime: endTime.toISOString(),
-      timeZone: "UTC",
-    },
+    start: isAllDay
+      ? { date: startTime.toISOString().split("T")[0] }
+      : { dateTime: startTime.toISOString(), timeZone: "UTC" },
+    end: isAllDay
+      ? { date: endTime.toISOString().split("T")[0] }
+      : { dateTime: endTime.toISOString(), timeZone: "UTC" },
     attendees: attendeeEmails.map((email) => ({ email })),
     conferenceData: {
       entryPoints: [
@@ -122,6 +152,7 @@ export async function createCalendarEvent(params: CalendarEventParams): Promise<
         { method: "popup", minutes: 10 },
       ],
     },
+    ...(recurrenceRule && { recurrence: recurrenceRule }),
   };
 
   const response = await calendar.events.insert({
