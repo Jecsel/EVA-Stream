@@ -27,6 +27,18 @@ mermaid.initialize({
   },
 });
 
+const decodeHtmlEntities = (text: string): string => {
+  const entities: Record<string, string> = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&apos;": "'",
+  };
+  return text.replace(/&(amp|lt|gt|quot|#39|apos);/g, (match) => entities[match] || match);
+};
+
 function parseSummaryHighlights(summary: string) {
   const keyDecisions: string[] = [];
   const actionItems: string[] = [];
@@ -238,7 +250,10 @@ export default function RecordingDetail() {
       const renderFlowchart = async () => {
         try {
           // Use pre-generated flowchart code if available, otherwise generate from SOP
-          const flowchartCode = recording.flowchartCode || generateFlowchartFromSOP(recording.sopContent || "");
+          // Decode HTML entities since AI-generated code may have escaped characters
+          let flowchartCode = recording.flowchartCode 
+            ? decodeHtmlEntities(recording.flowchartCode) 
+            : generateFlowchartFromSOP(recording.sopContent || "");
           flowchartRef.current!.innerHTML = "";
           const uniqueId = `flowchart-${Date.now()}`;
           const { svg } = await mermaid.render(uniqueId, flowchartCode);
