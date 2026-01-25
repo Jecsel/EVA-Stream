@@ -112,6 +112,44 @@ Generate a complete, well-formatted SOP document in Markdown format with clear h
   }
 }
 
+export async function generateSOPFromTranscript(
+  transcriptText: string,
+  meetingTitle?: string
+): Promise<string> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return "";
+    }
+
+    const prompt = `Based on the following meeting transcript, generate a comprehensive SOP (Standard Operating Procedure) document.
+
+Meeting Title: ${meetingTitle || "Meeting"}
+
+Transcript:
+${transcriptText.slice(0, 30000)}
+
+Generate a well-formatted SOP document in Markdown format that includes:
+1. **Purpose/Objective** - What this meeting/process aims to achieve
+2. **Key Participants** - Roles mentioned or implied
+3. **Process Steps** - Any procedures, workflows, or steps discussed
+4. **Decisions Made** - Key decisions or conclusions reached
+5. **Action Items** - Tasks assigned or next steps mentioned
+6. **Important Notes** - Any critical information, deadlines, or requirements
+
+Use clear headings (##), bullet points, and organized structure. If certain sections don't apply based on the transcript content, omit them.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    return response.text || "";
+  } catch (error) {
+    console.error("Gemini SOP from transcript error:", error);
+    return "";
+  }
+}
+
 export interface TranscriptionAnalysis {
   summary: string;
   actionItems: string[];

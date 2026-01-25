@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes, generateSOPFromTranscript } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
@@ -1837,6 +1837,16 @@ async function attemptLiveTranscriptFallback(
   
   console.log(`Successfully generated summary from live transcripts`);
   
+  // Also generate SOP document from the transcripts
+  console.log(`Generating SOP document from live transcripts...`);
+  const sopContent = await generateSOPFromTranscript(transcriptText, meetingTitle);
+  
+  if (sopContent) {
+    console.log(`Successfully generated SOP document (${sopContent.length} chars)`);
+  } else {
+    console.log(`No SOP content generated`);
+  }
+  
   // Get the earliest timestamp as reference for relative timestamps
   const startTime = validSegments.length > 0 ? new Date(validSegments[0].createdAt) : undefined;
   
@@ -1847,9 +1857,10 @@ async function attemptLiveTranscriptFallback(
     text: s.text
   }));
   
-  // Update the recording with the analysis
+  // Update the recording with the analysis and SOP
   await storage.updateRecording(recordingId, {
     summary: analysis.summary,
+    sopContent: sopContent || undefined,
   });
   
   // Store the analysis in meeting_transcriptions table
