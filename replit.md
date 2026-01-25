@@ -52,12 +52,29 @@ When a meeting recording is uploaded (via JaaS webhook), the system automaticall
 
 Users can also manually trigger transcription from the Recording Detail page using the "Generate Transcript" button.
 
+### Meeting Agents System
+The platform supports multiple AI agents that can be enabled/disabled per meeting:
+
+| Agent | Type | Functionality |
+|-------|------|---------------|
+| **NoteTaker** | assistant | Automatically captures meeting notes, extracts key discussion points, and action items from live transcripts |
+| **Meeting Transcriber** | transcription | Real-time speech-to-text with speaker identification |
+| **Flowchart Builder** | flowchart | Auto-generates visual flowcharts from SOP content using Mermaid.js (updates in real-time as SOP changes) |
+| **EVA SOP Assistant** | sop | Analyzes screen shares and conversations to generate/update SOPs in real-time |
+
+Each agent:
+- Only runs when explicitly selected in the meeting
+- Uses its own custom prompt (configurable in Admin panel)
+- Has a dedicated UI panel that shows/hides based on selection
+- Properly starts/stops when toggled during a live meeting
+
 ### Data Flow
 1. User creates/joins meeting via Dashboard
 2. Jitsi handles video/audio streaming
-3. EVA connects via WebSocket for real-time observation
-4. AI responses update SOP document and flowchart visualization
-5. Meeting data persisted to PostgreSQL
+3. Selected agents activate based on user's agent choices
+4. EVA connects via WebSocket for real-time observation (if SOP agent selected)
+5. AI responses update SOP document and flowchart visualization
+6. Meeting data persisted to PostgreSQL
 
 ## External Dependencies
 
