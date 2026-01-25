@@ -240,10 +240,11 @@ export default function RecordingDetail() {
   useEffect(() => {
     // Only render flowchart when the flowchart tab is active
     if (activeTab !== "flowchart") return;
-    if (!flowchartRef.current) return;
     
     if (!recording?.sopContent && !recording?.flowchartCode) {
-      flowchartRef.current.innerHTML = `<p class="text-muted-foreground italic">No SOP content available to generate flowchart.</p>`;
+      if (flowchartRef.current) {
+        flowchartRef.current.innerHTML = `<p class="text-muted-foreground italic">No SOP content available to generate flowchart.</p>`;
+      }
       setRenderedSopContent(null);
       return;
     }
@@ -251,20 +252,31 @@ export default function RecordingDetail() {
     const contentToCheck = recording.flowchartCode || recording.sopContent;
     if (contentToCheck !== renderedSopContent) {
       const renderFlowchart = async () => {
+        // Small delay to ensure DOM is ready after tab switch
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        if (!flowchartRef.current) {
+          console.error("Flowchart ref not available");
+          return;
+        }
+        
         try {
           // Use pre-generated flowchart code if available, otherwise generate from SOP
           // Decode HTML entities since AI-generated code may have escaped characters
           let flowchartCode = recording.flowchartCode 
             ? decodeHtmlEntities(recording.flowchartCode) 
             : generateFlowchartFromSOP(recording.sopContent || "");
-          flowchartRef.current!.innerHTML = "";
+          
+          flowchartRef.current.innerHTML = "";
           const uniqueId = `flowchart-${Date.now()}`;
           const { svg } = await mermaid.render(uniqueId, flowchartCode);
-          flowchartRef.current!.innerHTML = svg;
+          flowchartRef.current.innerHTML = svg;
           setRenderedSopContent(contentToCheck || null);
         } catch (err) {
           console.error("Failed to render flowchart:", err);
-          flowchartRef.current!.innerHTML = `<p class="text-muted-foreground">Could not generate flowchart</p>`;
+          if (flowchartRef.current) {
+            flowchartRef.current.innerHTML = `<p class="text-muted-foreground">Could not generate flowchart</p>`;
+          }
         }
       };
       renderFlowchart();
@@ -642,7 +654,7 @@ export default function RecordingDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="flowchart" className="mt-0">
+          <TabsContent value="flowchart" className="mt-0" forceMount style={{ display: activeTab === "flowchart" ? "block" : "none" }}>
             <div className="bg-card border border-border rounded-xl overflow-hidden">
               <div className="p-4 border-b border-border bg-muted/30">
                 <h2 className="text-sm font-medium flex items-center gap-2">
