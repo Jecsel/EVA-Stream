@@ -1926,9 +1926,31 @@ async function processRecordingTranscription(
     console.log(`Transcription complete: ${transcription.segments.length} segments found`);
     console.log(`Summary: ${transcription.summary.substring(0, 100)}...`);
     
-    // Update the recording with the transcription data
+    // Generate SOP document from the transcript
+    console.log(`Generating SOP document from transcript...`);
+    const sopContent = await generateSOPFromTranscript(transcription.fullTranscript, meetingTitle);
+    
+    if (sopContent) {
+      console.log(`Successfully generated SOP document (${sopContent.length} chars)`);
+    } else {
+      console.log(`No SOP content generated`);
+    }
+    
+    // Generate flowchart from the SOP content
+    let flowchartCode: string | undefined;
+    if (sopContent) {
+      console.log(`Generating flowchart from SOP content...`);
+      flowchartCode = await generateMermaidFlowchart(sopContent);
+      if (flowchartCode) {
+        console.log(`Successfully generated flowchart (${flowchartCode.length} chars)`);
+      }
+    }
+    
+    // Update the recording with the transcription data, SOP, and flowchart
     await storage.updateRecording(recordingId, {
       summary: transcription.summary,
+      sopContent: sopContent || undefined,
+      flowchartCode: flowchartCode || undefined,
     });
 
     // Store transcript in the meeting_transcriptions table
