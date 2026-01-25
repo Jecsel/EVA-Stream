@@ -227,21 +227,23 @@ export default function RecordingDetail() {
   useEffect(() => {
     if (!flowchartRef.current) return;
     
-    if (!recording?.sopContent) {
+    if (!recording?.sopContent && !recording?.flowchartCode) {
       flowchartRef.current.innerHTML = `<p class="text-muted-foreground italic">No SOP content available to generate flowchart.</p>`;
       setRenderedSopContent(null);
       return;
     }
     
-    if (recording.sopContent !== renderedSopContent) {
+    const contentToCheck = recording.flowchartCode || recording.sopContent;
+    if (contentToCheck !== renderedSopContent) {
       const renderFlowchart = async () => {
         try {
-          const flowchartCode = generateFlowchartFromSOP(recording.sopContent || "");
+          // Use pre-generated flowchart code if available, otherwise generate from SOP
+          const flowchartCode = recording.flowchartCode || generateFlowchartFromSOP(recording.sopContent || "");
           flowchartRef.current!.innerHTML = "";
           const uniqueId = `flowchart-${Date.now()}`;
           const { svg } = await mermaid.render(uniqueId, flowchartCode);
           flowchartRef.current!.innerHTML = svg;
-          setRenderedSopContent(recording.sopContent);
+          setRenderedSopContent(contentToCheck || null);
         } catch (err) {
           console.error("Failed to render flowchart:", err);
           flowchartRef.current!.innerHTML = `<p class="text-muted-foreground">Could not generate flowchart</p>`;
@@ -249,7 +251,7 @@ export default function RecordingDetail() {
       };
       renderFlowchart();
     }
-  }, [recording?.sopContent, renderedSopContent]);
+  }, [recording?.sopContent, recording?.flowchartCode, renderedSopContent]);
 
   const handleSave = () => {
     updateMutation.mutate(editedSopContent);

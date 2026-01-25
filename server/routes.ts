@@ -1847,6 +1847,16 @@ async function attemptLiveTranscriptFallback(
     console.log(`No SOP content generated`);
   }
   
+  // Generate flowchart from the SOP content
+  let flowchartCode: string | undefined;
+  if (sopContent) {
+    console.log(`Generating flowchart from SOP content...`);
+    flowchartCode = await generateMermaidFlowchart(sopContent);
+    if (flowchartCode) {
+      console.log(`Successfully generated flowchart (${flowchartCode.length} chars)`);
+    }
+  }
+  
   // Get the earliest timestamp as reference for relative timestamps
   const startTime = validSegments.length > 0 ? new Date(validSegments[0].createdAt) : undefined;
   
@@ -1857,10 +1867,11 @@ async function attemptLiveTranscriptFallback(
     text: s.text
   }));
   
-  // Update the recording with the analysis and SOP
+  // Update the recording with the analysis, SOP, and flowchart
   await storage.updateRecording(recordingId, {
     summary: analysis.summary,
     sopContent: sopContent || undefined,
+    flowchartCode: flowchartCode || undefined,
   });
   
   // Store the analysis in meeting_transcriptions table
