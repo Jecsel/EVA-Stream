@@ -5,8 +5,9 @@ import { AIChatPanel } from "@/components/AIChatPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
+import { NoteTakerPanel } from "@/components/NoteTakerPanel";
 import { AgentSelector } from "@/components/AgentSelector";
-import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText } from "lucide-react";
+import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -38,6 +39,7 @@ export default function MeetingRoom() {
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [isNotesOpen, setIsNotesOpen] = useState(true);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
@@ -129,6 +131,9 @@ export default function MeetingRoom() {
       }
     }
   }, [meeting?.id, meeting?.selectedAgents]);
+
+  // Track previous agent selection to detect toggle changes
+  const prevSelectedAgentsRef = useRef<string[]>([]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -348,6 +353,39 @@ export default function MeetingRoom() {
     }
   }, [isTranscribing, startTranscription, stopTranscription]);
 
+  // Start/stop features when agent toggles change during meeting
+  useEffect(() => {
+    if (!jitsiApi || agents.length === 0) return;
+    
+    const wasTranscriptionSelected = agents.some(
+      a => a.type === "transcription" && prevSelectedAgentsRef.current.includes(a.id)
+    );
+    const isTranscriptionSelected = isAgentTypeSelected("transcription");
+    
+    // Transcription agent toggled ON
+    if (!wasTranscriptionSelected && isTranscriptionSelected && !isTranscribing) {
+      startTranscription();
+    }
+    // Transcription agent toggled OFF
+    if (wasTranscriptionSelected && !isTranscriptionSelected && isTranscribing) {
+      stopTranscription();
+    }
+    
+    // Check SOP agent for EVA observation
+    const wasSopSelected = agents.some(
+      a => a.type === "sop" && prevSelectedAgentsRef.current.includes(a.id)
+    );
+    const isSopSelected = isAgentTypeSelected("sop");
+    
+    // SOP agent toggled OFF - stop EVA observation
+    if (wasSopSelected && !isSopSelected && isObserving) {
+      stopObserving();
+      stopScreenCapture();
+    }
+    
+    prevSelectedAgentsRef.current = selectedAgents;
+  }, [selectedAgents, agents, jitsiApi, isTranscribing, isObserving, isAgentTypeSelected, startTranscription, stopTranscription, stopObserving, stopScreenCapture]);
+
   // Convert database messages to UI format
   const messages: Message[] = chatMessages.map(msg => ({
     id: msg.id,
@@ -380,32 +418,37 @@ export default function MeetingRoom() {
     // Listen for Jitsi events
     api.addEventListeners({
       videoConferenceJoined: async () => {
-        // Automatically start live transcription when joining the meeting
-        await startTranscription();
+        // Only start transcription if Meeting Transcriber agent is selected
+        if (isAgentTypeSelected("transcription")) {
+          await startTranscription();
+        }
       },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
         
         if (payload.on) {
-          addSystemMessage("Screen sharing started. EVA is now analyzing the visual content.");
-          
-          // Start EVA observation when screen sharing starts
-          if (evaConnected && isObserving) {
-            // Request screen capture directly from browser
-            // Note: This will prompt user to select screen again, but ensures we get the stream
-            try {
-              const stream = await navigator.mediaDevices.getDisplayMedia({ 
-                video: { frameRate: 1 } 
-              });
-              startScreenCapture(stream);
-              addSystemMessage("EVA is now observing your shared screen.");
-            } catch (e) {
-              console.log("Could not start screen capture for EVA:", e);
-              addSystemMessage("Could not access screen for EVA observation. Please enable EVA observation manually.");
+          // Only show EVA messages and auto-start if SOP agent is selected
+          if (isAgentTypeSelected("sop")) {
+            addSystemMessage("Screen sharing started. EVA is now analyzing the visual content.");
+            
+            // Start EVA observation when screen sharing starts
+            if (evaConnected && isObserving) {
+              try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                  video: { frameRate: 1 } 
+                });
+                startScreenCapture(stream);
+                addSystemMessage("EVA is now observing your shared screen.");
+              } catch (e) {
+                console.log("Could not start screen capture for EVA:", e);
+                addSystemMessage("Could not access screen for EVA observation. Please enable EVA observation manually.");
+              }
             }
           }
         } else {
-          addSystemMessage("Screen sharing ended.");
+          if (isAgentTypeSelected("sop")) {
+            addSystemMessage("Screen sharing ended.");
+          }
           stopScreenCapture();
         }
       },
@@ -617,6 +660,23 @@ export default function MeetingRoom() {
               />
             </div>
           )}
+
+          {/* NoteTaker Panel - only show if assistant agent selected */}
+          {isAgentTypeSelected("assistant") && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isNotesOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <NoteTakerPanel 
+                  messages={chatMessages}
+                  isProcessing={false}
+                  className="h-full"
+              />
+            </div>
+          )}
         </div>
 
         {/* Bottom Controls */}
@@ -717,6 +777,26 @@ export default function MeetingRoom() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Toggle Live Transcript</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {/* NoteTaker - only show if assistant agent is selected */}
+            {isAgentTypeSelected("assistant") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isNotesOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isNotesOpen ? 'bg-blue-500 border-blue-500 hover:bg-blue-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsNotesOpen(!isNotesOpen)}
+                      data-testid="button-toggle-notes"
+                    >
+                      <ClipboardList className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle Meeting Notes</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
