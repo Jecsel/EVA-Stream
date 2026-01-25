@@ -69,6 +69,7 @@ export default function RecordingDetail() {
   const [renderedSopContent, setRenderedSopContent] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedSopContent, setEditedSopContent] = useState("");
+  const [activeTab, setActiveTab] = useState("sop");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -237,6 +238,8 @@ export default function RecordingDetail() {
   }, [recording?.sopContent, isEditing]);
 
   useEffect(() => {
+    // Only render flowchart when the flowchart tab is active
+    if (activeTab !== "flowchart") return;
     if (!flowchartRef.current) return;
     
     if (!recording?.sopContent && !recording?.flowchartCode) {
@@ -266,7 +269,7 @@ export default function RecordingDetail() {
       };
       renderFlowchart();
     }
-  }, [recording?.sopContent, recording?.flowchartCode, renderedSopContent]);
+  }, [recording?.sopContent, recording?.flowchartCode, renderedSopContent, activeTab]);
 
   const handleSave = () => {
     updateMutation.mutate(editedSopContent);
@@ -549,7 +552,7 @@ export default function RecordingDetail() {
           </div>
         </div>
 
-        <Tabs defaultValue="sop" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
               <FileText className="w-4 h-4" />
