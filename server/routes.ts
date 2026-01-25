@@ -1792,6 +1792,81 @@ function parseTranscription(rawText: string): { speaker: string; text: string; t
   return segments;
 }
 
+// Helper function to format time as MM:SS from a Date object
+function formatTimestamp(date: Date, startTime?: Date): string {
+  if (startTime) {
+    const diffMs = date.getTime() - startTime.getTime();
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  return new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Helper function to attempt fallback to live transcripts when video transcription fails
+async function attemptLiveTranscriptFallback(
+  recordingId: string,
+  meetingId: string,
+  meetingTitle: string
+): Promise<boolean> {
+  const liveTranscripts = await storage.getTranscriptsByMeeting(meetingId);
+  
+  // Filter to non-empty, final segments only
+  const validSegments = liveTranscripts.filter(s => s.text && s.text.trim().length > 0);
+  
+  if (validSegments.length === 0) {
+    console.log(`No valid live transcript segments found for meeting ${meetingId}`);
+    return false;
+  }
+  
+  console.log(`Found ${validSegments.length} valid live transcript segments for fallback`);
+  
+  // Format live transcripts into text for AI analysis
+  const transcriptText = validSegments
+    .map(segment => `${segment.speaker}: ${segment.text}`)
+    .join('\n');
+  
+  // Generate summary from live transcripts
+  const analysis = await analyzeTranscription(transcriptText, meetingTitle);
+  
+  if (!analysis.summary || analysis.summary === "Error analyzing transcription.") {
+    console.log(`Failed to generate summary from live transcripts`);
+    return false;
+  }
+  
+  console.log(`Successfully generated summary from live transcripts`);
+  
+  // Get the earliest timestamp as reference for relative timestamps
+  const startTime = validSegments.length > 0 ? new Date(validSegments[0].createdAt) : undefined;
+  
+  // Format segments to match expected structure: { speaker, timestamp: "MM:SS", text }
+  const parsedSegments = validSegments.map(s => ({
+    speaker: s.speaker,
+    timestamp: formatTimestamp(new Date(s.createdAt), startTime),
+    text: s.text
+  }));
+  
+  // Update the recording with the analysis
+  await storage.updateRecording(recordingId, {
+    summary: analysis.summary,
+  });
+  
+  // Store the analysis in meeting_transcriptions table
+  await storage.createMeetingTranscription({
+    meetingId,
+    sessionId: recordingId,
+    fqn: `recording-${recordingId}`,
+    rawTranscript: transcriptText,
+    parsedTranscript: parsedSegments,
+    aiSummary: analysis.summary,
+    actionItems: analysis.actionItems,
+  });
+  
+  console.log(`Recording ${recordingId} processed successfully using live transcript fallback`);
+  return true;
+}
+
 // Process recording transcription using AI
 async function processRecordingTranscription(
   recordingId: string,
@@ -1812,10 +1887,17 @@ async function processRecordingTranscription(
     const transcription = await transcribeRecording(videoUrl, meetingTitle);
     
     if (!transcription.fullTranscript && transcription.segments.length === 0) {
-      console.error(`Transcription returned empty for recording ${recordingId}`);
-      await storage.updateRecording(recordingId, {
-        summary: "Transcription failed - no audio detected or unable to process video.",
-      });
+      console.log(`Video transcription returned empty for recording ${recordingId}, attempting fallback to live transcripts...`);
+      
+      // Attempt fallback to live transcripts
+      const fallbackSucceeded = await attemptLiveTranscriptFallback(recordingId, meetingId, meetingTitle);
+      
+      if (!fallbackSucceeded) {
+        console.error(`No fallback transcripts available for recording ${recordingId}`);
+        await storage.updateRecording(recordingId, {
+          summary: "Transcription failed - no audio detected or unable to process video.",
+        });
+      }
       return;
     }
     
@@ -1842,13 +1924,26 @@ async function processRecordingTranscription(
     console.log(`Recording ${recordingId} transcription processed successfully`);
   } catch (error) {
     console.error(`Error processing recording transcription ${recordingId}:`, error);
-    // Update recording to indicate failure
+    
+    // Attempt fallback to live transcripts on error
     try {
-      await storage.updateRecording(recordingId, {
-        summary: "Transcription failed - an error occurred during processing.",
-      });
-    } catch (updateError) {
-      console.error(`Failed to update recording with error status:`, updateError);
+      console.log(`Attempting fallback to live transcripts after video transcription error...`);
+      const fallbackSucceeded = await attemptLiveTranscriptFallback(recordingId, meetingId, meetingTitle);
+      
+      if (!fallbackSucceeded) {
+        await storage.updateRecording(recordingId, {
+          summary: "Transcription failed - an error occurred during processing.",
+        });
+      }
+    } catch (fallbackError) {
+      console.error(`Fallback also failed for recording ${recordingId}:`, fallbackError);
+      try {
+        await storage.updateRecording(recordingId, {
+          summary: "Transcription failed - an error occurred during processing.",
+        });
+      } catch (updateError) {
+        console.error(`Failed to update recording with error status:`, updateError);
+      }
     }
   }
 }
