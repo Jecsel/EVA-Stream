@@ -369,4 +369,16 @@ export const api = {
     if (!response.ok) throw new Error("Failed to update SOP");
     return response.json();
   },
+
+  async generateSopFromSession(sessionId: string): Promise<Sop> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${sessionId}/generate-sop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Failed to generate SOP" }));
+      throw new Error(error.error || "Failed to generate SOP");
+    }
+    return response.json();
+  },
 };

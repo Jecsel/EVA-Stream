@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Eye, FileText, ListChecks, Play, Pause, Check, HelpCircle, AlertCircle, ChevronRight } from "lucide-react";
+import { Eye, FileText, ListChecks, Play, Pause, Check, HelpCircle, AlertCircle, ChevronRight, Loader2, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ObservationSession, Observation, Clarification } from "@shared/schema";
+import type { ObservationSession, Observation, Clarification, Sop } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { SOPViewer } from "./SOPViewer";
 
 interface ObservationPanelProps {
   meetingId: string;
@@ -42,6 +43,9 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
   const queryClient = useQueryClient();
   const [activeSession, setActiveSession] = useState<ObservationSession | null>(null);
   const [pendingAnswer, setPendingAnswer] = useState<{ id: string; answer: string } | null>(null);
+  const [generatedSop, setGeneratedSop] = useState<Sop | null>(null);
+  const [isGeneratingSop, setIsGeneratingSop] = useState(false);
+  const [showSopViewer, setShowSopViewer] = useState(false);
 
   const { data: sessions = [] } = useQuery({
     queryKey: ["observation-sessions", meetingId],
@@ -95,6 +99,20 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
     },
   });
 
+  const generateSopMutation = useMutation({
+    mutationFn: (sessionId: string) => api.generateSopFromSession(sessionId),
+    onSuccess: (sop) => {
+      setGeneratedSop(sop);
+      setIsGeneratingSop(false);
+      setShowSopViewer(true);
+      queryClient.invalidateQueries({ queryKey: ["sops"] });
+    },
+    onError: (error) => {
+      console.error("Failed to generate SOP:", error);
+      setIsGeneratingSop(false);
+    },
+  });
+
   useEffect(() => {
     const active = sessions.find(s => s.status === "active");
     if (active && !activeSession) {
@@ -130,12 +148,19 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
     const phases: Phase[] = ["observe", "structure", "instruct"];
     const currentIndex = phases.indexOf(activeSession.phase as Phase);
     if (currentIndex < phases.length - 1) {
+      const nextPhase = phases[currentIndex + 1];
       updateSessionMutation.mutate({
         id: activeSession.id,
-        data: { phase: phases[currentIndex + 1] },
+        data: { phase: nextPhase },
       });
+      
+      // When advancing to instruct phase, automatically generate SOP
+      if (nextPhase === "instruct") {
+        setIsGeneratingSop(true);
+        generateSopMutation.mutate(activeSession.id);
+      }
     }
-  }, [activeSession, updateSessionMutation]);
+  }, [activeSession, updateSessionMutation, generateSopMutation]);
 
   const currentPhase = (activeSession?.phase || "observe") as Phase;
   const phaseConfig = PHASE_CONFIG[currentPhase];
@@ -229,12 +254,37 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
               </Button>
             )}
             {currentPhase !== "instruct" && (
-              <Button size="sm" onClick={advancePhase} data-testid="button-advance-phase">
+              <Button size="sm" onClick={advancePhase} disabled={isGeneratingSop} data-testid="button-advance-phase">
                 {currentPhase === "observe" ? "Start Structuring" : "Generate SOP"}
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             )}
+            {currentPhase === "instruct" && generatedSop && (
+              <Button size="sm" onClick={() => setShowSopViewer(!showSopViewer)} data-testid="button-view-sop">
+                <FileCheck className="w-4 h-4 mr-2" />
+                {showSopViewer ? "Hide SOP" : "View SOP"}
+              </Button>
+            )}
           </div>
+
+          {isGeneratingSop && (
+            <div className="p-4 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium">Generating SOP...</p>
+                <p className="text-xs text-muted-foreground">EVA is analyzing observations and creating your decision-based SOP</p>
+              </div>
+            </div>
+          )}
+
+          {showSopViewer && generatedSop && (
+            <div className="flex-1 overflow-auto border-b border-border">
+              <SOPViewer 
+                sop={generatedSop} 
+                onClose={() => setShowSopViewer(false)}
+              />
+            </div>
+          )}
 
           {pendingClarifications.length > 0 && (
             <div className="p-3 bg-amber-500/10 border-b border-amber-500/30">

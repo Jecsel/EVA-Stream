@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes, generateSOPFromTranscript } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
@@ -1801,6 +1801,73 @@ export async function registerRoutes(
       res.json(clarification);
     } catch (error) {
       res.status(500).json({ error: "Failed to update clarification" });
+    }
+  });
+
+  // Generate SOP from observation session
+  app.post("/api/observation-sessions/:sessionId/generate-sop", async (req, res) => {
+    try {
+      const session = await storage.getObservationSession(req.params.sessionId);
+      if (!session) {
+        res.status(404).json({ error: "Observation session not found" });
+        return;
+      }
+
+      const observations = await storage.getObservationsBySession(req.params.sessionId);
+      const clarifications = await storage.getClarificationsBySession(req.params.sessionId);
+
+      if (observations.length === 0) {
+        res.status(400).json({ error: "No observations to generate SOP from" });
+        return;
+      }
+
+      // Format observations and clarifications for the AI
+      const obsData = observations.map(o => ({
+        type: o.type,
+        content: o.content,
+        app: o.app || undefined,
+        action: o.action || undefined,
+      }));
+
+      const clarData = clarifications.map(c => ({
+        question: c.question,
+        answer: c.answer || undefined,
+      }));
+
+      // Generate the decision-based SOP
+      const sopData = await generateDecisionBasedSOP(
+        obsData,
+        clarData,
+        session.title || "Untitled SOP"
+      );
+
+      // Create the SOP in the database
+      const sop = await storage.createSop({
+        sessionId: session.id,
+        title: session.title || "Untitled SOP",
+        status: "draft",
+        version: "1",
+        goal: sopData.goal,
+        whenToUse: sopData.whenToUse,
+        whoPerforms: sopData.whoPerforms,
+        toolsRequired: sopData.toolsRequired,
+        mainFlow: sopData.mainFlow,
+        decisionPoints: sopData.decisionPoints,
+        exceptions: sopData.exceptions,
+        qualityCheck: sopData.qualityCheck,
+        lowConfidenceSections: sopData.lowConfidenceSections,
+        assumptions: sopData.assumptions,
+      });
+
+      // Update session status to completed
+      await storage.updateObservationSession(session.id, {
+        status: "completed",
+      });
+
+      res.json(sop);
+    } catch (error) {
+      console.error("Generate SOP error:", error);
+      res.status(500).json({ error: "Failed to generate SOP" });
     }
   });
 
