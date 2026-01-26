@@ -44,7 +44,7 @@ export function JitsiMeeting({
         roomName={formattedRoomName}
         jwt={jwt}
         configOverwrite={{
-          startWithAudioMuted: true,
+          startWithAudioMuted: false,
           startWithVideoMuted: true,
           theme: {
             default: 'dark',
