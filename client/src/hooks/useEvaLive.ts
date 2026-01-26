@@ -136,7 +136,7 @@ export function useEvaLive({
       clearInterval(frameIntervalRef.current);
     }
 
-    // Capture frame every 2 seconds (Gemini processes at 1 FPS, so 2s is reasonable)
+    // Capture frame every 10 seconds to avoid repetitive responses
     frameIntervalRef.current = setInterval(() => {
       if (!ctx || !video.videoWidth) return;
       
@@ -160,7 +160,7 @@ export function useEvaLive({
           mimeType: "image/jpeg",
         }));
       }
-    }, 2000);
+    }, 10000);
   }, []);
 
   const stopScreenCapture = useCallback(() => {
