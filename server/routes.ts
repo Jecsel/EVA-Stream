@@ -1984,6 +1984,17 @@ export async function registerRoutes(
     }
   });
 
+  // Get SOPs by meeting ID
+  app.get("/api/meetings/:meetingId/sops", async (req, res) => {
+    try {
+      const sops = await storage.getSopsByMeeting(req.params.meetingId);
+      res.json(sops);
+    } catch (error) {
+      console.error("Get SOPs by meeting error:", error);
+      res.status(500).json({ error: "Failed to fetch SOPs" });
+    }
+  });
+
   return httpServer;
 }
 

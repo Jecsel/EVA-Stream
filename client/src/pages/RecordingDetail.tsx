@@ -101,6 +101,16 @@ export default function RecordingDetail() {
     enabled: !!meetingId,
   });
 
+  // Fetch decision-based SOPs linked to this meeting
+  const { data: decisionBasedSops = [] } = useQuery({
+    queryKey: ["meetingSops", meetingId],
+    queryFn: () => api.getSopsByMeeting(meetingId!),
+    enabled: !!meetingId,
+  });
+
+  // Get the most recent approved SOP, or the most recent one if none approved
+  const primarySop = decisionBasedSops.find((s: any) => s.status === "approved") || decisionBasedSops[0];
+
   const updateMutation = useMutation({
     mutationFn: (sopContent: string) => api.updateRecording(recordingId, { sopContent }),
     onSuccess: () => {
@@ -615,7 +625,7 @@ export default function RecordingDetail() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsEditing(true)}
-                      disabled={!recording.sopContent}
+                      disabled={!recording.sopContent && !primarySop}
                       data-testid="button-edit-sop"
                     >
                       <Edit2 className="w-4 h-4 mr-1" />
@@ -641,7 +651,88 @@ export default function RecordingDetail() {
               ) : (
                 <ScrollArea className="h-[calc(100vh-350px)]">
                   <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-sop">
-                    {recording.sopContent ? (
+                    {primarySop ? (
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            primarySop.status === 'approved' ? 'bg-green-500/20 text-green-400' :
+                            primarySop.status === 'reviewed' ? 'bg-blue-500/20 text-blue-400' :
+                            'bg-yellow-500/20 text-yellow-400'
+                          }`}>
+                            {primarySop.status.charAt(0).toUpperCase() + primarySop.status.slice(1)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">Version {primarySop.version}</span>
+                        </div>
+                        
+                        <div>
+                          <h3 className="text-lg font-semibold text-foreground mb-2">{primarySop.title}</h3>
+                          {primarySop.goal && (
+                            <p className="text-muted-foreground text-sm mb-4">{primarySop.goal}</p>
+                          )}
+                        </div>
+
+                        {primarySop.trigger && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Trigger</h4>
+                            <p className="text-sm text-muted-foreground">{primarySop.trigger}</p>
+                          </div>
+                        )}
+
+                        {primarySop.decisionPoints && primarySop.decisionPoints.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Decision Points</h4>
+                            <div className="space-y-3">
+                              {primarySop.decisionPoints.map((dp: any, idx: number) => (
+                                <div key={idx} className="pl-4 border-l-2 border-primary/50">
+                                  <p className="font-medium text-sm">{dp.question}</p>
+                                  <div className="mt-1 text-sm text-muted-foreground">
+                                    {dp.options?.map((opt: any, optIdx: number) => (
+                                      <div key={optIdx} className="flex items-start gap-2 mt-1">
+                                        <span className="text-primary">→</span>
+                                        <span><strong>{opt.condition}:</strong> {opt.action}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {primarySop.steps && primarySop.steps.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Steps</h4>
+                            <ol className="list-decimal list-inside space-y-2 text-sm">
+                              {primarySop.steps.map((step: string, idx: number) => (
+                                <li key={idx} className="text-muted-foreground">{step}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+
+                        {primarySop.exceptions && primarySop.exceptions.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Exceptions</h4>
+                            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                              {primarySop.exceptions.map((exc: string, idx: number) => (
+                                <li key={idx}>{exc}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {primarySop.assumptions && primarySop.assumptions.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-foreground mb-2">Assumptions</h4>
+                            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                              {primarySop.assumptions.map((assumption: string, idx: number) => (
+                                <li key={idx}>{assumption}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : recording.sopContent ? (
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {recording.sopContent}
                       </ReactMarkdown>

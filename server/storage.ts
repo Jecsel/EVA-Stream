@@ -147,6 +147,7 @@ export interface IStorage {
   updateSop(id: string, data: UpdateSop): Promise<Sop | undefined>;
   listSops(status?: string): Promise<Sop[]>;
   getSopsBySession(sessionId: string): Promise<Sop[]>;
+  getSopsByMeeting(meetingId: string): Promise<Sop[]>;
 
   // SOP Versions
   createSopVersion(version: InsertSopVersion): Promise<SopVersion>;
@@ -646,6 +647,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(sops)
       .where(eq(sops.sessionId, sessionId))
+      .orderBy(desc(sops.createdAt));
+  }
+
+  async getSopsByMeeting(meetingId: string): Promise<Sop[]> {
+    return db
+      .select()
+      .from(sops)
+      .where(eq(sops.meetingId, meetingId))
       .orderBy(desc(sops.createdAt));
   }
 

@@ -120,6 +120,12 @@ export const api = {
     return response.json();
   },
 
+  async getSopsByMeeting(meetingId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/sops`);
+    if (!response.ok) throw new Error("Failed to fetch SOPs");
+    return response.json();
+  },
+
   // AI Chat - EVA SOP Assistant
   async sendAIChat(meetingId: string, message: string, isScreenSharing: boolean): Promise<AIChatResponse> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/chat`, {
