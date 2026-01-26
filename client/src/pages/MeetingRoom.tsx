@@ -8,7 +8,7 @@ import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { NoteTakerPanel } from "@/components/NoteTakerPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { ObservationPanel } from "@/components/ObservationPanel";
-import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, ClipboardList } from "lucide-react";
+import { MessageSquare, Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -699,28 +699,6 @@ export default function MeetingRoom() {
 
         {/* Bottom Controls */}
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={isScreenSharing ? "default" : "outline"}
-                    size="icon" 
-                    className={`h-12 w-12 rounded-full border-2 ${isScreenSharing ? 'bg-green-600 border-green-600 hover:bg-green-700' : 'border-border bg-card hover:bg-muted'}`}
-                    onClick={() => {
-                        if (jitsiApi) {
-                            jitsiApi.executeCommand('toggleShareScreen');
-                        }
-                    }}
-                  >
-                    <MonitorUp className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Share Screen</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <div className="w-px h-8 bg-border mx-2" />
-
             {/* EVA Observation Toggle - only show if SOP agent is selected */}
             {isAgentTypeSelected("sop") && (
               <TooltipProvider>
