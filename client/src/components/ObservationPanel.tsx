@@ -46,6 +46,7 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
   const [generatedSop, setGeneratedSop] = useState<Sop | null>(null);
   const [isGeneratingSop, setIsGeneratingSop] = useState(false);
   const [showSopViewer, setShowSopViewer] = useState(false);
+  const [sopError, setSopError] = useState<string | null>(null);
 
   const { data: sessions = [] } = useQuery({
     queryKey: ["observation-sessions", meetingId],
@@ -105,11 +106,13 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
       setGeneratedSop(sop);
       setIsGeneratingSop(false);
       setShowSopViewer(true);
+      setSopError(null);
       queryClient.invalidateQueries({ queryKey: ["sops"] });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       console.error("Failed to generate SOP:", error);
       setIsGeneratingSop(false);
+      setSopError(error.message || "Failed to generate SOP. Please try again.");
     },
   });
 
@@ -274,6 +277,30 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
                 <p className="text-sm font-medium">Generating SOP...</p>
                 <p className="text-xs text-muted-foreground">EVA is analyzing observations and creating your decision-based SOP</p>
               </div>
+            </div>
+          )}
+
+          {sopError && !isGeneratingSop && (
+            <div className="p-4 bg-red-500/10 border-b border-red-500/30 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-500">SOP Generation Failed</p>
+                <p className="text-xs text-muted-foreground">{sopError}</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  setSopError(null);
+                  if (activeSession) {
+                    setIsGeneratingSop(true);
+                    generateSopMutation.mutate(activeSession.id);
+                  }
+                }}
+                data-testid="button-retry-sop"
+              >
+                Retry
+              </Button>
             </div>
           )}
 

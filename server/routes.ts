@@ -1816,18 +1816,34 @@ export async function registerRoutes(
       const observations = await storage.getObservationsBySession(req.params.sessionId);
       const clarifications = await storage.getClarificationsBySession(req.params.sessionId);
 
-      if (observations.length === 0) {
+      // If no observations, try to use meeting transcripts as fallback
+      let obsData: Array<{ type: string; content: string; app?: string; action?: string }> = [];
+      
+      if (observations.length > 0) {
+        // Use observations
+        obsData = observations.map(o => ({
+          type: o.type,
+          content: o.content,
+          app: o.app || undefined,
+          action: o.action || undefined,
+        }));
+      } else if (session.meetingId) {
+        // Fallback to meeting transcripts
+        const transcripts = await storage.getTranscriptsByMeeting(session.meetingId);
+        if (transcripts.length === 0) {
+          res.status(400).json({ error: "No observations or transcripts to generate SOP from. Please ensure the meeting has content before generating an SOP." });
+          return;
+        }
+        // Convert transcripts to observation format
+        obsData = transcripts.map(t => ({
+          type: "verbal_note",
+          content: `${t.speaker}: ${t.text}`,
+        }));
+        console.log(`Using ${transcripts.length} transcript segments as fallback for SOP generation`);
+      } else {
         res.status(400).json({ error: "No observations to generate SOP from" });
         return;
       }
-
-      // Format observations and clarifications for the AI
-      const obsData = observations.map(o => ({
-        type: o.type,
-        content: o.content,
-        app: o.app || undefined,
-        action: o.action || undefined,
-      }));
 
       const clarData = clarifications.map(c => ({
         question: c.question,
