@@ -41,8 +41,8 @@ const STATUS_CONFIG: Record<SopStatus, { icon: React.ComponentType<{ className?:
 
 export function SOPViewer({ sop, className, onClose }: SOPViewerProps) {
   const queryClient = useQueryClient();
-  const status = (sop.status || "draft") as SopStatus;
-  const statusConfig = STATUS_CONFIG[status];
+  const [currentStatus, setCurrentStatus] = useState<SopStatus>((sop.status || "draft") as SopStatus);
+  const statusConfig = STATUS_CONFIG[currentStatus];
   const StatusIcon = statusConfig.icon;
 
   const mainFlow = (sop.mainFlow as { step: number; action: string; details?: string }[] | null) || [];
@@ -53,7 +53,8 @@ export function SOPViewer({ sop, className, onClose }: SOPViewerProps) {
 
   const updateStatusMutation = useMutation({
     mutationFn: (newStatus: SopStatus) => api.updateSop(sop.id, { status: newStatus }),
-    onSuccess: () => {
+    onSuccess: (updatedSop) => {
+      setCurrentStatus((updatedSop.status || "draft") as SopStatus);
       queryClient.invalidateQueries({ queryKey: ["sops"] });
     },
   });
@@ -64,7 +65,7 @@ export function SOPViewer({ sop, className, onClose }: SOPViewerProps) {
       reviewed: "approved",
       approved: "approved",
     };
-    updateStatusMutation.mutate(nextStatus[status]);
+    updateStatusMutation.mutate(nextStatus[currentStatus]);
   };
 
   return (
@@ -226,8 +227,8 @@ export function SOPViewer({ sop, className, onClose }: SOPViewerProps) {
             {(["draft", "reviewed", "approved"] as SopStatus[]).map((s, i) => {
               const config = STATUS_CONFIG[s];
               const Icon = config.icon;
-              const isActive = s === status;
-              const isPast = (["draft", "reviewed", "approved"] as SopStatus[]).indexOf(status) > i;
+              const isActive = s === currentStatus;
+              const isPast = (["draft", "reviewed", "approved"] as SopStatus[]).indexOf(currentStatus) > i;
               
               return (
                 <div key={s} className="flex items-center">
@@ -254,9 +255,14 @@ export function SOPViewer({ sop, className, onClose }: SOPViewerProps) {
             })}
           </div>
         </div>
-        {status !== "approved" && (
-          <Button onClick={advanceStatus} size="sm" data-testid="button-advance-status">
-            {status === "draft" ? "Mark as Reviewed" : "Approve SOP"}
+        {currentStatus !== "approved" && (
+          <Button 
+            onClick={advanceStatus} 
+            size="sm" 
+            disabled={updateStatusMutation.isPending}
+            data-testid="button-advance-status"
+          >
+            {updateStatusMutation.isPending ? "Updating..." : (currentStatus === "draft" ? "Mark as Reviewed" : "Approve SOP")}
           </Button>
         )}
       </div>
