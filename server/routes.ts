@@ -1684,6 +1684,196 @@ export async function registerRoutes(
     }
   });
 
+  // =====================================================
+  // EVA Ops Memory - Observation Sessions & SOPs
+  // =====================================================
+
+  // Create observation session
+  app.post("/api/observation-sessions", async (req, res) => {
+    try {
+      const session = await storage.createObservationSession(req.body);
+      res.json(session);
+    } catch (error) {
+      console.error("Create observation session error:", error);
+      res.status(500).json({ error: "Failed to create observation session" });
+    }
+  });
+
+  // Get observation session
+  app.get("/api/observation-sessions/:id", async (req, res) => {
+    try {
+      const session = await storage.getObservationSession(req.params.id);
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+      res.json(session);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch session" });
+    }
+  });
+
+  // Update observation session (phase changes, status)
+  app.patch("/api/observation-sessions/:id", async (req, res) => {
+    try {
+      const session = await storage.updateObservationSession(req.params.id, req.body);
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+      res.json(session);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update session" });
+    }
+  });
+
+  // List observation sessions
+  app.get("/api/observation-sessions", async (req, res) => {
+    try {
+      const meetingId = req.query.meetingId as string | undefined;
+      const sessions = await storage.listObservationSessions(meetingId);
+      res.json(sessions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to list sessions" });
+    }
+  });
+
+  // Add observation to session
+  app.post("/api/observation-sessions/:sessionId/observations", async (req, res) => {
+    try {
+      const observation = await storage.createObservation({
+        ...req.body,
+        sessionId: req.params.sessionId,
+      });
+      res.json(observation);
+    } catch (error) {
+      console.error("Create observation error:", error);
+      res.status(500).json({ error: "Failed to create observation" });
+    }
+  });
+
+  // Get observations for session
+  app.get("/api/observation-sessions/:sessionId/observations", async (req, res) => {
+    try {
+      const observations = await storage.getObservationsBySession(req.params.sessionId);
+      res.json(observations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch observations" });
+    }
+  });
+
+  // Create clarification question
+  app.post("/api/observation-sessions/:sessionId/clarifications", async (req, res) => {
+    try {
+      const clarification = await storage.createClarification({
+        ...req.body,
+        sessionId: req.params.sessionId,
+      });
+      res.json(clarification);
+    } catch (error) {
+      console.error("Create clarification error:", error);
+      res.status(500).json({ error: "Failed to create clarification" });
+    }
+  });
+
+  // Get clarifications for session
+  app.get("/api/observation-sessions/:sessionId/clarifications", async (req, res) => {
+    try {
+      const clarifications = await storage.getClarificationsBySession(req.params.sessionId);
+      res.json(clarifications);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch clarifications" });
+    }
+  });
+
+  // Answer clarification
+  app.patch("/api/clarifications/:id", async (req, res) => {
+    try {
+      const clarification = await storage.updateClarification(req.params.id, {
+        ...req.body,
+        status: req.body.answer ? "answered" : req.body.status,
+        answeredAt: req.body.answer ? new Date() : undefined,
+      });
+      if (!clarification) {
+        res.status(404).json({ error: "Clarification not found" });
+        return;
+      }
+      res.json(clarification);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update clarification" });
+    }
+  });
+
+  // SOP CRUD
+  app.post("/api/sops", async (req, res) => {
+    try {
+      const sop = await storage.createSop(req.body);
+      res.json(sop);
+    } catch (error) {
+      console.error("Create SOP error:", error);
+      res.status(500).json({ error: "Failed to create SOP" });
+    }
+  });
+
+  app.get("/api/sops", async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const sops = await storage.listSops(status);
+      res.json(sops);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to list SOPs" });
+    }
+  });
+
+  app.get("/api/sops/:id", async (req, res) => {
+    try {
+      const sop = await storage.getSop(req.params.id);
+      if (!sop) {
+        res.status(404).json({ error: "SOP not found" });
+        return;
+      }
+      res.json(sop);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP" });
+    }
+  });
+
+  app.patch("/api/sops/:id", async (req, res) => {
+    try {
+      const sop = await storage.updateSop(req.params.id, req.body);
+      if (!sop) {
+        res.status(404).json({ error: "SOP not found" });
+        return;
+      }
+      res.json(sop);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update SOP" });
+    }
+  });
+
+  // SOP version history
+  app.get("/api/sops/:id/versions", async (req, res) => {
+    try {
+      const versions = await storage.getSopVersions(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP versions" });
+    }
+  });
+
+  app.post("/api/sops/:id/versions", async (req, res) => {
+    try {
+      const version = await storage.createSopVersion({
+        ...req.body,
+        sopId: req.params.id,
+      });
+      res.json(version);
+    } catch (error) {
+      console.error("Create SOP version error:", error);
+      res.status(500).json({ error: "Failed to create SOP version" });
+    }
+  });
+
   return httpServer;
 }
 

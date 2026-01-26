@@ -1,4 +1,4 @@
-import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment, MeetingTranscription, Agent } from "@shared/schema";
+import type { Meeting, Recording, ChatMessage, TranscriptSegment, InsertMeeting, InsertRecording, InsertChatMessage, InsertTranscriptSegment, MeetingTranscription, Agent, ObservationSession, InsertObservationSession, Observation, InsertObservation, Clarification, InsertClarification, Sop, InsertSop } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -255,6 +255,118 @@ export const api = {
       const error = await response.json();
       throw new Error(error.error || "Failed to schedule meeting");
     }
+    return response.json();
+  },
+
+  // EVA Ops Memory - Observation Sessions
+  async createObservationSession(data: InsertObservationSession): Promise<ObservationSession> {
+    const response = await fetch(`${API_BASE}/observation-sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to create observation session");
+    return response.json();
+  },
+
+  async getObservationSession(id: string): Promise<ObservationSession> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${id}`);
+    if (!response.ok) throw new Error("Failed to fetch observation session");
+    return response.json();
+  },
+
+  async updateObservationSession(id: string, data: Partial<InsertObservationSession>): Promise<ObservationSession> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to update observation session");
+    return response.json();
+  },
+
+  async listObservationSessions(meetingId?: string): Promise<ObservationSession[]> {
+    const params = meetingId ? `?meetingId=${meetingId}` : '';
+    const response = await fetch(`${API_BASE}/observation-sessions${params}`);
+    if (!response.ok) throw new Error("Failed to list observation sessions");
+    return response.json();
+  },
+
+  // Observations
+  async createObservation(sessionId: string, data: Omit<InsertObservation, "sessionId">): Promise<Observation> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${sessionId}/observations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to create observation");
+    return response.json();
+  },
+
+  async getObservations(sessionId: string): Promise<Observation[]> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${sessionId}/observations`);
+    if (!response.ok) throw new Error("Failed to fetch observations");
+    return response.json();
+  },
+
+  // Clarifications
+  async createClarification(sessionId: string, data: Omit<InsertClarification, "sessionId">): Promise<Clarification> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${sessionId}/clarifications`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to create clarification");
+    return response.json();
+  },
+
+  async getClarifications(sessionId: string): Promise<Clarification[]> {
+    const response = await fetch(`${API_BASE}/observation-sessions/${sessionId}/clarifications`);
+    if (!response.ok) throw new Error("Failed to fetch clarifications");
+    return response.json();
+  },
+
+  async answerClarification(id: string, answer: string): Promise<Clarification> {
+    const response = await fetch(`${API_BASE}/clarifications/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer }),
+    });
+    if (!response.ok) throw new Error("Failed to answer clarification");
+    return response.json();
+  },
+
+  // SOPs
+  async createSop(data: InsertSop): Promise<Sop> {
+    const response = await fetch(`${API_BASE}/sops`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to create SOP");
+    return response.json();
+  },
+
+  async getSop(id: string): Promise<Sop> {
+    const response = await fetch(`${API_BASE}/sops/${id}`);
+    if (!response.ok) throw new Error("Failed to fetch SOP");
+    return response.json();
+  },
+
+  async listSops(status?: string): Promise<Sop[]> {
+    const params = status ? `?status=${status}` : '';
+    const response = await fetch(`${API_BASE}/sops${params}`);
+    if (!response.ok) throw new Error("Failed to list SOPs");
+    return response.json();
+  },
+
+  async updateSop(id: string, data: Partial<InsertSop>): Promise<Sop> {
+    const response = await fetch(`${API_BASE}/sops/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to update SOP");
     return response.json();
   },
 };

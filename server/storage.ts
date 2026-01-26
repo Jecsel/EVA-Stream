@@ -22,6 +22,17 @@ import {
   type Agent,
   type InsertAgent,
   type UpdateAgent,
+  type ObservationSession,
+  type InsertObservationSession,
+  type Observation,
+  type InsertObservation,
+  type Clarification,
+  type InsertClarification,
+  type Sop,
+  type InsertSop,
+  type UpdateSop,
+  type SopVersion,
+  type InsertSopVersion,
   users,
   meetings,
   recordings,
@@ -31,7 +42,12 @@ import {
   meetingTranscriptions,
   prompts,
   promptVersions,
-  agents
+  agents,
+  observationSessions,
+  observations,
+  clarifications,
+  sops,
+  sopVersions
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -109,6 +125,32 @@ export interface IStorage {
   deleteAgent(id: string): Promise<boolean>;
   listAgents(search?: string, type?: string): Promise<Agent[]>;
   listAgentsWithPrompts(search?: string, type?: string): Promise<AgentWithPrompt[]>;
+
+  // Observation Sessions
+  createObservationSession(session: InsertObservationSession): Promise<ObservationSession>;
+  getObservationSession(id: string): Promise<ObservationSession | undefined>;
+  updateObservationSession(id: string, data: Partial<InsertObservationSession>): Promise<ObservationSession | undefined>;
+  listObservationSessions(meetingId?: string): Promise<ObservationSession[]>;
+
+  // Observations
+  createObservation(observation: InsertObservation): Promise<Observation>;
+  getObservationsBySession(sessionId: string): Promise<Observation[]>;
+
+  // Clarifications
+  createClarification(clarification: InsertClarification): Promise<Clarification>;
+  getClarificationsBySession(sessionId: string): Promise<Clarification[]>;
+  updateClarification(id: string, data: Partial<InsertClarification>): Promise<Clarification | undefined>;
+
+  // SOPs
+  createSop(sop: InsertSop): Promise<Sop>;
+  getSop(id: string): Promise<Sop | undefined>;
+  updateSop(id: string, data: UpdateSop): Promise<Sop | undefined>;
+  listSops(status?: string): Promise<Sop[]>;
+  getSopsBySession(sessionId: string): Promise<Sop[]>;
+
+  // SOP Versions
+  createSopVersion(version: InsertSopVersion): Promise<SopVersion>;
+  getSopVersions(sopId: string): Promise<SopVersion[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -498,6 +540,127 @@ export class DatabaseStorage implements IStorage {
     );
     
     return agentsWithPrompts;
+  }
+
+  // Observation Sessions
+  async createObservationSession(insertSession: InsertObservationSession): Promise<ObservationSession> {
+    const [session] = await db.insert(observationSessions).values(insertSession).returning();
+    return session;
+  }
+
+  async getObservationSession(id: string): Promise<ObservationSession | undefined> {
+    const [session] = await db.select().from(observationSessions).where(eq(observationSessions.id, id));
+    return session;
+  }
+
+  async updateObservationSession(id: string, data: Partial<InsertObservationSession>): Promise<ObservationSession | undefined> {
+    const [session] = await db
+      .update(observationSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(observationSessions.id, id))
+      .returning();
+    return session;
+  }
+
+  async listObservationSessions(meetingId?: string): Promise<ObservationSession[]> {
+    if (meetingId) {
+      return db
+        .select()
+        .from(observationSessions)
+        .where(eq(observationSessions.meetingId, meetingId))
+        .orderBy(desc(observationSessions.createdAt));
+    }
+    return db.select().from(observationSessions).orderBy(desc(observationSessions.createdAt));
+  }
+
+  // Observations
+  async createObservation(insertObs: InsertObservation): Promise<Observation> {
+    const [obs] = await db.insert(observations).values(insertObs).returning();
+    return obs;
+  }
+
+  async getObservationsBySession(sessionId: string): Promise<Observation[]> {
+    return db
+      .select()
+      .from(observations)
+      .where(eq(observations.sessionId, sessionId))
+      .orderBy(observations.createdAt);
+  }
+
+  // Clarifications
+  async createClarification(insertClarification: InsertClarification): Promise<Clarification> {
+    const [clarification] = await db.insert(clarifications).values(insertClarification).returning();
+    return clarification;
+  }
+
+  async getClarificationsBySession(sessionId: string): Promise<Clarification[]> {
+    return db
+      .select()
+      .from(clarifications)
+      .where(eq(clarifications.sessionId, sessionId))
+      .orderBy(clarifications.createdAt);
+  }
+
+  async updateClarification(id: string, data: Partial<InsertClarification>): Promise<Clarification | undefined> {
+    const [clarification] = await db
+      .update(clarifications)
+      .set(data)
+      .where(eq(clarifications.id, id))
+      .returning();
+    return clarification;
+  }
+
+  // SOPs
+  async createSop(insertSop: InsertSop): Promise<Sop> {
+    const [sop] = await db.insert(sops).values(insertSop).returning();
+    return sop;
+  }
+
+  async getSop(id: string): Promise<Sop | undefined> {
+    const [sop] = await db.select().from(sops).where(eq(sops.id, id));
+    return sop;
+  }
+
+  async updateSop(id: string, data: UpdateSop): Promise<Sop | undefined> {
+    const [sop] = await db
+      .update(sops)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(sops.id, id))
+      .returning();
+    return sop;
+  }
+
+  async listSops(status?: string): Promise<Sop[]> {
+    if (status) {
+      return db
+        .select()
+        .from(sops)
+        .where(eq(sops.status, status))
+        .orderBy(desc(sops.createdAt));
+    }
+    return db.select().from(sops).orderBy(desc(sops.createdAt));
+  }
+
+  async getSopsBySession(sessionId: string): Promise<Sop[]> {
+    return db
+      .select()
+      .from(sops)
+      .where(eq(sops.sessionId, sessionId))
+      .orderBy(desc(sops.createdAt));
+  }
+
+  // SOP Versions
+  async createSopVersion(insertVersion: InsertSopVersion): Promise<SopVersion> {
+    const [version] = await db.insert(sopVersions).values(insertVersion).returning();
+    return version;
+  }
+
+  async getSopVersions(sopId: string): Promise<SopVersion[]> {
+    return db
+      .select()
+      .from(sopVersions)
+      .where(eq(sopVersions.sopId, sopId))
+      .orderBy(desc(sopVersions.createdAt));
   }
 }
 

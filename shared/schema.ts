@@ -227,3 +227,120 @@ export const updateAgentSchema = insertAgentSchema.partial();
 export type InsertAgent = z.infer<typeof insertAgentSchema>;
 export type UpdateAgent = z.infer<typeof updateAgentSchema>;
 export type Agent = typeof agents.$inferSelect;
+
+// EVA Ops Memory - Observation Sessions (3-phase workflow: observe -> structure -> instruct)
+export const observationSessions = pgTable("observation_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").references(() => meetings.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  phase: text("phase").notNull().default("observe"), // observe, structure, instruct
+  status: text("status").notNull().default("active"), // active, paused, completed
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertObservationSessionSchema = createInsertSchema(observationSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertObservationSession = z.infer<typeof insertObservationSessionSchema>;
+export type ObservationSession = typeof observationSessions.$inferSelect;
+
+// EVA Ops Memory - Observations (captured during observe phase)
+export const observations = pgTable("observations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => observationSessions.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // tool_used, intent, decision, action, exception, verbal_note
+  app: text("app"), // e.g., Salesforce, Chrome, Excel
+  page: text("page"), // e.g., Lead Detail, Dashboard
+  action: text("action"), // e.g., Status Change, Click, Input
+  fromValue: text("from_value"), // for state changes
+  toValue: text("to_value"), // for state changes
+  reason: text("reason"), // why this happened (inferred or stated)
+  content: text("content").notNull(), // full description
+  isRepeated: boolean("is_repeated").default(false), // detected as repeated pattern
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertObservationSchema = createInsertSchema(observations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertObservation = z.infer<typeof insertObservationSchema>;
+export type Observation = typeof observations.$inferSelect;
+
+// EVA Ops Memory - Clarifications (smart questions EVA needs answered)
+export const clarifications = pgTable("clarifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => observationSessions.id, { onDelete: 'cascade' }),
+  question: text("question").notNull(),
+  category: text("category").notNull(), // mandatory_optional, condition, approval, exception, tool
+  status: text("status").notNull().default("pending"), // pending, answered, skipped
+  answer: text("answer"),
+  answeredAt: timestamp("answered_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertClarificationSchema = createInsertSchema(clarifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertClarification = z.infer<typeof insertClarificationSchema>;
+export type Clarification = typeof clarifications.$inferSelect;
+
+// EVA Ops Memory - SOPs (decision-based structure with approval workflow)
+export const sops = pgTable("sops", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => observationSessions.id, { onDelete: 'set null' }),
+  meetingId: varchar("meeting_id").references(() => meetings.id, { onDelete: 'set null' }),
+  title: text("title").notNull(),
+  version: text("version").notNull().default("1"),
+  status: text("status").notNull().default("draft"), // draft, reviewed, approved
+  goal: text("goal"), // what this SOP achieves
+  whenToUse: text("when_to_use"), // when to apply this SOP
+  whoPerforms: text("who_performs"), // role responsible
+  toolsRequired: text("tools_required").array(), // tools needed
+  mainFlow: jsonb("main_flow"), // array of step objects
+  decisionPoints: jsonb("decision_points"), // array of if/then conditions
+  exceptions: jsonb("exceptions"), // edge cases and handling
+  qualityCheck: text("quality_check"), // how to verify correctness
+  lowConfidenceSections: text("low_confidence_sections").array(), // sections EVA is unsure about
+  assumptions: text("assumptions").array(), // what EVA assumed
+  mermaidCode: text("mermaid_code"), // flowchart visualization
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSopSchema = createInsertSchema(sops).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateSopSchema = insertSopSchema.partial();
+
+export type InsertSop = z.infer<typeof insertSopSchema>;
+export type UpdateSop = z.infer<typeof updateSopSchema>;
+export type Sop = typeof sops.$inferSelect;
+
+// SOP Versions for change tracking
+export const sopVersions = pgTable("sop_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sopId: varchar("sop_id").notNull().references(() => sops.id, { onDelete: 'cascade' }),
+  version: text("version").notNull(),
+  changeLog: text("change_log").notNull(), // what changed in this version
+  fullContent: jsonb("full_content").notNull(), // snapshot of entire SOP at this version
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSopVersionSchema = createInsertSchema(sopVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSopVersion = z.infer<typeof insertSopVersionSchema>;
+export type SopVersion = typeof sopVersions.$inferSelect;

@@ -2,18 +2,47 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-const DEFAULT_SYSTEM_PROMPT = `You are EVA, an AI SOP (Standard Operating Procedure) Assistant integrated into a video meeting platform. Your role is to:
+const DEFAULT_SYSTEM_PROMPT = `You are EVA Ops Memory, an AI assistant that captures how work is actually done. Your role is to:
 
-1. Help users document and create SOPs during meetings
-2. Analyze discussions and extract key action items
-3. Provide context-aware assistance based on the meeting topic
-4. Generate clear, structured documentation
+1. Observe and understand user intent, not just clicks and actions
+2. Identify decision points, exceptions, and conditional logic in processes
+3. Generate structured, decision-based SOPs that capture real workflows
+4. Ask clarifying questions when intent or conditions are unclear
 
 When responding:
+- Focus on INTENT and DECISIONS, not just step-by-step actions
+- Always identify IF/THEN conditions and branch points
+- Note exceptions and edge cases mentioned
 - Be concise and professional
-- Focus on actionable insights
-- Structure information clearly with bullet points when appropriate
-- If asked to update the SOP, include a section marked with "## SOP Update:" that contains the new content to add
+
+If generating an SOP, use this decision-based structure:
+## Goal:
+[What this process achieves]
+
+## When to Use:
+[Trigger conditions for this SOP]
+
+## Who Performs:
+[Roles responsible]
+
+## Tools Required:
+[List of applications/tools needed]
+
+## Main Flow:
+1. [First step]
+2. [Second step]
+...
+
+## Decision Points:
+- If [condition X] → do [action Y]
+- If [condition Z] → escalate to [person/role]
+
+## Exceptions:
+- [Edge case A]: [how to handle]
+- [Edge case B]: [how to handle]
+
+## Quality Check:
+[How to verify this was done correctly]
 
 Current meeting context will be provided with each message.`;
 
@@ -121,22 +150,50 @@ export async function generateSOPFromTranscript(
       return "";
     }
 
-    const prompt = `Based on the following meeting transcript, generate a comprehensive SOP (Standard Operating Procedure) document.
+    const prompt = `Based on the following meeting transcript, generate a decision-based SOP (Standard Operating Procedure) document.
 
 Meeting Title: ${meetingTitle || "Meeting"}
 
 Transcript:
 ${transcriptText.slice(0, 30000)}
 
-Generate a well-formatted SOP document in Markdown format that includes:
-1. **Purpose/Objective** - What this meeting/process aims to achieve
-2. **Key Participants** - Roles mentioned or implied
-3. **Process Steps** - Any procedures, workflows, or steps discussed
-4. **Decisions Made** - Key decisions or conclusions reached
-5. **Action Items** - Tasks assigned or next steps mentioned
-6. **Important Notes** - Any critical information, deadlines, or requirements
+Generate a well-formatted SOP document in Markdown format using this DECISION-BASED structure:
 
-Use clear headings (##), bullet points, and organized structure. If certain sections don't apply based on the transcript content, omit them.`;
+## Goal:
+[What this process aims to achieve - infer from discussion]
+
+## When to Use:
+[Trigger conditions or situations when this SOP applies]
+
+## Who Performs:
+[Roles responsible - identify from participants/mentions]
+
+## Tools Required:
+[Applications, systems, or tools mentioned]
+
+## Main Flow:
+1. [First step with action verb]
+2. [Second step]
+... [Keep to 5-10 key steps maximum]
+
+## Decision Points:
+[CRITICAL: Extract all IF/THEN conditions mentioned]
+- If [condition X] → do [action Y]
+- If [condition Z] → escalate to [person/role]
+- If [scenario] → [alternative action]
+
+## Exceptions:
+[Edge cases, what-ifs, unusual situations mentioned]
+- [Exception case]: [how to handle]
+
+## Quality Check:
+[How to verify this was done correctly - success criteria mentioned]
+
+IMPORTANT:
+- Focus on DECISIONS and CONDITIONS, not just linear steps
+- If no decision points were discussed, note "Decision points not captured - clarification needed"
+- Identify any unclear areas that need human clarification
+- This is a DRAFT SOP that needs human review`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -148,6 +205,190 @@ Use clear headings (##), bullet points, and organized structure. If certain sect
     console.error("Gemini SOP from transcript error:", error);
     return "";
   }
+}
+
+export interface ClarificationQuestion {
+  question: string;
+  category: string;
+}
+
+export async function generateClarificationQuestions(
+  observations: { type: string; content: string; action?: string }[],
+  existingClarifications: string[]
+): Promise<ClarificationQuestion[]> {
+  try {
+    if (!process.env.GEMINI_API_KEY || observations.length === 0) {
+      return [];
+    }
+
+    const observationsText = observations
+      .map(o => `[${o.type}] ${o.content}${o.action ? ` (Action: ${o.action})` : ''}`)
+      .join("\n");
+
+    const existingText = existingClarifications.length > 0
+      ? `\nAlready asked questions:\n${existingClarifications.map(q => `- ${q}`).join("\n")}`
+      : "";
+
+    const prompt = `You are EVA Ops Memory analyzing workflow observations. Generate 1-3 clarification questions that would help create a more accurate SOP.
+
+Observations:
+${observationsText}
+${existingText}
+
+Generate questions that:
+1. Clarify whether steps are mandatory or optional
+2. Identify what happens in exception cases
+3. Determine who approves or escalates decisions
+4. Understand conditions that trigger different paths
+
+DO NOT repeat questions already asked.
+
+Respond in JSON format:
+{
+  "questions": [
+    {"question": "Is this step mandatory or optional?", "category": "mandatory_optional"},
+    {"question": "What happens if the client doesn't respond?", "category": "exception"},
+    {"question": "Who approves this decision?", "category": "approval"}
+  ]
+}
+
+Categories: mandatory_optional, condition, approval, exception, tool`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return Array.isArray(parsed.questions) ? parsed.questions : [];
+    }
+
+    return [];
+  } catch (error) {
+    console.error("Gemini clarification generation error:", error);
+    return [];
+  }
+}
+
+export interface DecisionBasedSOP {
+  goal: string;
+  whenToUse: string;
+  whoPerforms: string;
+  toolsRequired: string[];
+  mainFlow: { step: number; action: string; details?: string }[];
+  decisionPoints: { condition: string; action: string }[];
+  exceptions: { case: string; handling: string }[];
+  qualityCheck: string;
+  lowConfidenceSections: string[];
+  assumptions: string[];
+}
+
+export async function generateDecisionBasedSOP(
+  observations: { type: string; content: string; app?: string; action?: string }[],
+  clarifications: { question: string; answer?: string }[],
+  title: string
+): Promise<DecisionBasedSOP> {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return getEmptySOP();
+    }
+
+    const observationsText = observations
+      .map(o => `[${o.type}]${o.app ? ` App: ${o.app}` : ''} ${o.content}`)
+      .join("\n");
+
+    const clarificationsText = clarifications
+      .filter(c => c.answer)
+      .map(c => `Q: ${c.question}\nA: ${c.answer}`)
+      .join("\n\n");
+
+    const unansweredQuestions = clarifications
+      .filter(c => !c.answer)
+      .map(c => c.question);
+
+    const prompt = `Generate a structured, decision-based SOP from these observations and clarifications.
+
+SOP Title: ${title}
+
+Observations:
+${observationsText}
+
+${clarificationsText ? `Clarifications:\n${clarificationsText}` : ''}
+
+${unansweredQuestions.length > 0 ? `Unanswered questions (note as assumptions):\n${unansweredQuestions.join("\n")}` : ''}
+
+Generate a structured SOP in JSON format:
+{
+  "goal": "What this process achieves",
+  "whenToUse": "Trigger conditions",
+  "whoPerforms": "Role responsible",
+  "toolsRequired": ["Tool 1", "Tool 2"],
+  "mainFlow": [
+    {"step": 1, "action": "First action", "details": "Optional details"}
+  ],
+  "decisionPoints": [
+    {"condition": "If X happens", "action": "Do Y"}
+  ],
+  "exceptions": [
+    {"case": "Exception case", "handling": "How to handle"}
+  ],
+  "qualityCheck": "How to verify correctness",
+  "lowConfidenceSections": ["Section 1 - reason for low confidence"],
+  "assumptions": ["Assumption made due to missing info"]
+}
+
+CRITICAL:
+- Decision points are REQUIRED - extract all IF/THEN logic
+- If no decisions found, flag in lowConfidenceSections
+- List any assumptions you made
+- Keep mainFlow to 5-10 steps max`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        goal: parsed.goal || "",
+        whenToUse: parsed.whenToUse || "",
+        whoPerforms: parsed.whoPerforms || "",
+        toolsRequired: Array.isArray(parsed.toolsRequired) ? parsed.toolsRequired : [],
+        mainFlow: Array.isArray(parsed.mainFlow) ? parsed.mainFlow : [],
+        decisionPoints: Array.isArray(parsed.decisionPoints) ? parsed.decisionPoints : [],
+        exceptions: Array.isArray(parsed.exceptions) ? parsed.exceptions : [],
+        qualityCheck: parsed.qualityCheck || "",
+        lowConfidenceSections: Array.isArray(parsed.lowConfidenceSections) ? parsed.lowConfidenceSections : [],
+        assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions : [],
+      };
+    }
+
+    return getEmptySOP();
+  } catch (error) {
+    console.error("Gemini decision-based SOP error:", error);
+    return getEmptySOP();
+  }
+}
+
+function getEmptySOP(): DecisionBasedSOP {
+  return {
+    goal: "",
+    whenToUse: "",
+    whoPerforms: "",
+    toolsRequired: [],
+    mainFlow: [],
+    decisionPoints: [],
+    exceptions: [],
+    qualityCheck: "",
+    lowConfidenceSections: ["Unable to generate - insufficient observations"],
+    assumptions: [],
+  };
 }
 
 export interface TranscriptionAnalysis {

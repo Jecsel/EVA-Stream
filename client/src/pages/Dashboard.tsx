@@ -112,10 +112,10 @@ export default function Dashboard() {
                 <Menu className="w-5 h-5" />
             </Button>
             <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-primary-foreground">
                     <Video className="w-5 h-5" />
                 </div>
-                <span className="text-xl font-medium tracking-tight hidden md:block">VideoAI</span>
+                <span className="text-xl font-medium tracking-tight hidden md:block">EVA Ops Memory</span>
             </div>
         </div>
 
@@ -169,11 +169,11 @@ export default function Dashboard() {
         <div className="grid md:grid-cols-2 gap-8 mb-12 items-center">
             <div className="space-y-6">
                 <h1 className="text-3xl md:text-4xl font-normal tracking-tight text-foreground">
-                    Premium video meetings. <br />
-                    <span className="text-muted-foreground">Now free for everyone.</span>
+                    Capture how work <br />
+                    <span className="text-muted-foreground">is actually done.</span>
                 </h1>
                 <p className="text-lg text-muted-foreground max-w-md leading-relaxed">
-                    We re-engineered the service we built for secure business meetings, Google Meet, to make it free and available for all.
+                    EVA observes your meetings and screen shares to create decision-based SOPs that capture intent, decisions, and exceptions - not just steps.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row gap-4">
@@ -237,16 +237,26 @@ export default function Dashboard() {
                         <span className="text-xs text-green-500 font-medium bg-green-500/10 px-2 py-1 rounded-full animate-pulse">Live</span>
                     </div>
                     <div className="space-y-3">
-                        <div className="h-2 w-3/4 bg-muted rounded animate-pulse" />
-                        <div className="h-2 w-full bg-muted rounded animate-pulse" />
-                        <div className="h-2 w-5/6 bg-muted rounded animate-pulse" />
+                        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Observing...</div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-lg">🛠️</span>
+                            <span>Tool: Salesforce</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-lg">🎯</span>
+                            <span>Intent: Lead qualification</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-lg">⚖️</span>
+                            <span>Decision: If qualified → schedule call</span>
+                        </div>
                     </div>
                     <div className="mt-6 flex gap-2">
-                        <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-                            <div className="w-4 h-4 rounded-full bg-primary/50" />
+                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
+                            <span className="text-xs">EVA</span>
                         </div>
                         <div className="flex-1 bg-muted/50 rounded-lg p-2 text-xs text-muted-foreground">
-                            Gemini is analyzing the screen...
+                            Capturing workflow patterns...
                         </div>
                     </div>
                 </div>
