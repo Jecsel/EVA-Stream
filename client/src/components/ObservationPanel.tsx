@@ -14,6 +14,7 @@ import { SOPViewer } from "./SOPViewer";
 interface ObservationPanelProps {
   meetingId: string;
   className?: string;
+  onStartRecording?: () => void;
 }
 
 type Phase = "observe" | "structure" | "instruct";
@@ -39,7 +40,7 @@ const PHASE_CONFIG = {
   },
 };
 
-export function ObservationPanel({ meetingId, className }: ObservationPanelProps) {
+export function ObservationPanel({ meetingId, className, onStartRecording }: ObservationPanelProps) {
   const queryClient = useQueryClient();
   const [activeSession, setActiveSession] = useState<ObservationSession | null>(null);
   const [pendingAnswer, setPendingAnswer] = useState<{ id: string; answer: string } | null>(null);
@@ -126,7 +127,11 @@ export function ObservationPanel({ meetingId, className }: ObservationPanelProps
   const startObservation = useCallback(() => {
     const timestamp = new Date().toLocaleTimeString();
     createSessionMutation.mutate(`Session ${timestamp}`);
-  }, [createSessionMutation]);
+    // Also trigger EVA Observation in MeetingRoom
+    if (onStartRecording) {
+      onStartRecording();
+    }
+  }, [createSessionMutation, onStartRecording]);
 
   const pauseObservation = useCallback(() => {
     if (activeSession) {

@@ -692,6 +692,22 @@ export default function MeetingRoom() {
               <ObservationPanel 
                   meetingId={meeting.id}
                   className="h-full"
+                  onStartRecording={async () => {
+                    if (!isObserving) {
+                      startObserving();
+                      try {
+                        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                          video: { frameRate: 1 } 
+                        });
+                        startScreenCapture(stream);
+                        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
+                      } catch (e) {
+                        console.log("Could not start screen capture:", e);
+                        addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
+                        stopObserving();
+                      }
+                    }
+                  }}
               />
             </div>
           )}
