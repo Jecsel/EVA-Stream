@@ -7,6 +7,7 @@ import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { NoteTakerPanel } from "@/components/NoteTakerPanel";
 import { AgentSelector } from "@/components/AgentSelector";
+import { ObservationPanel } from "@/components/ObservationPanel";
 import { MessageSquare, Video, MonitorUp, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +41,7 @@ export default function MeetingRoom() {
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const [isNotesOpen, setIsNotesOpen] = useState(true);
+  const [isObservationOpen, setIsObservationOpen] = useState(true);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
@@ -677,6 +679,22 @@ export default function MeetingRoom() {
               />
             </div>
           )}
+
+          {/* EVA Ops Memory Observation Panel - only show if SOP agent selected */}
+          {isAgentTypeSelected("sop") && meeting?.id && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                ${isObservationOpen ? 'w-[380px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                rounded-2xl overflow-hidden shadow-xl border border-border
+              `}
+            >
+              <ObservationPanel 
+                  meetingId={meeting.id}
+                  className="h-full"
+              />
+            </div>
+          )}
         </div>
 
         {/* Bottom Controls */}
@@ -757,6 +775,26 @@ export default function MeetingRoom() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Toggle SOP Document</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {/* EVA Ops Memory Panel - only show if SOP agent is selected */}
+            {isAgentTypeSelected("sop") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={isObservationOpen ? "default" : "outline"} 
+                      size="icon" 
+                      className={`h-12 w-12 rounded-full border-2 ${isObservationOpen ? 'bg-purple-600 border-purple-600 hover:bg-purple-700 text-white' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsObservationOpen(!isObservationOpen)}
+                      data-testid="button-toggle-observation"
+                    >
+                      <ClipboardList className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle EVA Ops Memory</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
