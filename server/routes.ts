@@ -1816,7 +1816,7 @@ export async function registerRoutes(
       const observations = await storage.getObservationsBySession(req.params.sessionId);
       const clarifications = await storage.getClarificationsBySession(req.params.sessionId);
 
-      // If no observations, try to use meeting transcripts as fallback
+      // If no observations, try to use meeting content as fallback (transcripts or chat messages)
       let obsData: Array<{ type: string; content: string; app?: string; action?: string }> = [];
       
       if (observations.length > 0) {
@@ -1828,18 +1828,45 @@ export async function registerRoutes(
           action: o.action || undefined,
         }));
       } else if (session.meetingId) {
-        // Fallback to meeting transcripts
+        // Try meeting transcripts first
         const transcripts = await storage.getTranscriptsByMeeting(session.meetingId);
-        if (transcripts.length === 0) {
+        if (transcripts.length > 0) {
+          // Convert transcripts to observation format
+          obsData = transcripts.map(t => ({
+            type: "verbal_note",
+            content: `${t.speaker}: ${t.text}`,
+          }));
+          console.log(`Using ${transcripts.length} transcript segments for SOP generation`);
+        } else {
+          // Fallback to chat messages (which contain screen analysis from EVA)
+          const chatMessages = await storage.getChatMessagesByMeeting(session.meetingId);
+          const screenAnalysisMessages = chatMessages.filter(
+            (m: { role: string; context: string | null }) => m.role === "ai" && m.context === "Screen Analysis"
+          );
+          
+          if (screenAnalysisMessages.length > 0) {
+            obsData = screenAnalysisMessages.map((m: { content: string }) => ({
+              type: "screen_analysis",
+              content: m.content,
+            }));
+            console.log(`Using ${screenAnalysisMessages.length} screen analysis messages for SOP generation`);
+          } else if (chatMessages.length > 0) {
+            // Use any AI messages as context
+            const aiMessages = chatMessages.filter((m: { role: string }) => m.role === "ai");
+            if (aiMessages.length > 0) {
+              obsData = aiMessages.map((m: { content: string }) => ({
+                type: "ai_analysis",
+                content: m.content,
+              }));
+              console.log(`Using ${aiMessages.length} AI chat messages for SOP generation`);
+            }
+          }
+        }
+        
+        if (obsData.length === 0) {
           res.status(400).json({ error: "No observations or transcripts to generate SOP from. Please ensure the meeting has content before generating an SOP." });
           return;
         }
-        // Convert transcripts to observation format
-        obsData = transcripts.map(t => ({
-          type: "verbal_note",
-          content: `${t.speaker}: ${t.text}`,
-        }));
-        console.log(`Using ${transcripts.length} transcript segments as fallback for SOP generation`);
       } else {
         res.status(400).json({ error: "No observations to generate SOP from" });
         return;
