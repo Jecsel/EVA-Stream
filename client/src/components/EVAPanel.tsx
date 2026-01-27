@@ -356,7 +356,7 @@ export function EVAPanel({
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 h-10 p-0">
           <TabsTrigger value="chat" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent" data-testid="tab-chat">
             <MessageSquare className="w-4 h-4 mr-1.5" />
@@ -372,8 +372,8 @@ export function EVAPanel({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
-          <ScrollArea className="flex-1 p-4">
+        <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden min-h-0">
+          <ScrollArea className="flex-1 p-4 min-h-0 h-full">
             <div className="space-y-6">
               {messages.map((msg) => (
                 <motion.div
