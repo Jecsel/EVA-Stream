@@ -309,7 +309,7 @@ export function EVAPanel({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat" className="flex-1 flex flex-col m-0 data-[state=inactive]:hidden">
+        <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-6">
               {messages.map((msg) => (
@@ -414,7 +414,7 @@ export function EVAPanel({
           </div>
         </TabsContent>
 
-        <TabsContent value="notes" className="flex-1 flex flex-col m-0 data-[state=inactive]:hidden">
+        <TabsContent value="notes" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="p-3 border-b border-border flex items-center justify-between bg-muted/30">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-400" />
