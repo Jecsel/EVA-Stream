@@ -7,6 +7,7 @@ VideoAI is a Jitsi-powered video conferencing platform with real-time AI context
 Key features:
 - Video conferencing via Jitsi integration
 - Real-time AI assistant (EVA) powered by Google Gemini
+- AI Voice Assistant powered by 11Labs for natural voice interactions
 - WebSocket-based live AI communication
 - Automatic SOP generation and flowchart visualization
 - Meeting scheduling, recordings, and chat history
@@ -60,6 +61,7 @@ The platform supports multiple AI agents that can be enabled/disabled per meetin
 | **EVA Assistant** | eva | Unified AI assistant with tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis and SOP generation) |
 | **Meeting Transcriber** | transcription | Real-time speech-to-text with speaker identification |
 | **Flowchart Builder** | flowchart | Auto-generates visual flowcharts from SOP content using Mermaid.js (updates in real-time as SOP changes) |
+| **AI Voice Assistant** | voice_11labs | Voice-powered AI meeting assistant using 11Labs - enables natural voice interactions, text-to-speech for SOPs, and real-time voice responses |
 
 Each agent:
 - Only runs when explicitly selected in the meeting
@@ -140,3 +142,72 @@ Authorization: Bearer <your-api-key>
   },
   "link": "https://your-domain.replit.dev/meeting/abc-defg-hij"
 }
+```
+
+## AI Meeting Assistant (11Labs)
+
+### Overview
+
+The AI Meeting Assistant powered by 11Labs brings natural voice capabilities to VideoAI meetings. This feature enables EVA to speak responses aloud, read SOPs and meeting notes via text-to-speech, and provide a more immersive AI-assisted meeting experience.
+
+### Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **Voice Responses** | EVA speaks answers and insights during meetings instead of text-only responses |
+| **SOP Narration** | Converts generated SOPs to natural speech for hands-free review |
+| **Meeting Summaries** | Audio playback of meeting summaries and action items |
+| **Custom Voice Selection** | Choose from multiple AI voice options to match your preference |
+| **Real-time Synthesis** | Low-latency voice generation for natural conversation flow |
+
+### How It Works
+
+1. **Enable the Agent**: Select "AI Voice Assistant" when creating or joining a meeting
+2. **Voice Output**: EVA's responses are synthesized using 11Labs' voice AI technology
+3. **Audio Controls**: Play, pause, or skip voice responses as needed
+4. **Text Fallback**: All voiced content remains visible as text in the EVA panel
+
+### Technical Integration
+
+- **Provider**: 11Labs Conversational AI / Text-to-Speech API
+- **Communication**: Audio streams delivered via WebSocket for real-time playback
+- **Voice Models**: Supports 11Labs' multilingual voice models
+- **Latency**: Optimized for sub-second response times using streaming synthesis
+
+### Configuration
+
+#### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ELEVENLABS_API_KEY` | Yes | Your 11Labs API key for voice synthesis |
+| `ELEVENLABS_VOICE_ID` | No | Default voice ID (uses 11Labs default if not set) |
+| `ELEVENLABS_MODEL_ID` | No | Voice model to use (default: `eleven_turbo_v2_5`) |
+
+#### Admin Panel Settings
+
+Navigate to **Admin > Prompts** to configure the AI Voice Assistant prompt. This controls how EVA responds when the voice agent is active, optimizing responses for spoken delivery (shorter sentences, clearer phrasing).
+
+### Voice Options
+
+11Labs provides various voice profiles:
+
+- **Professional**: Clear, neutral tone suitable for business meetings
+- **Friendly**: Warm, approachable tone for team discussions
+- **Custom**: Clone or create custom voices via 11Labs dashboard
+
+### Usage Tips
+
+- Keep responses concise for better voice delivery
+- Use headphones to prevent audio feedback during meetings
+- The voice agent works best with a stable internet connection
+- Combine with Meeting Transcriber for complete audio-to-text and text-to-audio coverage
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| No audio playback | Check browser audio permissions and volume settings |
+| Voice cuts out | Verify stable internet connection; voice uses streaming |
+| High latency | Switch to `eleven_turbo_v2_5` model for faster synthesis |
+| API errors | Confirm `ELEVENLABS_API_KEY` is set correctly in Secrets |
