@@ -439,6 +439,17 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/meetings/:meetingId/notetaker/refresh", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      await executeNoteTaker(meetingId);
+      res.json({ success: true, message: "Notes refreshed" });
+    } catch (error) {
+      console.error("NoteTaker refresh error:", error);
+      res.status(500).json({ error: "Failed to refresh notes" });
+    }
+  });
+
   // AI Chat endpoint - EVA SOP Assistant
   app.post("/api/meetings/:meetingId/chat", async (req, res) => {
     try {

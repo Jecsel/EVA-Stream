@@ -63,6 +63,7 @@ export default function MeetingRoom() {
 - Lead Developer
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
+  const [isNoteTakerProcessing, setIsNoteTakerProcessing] = useState(false);
 
   // Track if meeting has been properly ended
   const hasEndedMeetingRef = useRef(false);
@@ -492,6 +493,19 @@ export default function MeetingRoom() {
     }
   };
 
+  const handleRefreshNoteTaker = async () => {
+    if (!meeting?.id) return;
+    try {
+      setIsNoteTakerProcessing(true);
+      await api.refreshNoteTaker(meeting.id);
+      queryClient.invalidateQueries({ queryKey: ["messages", meeting.id] });
+    } catch (error) {
+      console.error("Failed to refresh notes", error);
+    } finally {
+      setIsNoteTakerProcessing(false);
+    }
+  };
+
   const toggleEvaObservation = async () => {
     if (isObserving) {
       stopObserving();
@@ -674,7 +688,8 @@ export default function MeetingRoom() {
             >
               <NoteTakerPanel 
                   messages={chatMessages}
-                  isProcessing={false}
+                  isProcessing={isNoteTakerProcessing}
+                  onRefresh={handleRefreshNoteTaker}
                   className="h-full"
               />
             </div>
