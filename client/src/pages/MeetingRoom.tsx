@@ -19,7 +19,6 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useEvaLive } from "@/hooks/useEvaLive";
-import { useJitsiTranscription } from "@/hooks/useJitsiTranscription";
 import type { ChatMessage } from "@shared/schema";
 
 interface Message {
@@ -296,71 +295,6 @@ export default function MeetingRoom() {
     }
   }, [isScreenObserverEnabled, isObserving, stopObserving, stopScreenCapture]);
 
-  const handleWakeWord = useCallback((command: string) => {
-    if (evaConnected && command.trim() && isMeetingAssistantEnabled) {
-      console.log("Hey EVA detected! Command:", command);
-      sendTextMessage(command);
-    }
-  }, [evaConnected, sendTextMessage, isMeetingAssistantEnabled]);
-
-  const handleJitsiTranscript = useCallback((transcript: { text: string; speaker: string; isFinal: boolean }) => {
-    if (!transcript.text || typeof transcript.text !== 'string') {
-      return;
-    }
-    
-    if (!isJitsiTranscribing) {
-      setIsJitsiTranscribing(true);
-      setTranscriptStatus("transcribing");
-    }
-    
-    if (transcript.isFinal) {
-      setTranscripts(prev => [...prev, {
-        id: `jitsi-${Date.now()}`,
-        text: transcript.text,
-        speaker: transcript.speaker || "Participant",
-        timestamp: new Date(),
-        isFinal: true,
-      }]);
-
-      if (meeting?.id && transcript.text.trim().length > 0) {
-        api.createTranscriptSegment(meeting.id, {
-          text: transcript.text,
-          speaker: transcript.speaker || "Participant",
-          isFinal: true,
-        }).catch(err => {
-          console.error("Failed to save Jitsi transcript:", err);
-        });
-      }
-    }
-  }, [meeting?.id, isJitsiTranscribing]);
-
-  const handleToggleJitsiTranscription = useCallback(() => {
-    if (jitsiApi) {
-      try {
-        jitsiApi.executeCommand('toggleSubtitles');
-        setIsJitsiTranscribing(!isJitsiTranscribing);
-        setTranscriptStatus(isJitsiTranscribing ? "idle" : "transcribing");
-      } catch (err) {
-        console.error("Failed to toggle Jitsi captions:", err);
-      }
-    }
-  }, [jitsiApi, isJitsiTranscribing]);
-
-  const {
-    isActive: isWakeWordActive,
-    isListening: isEvaListening,
-    handleTranscription: handleJitsiTranscriptionEvent,
-  } = useJitsiTranscription({
-    onWakeWord: handleWakeWord,
-    onTranscript: handleJitsiTranscript,
-    wakeWord: "hey eva",
-  });
-
-  const onJitsiTranscriptionReceived = useCallback((text: string, participant: string, isFinal: boolean) => {
-    if (isMeetingAssistantEnabled) {
-      handleJitsiTranscriptionEvent(text, participant, isFinal);
-    }
-  }, [handleJitsiTranscriptionEvent, isMeetingAssistantEnabled]);
 
   useEffect(() => {
     if (!jitsiApi || agents.length === 0) return;
@@ -595,28 +529,6 @@ export default function MeetingRoom() {
                       EVA {evaStatus === "connected" ? (isObserving && isScreenObserverEnabled ? "Observing" : "Ready") : evaStatus}
                     </span>
                  </div>
-                 {isMeetingAssistantEnabled && (
-                   <div className={`border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all duration-300 ${
-                     isEvaListening 
-                       ? 'border-purple-500 bg-purple-500/20 shadow-lg shadow-purple-500/20 scale-105' 
-                       : isWakeWordActive 
-                         ? 'border-purple-500/50 bg-purple-500/10' 
-                         : 'bg-card/50 border-border'
-                   }`} data-testid="indicator-wake-word">
-                      <span className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                        isEvaListening 
-                          ? "bg-purple-500 animate-ping" 
-                          : isWakeWordActive 
-                            ? "bg-purple-500 animate-pulse"
-                            : "bg-gray-500"
-                      }`} />
-                      <span className={`text-xs font-medium transition-colors ${
-                        isEvaListening || isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
-                      }`}>
-                        {isEvaListening ? 'Listening... speak now' : isWakeWordActive ? 'Processing...' : 'Say "Hey EVA"'}
-                      </span>
-                   </div>
-                 )}
                </>
              )}
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
@@ -632,7 +544,6 @@ export default function MeetingRoom() {
                roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
-               onTranscriptionReceived={onJitsiTranscriptionReceived}
                className="bg-zinc-900"
                jwt={jaasToken?.token}
                appId={jaasToken?.appId}
@@ -708,7 +619,6 @@ export default function MeetingRoom() {
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
                   meetingStatus={meeting.status}
-                  isWakeWordActive={isWakeWordActive}
                   className="h-[calc(100%-120px)]"
                 />
               ) : isScreenObserverEnabled ? (
@@ -777,7 +687,7 @@ export default function MeetingRoom() {
               <LiveTranscriptPanel 
                   transcripts={transcripts}
                   isTranscribing={isJitsiTranscribing}
-                  onToggleTranscription={handleToggleJitsiTranscription}
+                  onToggleTranscription={() => {}}
                   status={transcriptStatus}
                   className="h-full"
               />

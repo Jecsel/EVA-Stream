@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { 
-  Send, Bot, User, Volume2, VolumeX, 
+  Send, Bot, User, Volume2, VolumeX, Mic, MicOff,
   Plus, Trash2, Check, X, FileText, List, Files, 
   MessageSquare, ClipboardList, Loader2, Play, Square,
   Upload, File as FileIcon, ChevronDown, Radio
@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { useVoiceActivation } from "@/hooks/useVoiceActivation";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
 interface AgendaItem {
@@ -41,7 +42,6 @@ interface EVAMeetingAssistantProps {
   meetingTitle?: string;
   meetingStatus?: string;
   className?: string;
-  isWakeWordActive?: boolean;
 }
 
 export function EVAMeetingAssistant({
@@ -49,21 +49,63 @@ export function EVAMeetingAssistant({
   meetingTitle,
   meetingStatus,
   className,
-  isWakeWordActive = false,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [agendaContent, setAgendaContent] = useState("");
   const [newNoteContent, setNewNoteContent] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
+
+  // Handle voice command result
+  const handleVoiceSpeechResult = useCallback((text: string) => {
+    if (text.trim()) {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: text,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setIsTyping(true);
+      askEvaMutationRef.current?.(text);
+    }
+  }, []);
+
+  // Browser-based voice activation hook for wake word detection
+  const {
+    isListening,
+    isSupported: voiceSupported,
+    startListening,
+    stopListening,
+  } = useVoiceActivation({
+    wakeWord: "hey eva",
+    onWakeWordDetected: () => {
+      console.log("[EVA] Wake word detected!");
+      setWakeWordTriggered(true);
+      setTimeout(() => setWakeWordTriggered(false), 2000);
+    },
+    onSpeechResult: handleVoiceSpeechResult,
+    enabled: wakeWordEnabled,
+  });
+
+  // Auto-start listening when component mounts
+  useEffect(() => {
+    if (wakeWordEnabled && voiceSupported) {
+      startListening();
+    }
+    return () => stopListening();
+  }, [wakeWordEnabled, voiceSupported, startListening, stopListening]);
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
@@ -185,6 +227,13 @@ export function EVAMeetingAssistant({
       setIsTyping(false);
     },
   });
+
+  // Set the ref for voice activation to use
+  useEffect(() => {
+    askEvaMutationRef.current = (question: string) => {
+      askEvaMutation.mutate(question);
+    };
+  }, [askEvaMutation]);
 
   // Play voice response using ElevenLabs
   const playVoiceResponse = async (text: string) => {
@@ -332,19 +381,42 @@ export function EVAMeetingAssistant({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Wake word status - controlled by Jitsi transcription */}
-            <Badge 
-              variant="outline" 
-              className={cn(
-                "text-xs px-2 transition-colors",
-                isWakeWordActive 
-                  ? "bg-green-500/20 text-green-500 border-green-500" 
-                  : "bg-purple-500/10 text-purple-500"
-              )}
-            >
-              <Radio className={cn("w-3 h-3 mr-1", isWakeWordActive && "animate-pulse")} />
-              {isWakeWordActive ? "Listening..." : "Say 'Hey EVA'"}
-            </Badge>
+            {/* Wake word status - browser speech recognition */}
+            {voiceSupported && isListening && (
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "text-xs px-2 transition-colors",
+                  wakeWordTriggered 
+                    ? "bg-green-500/20 text-green-500 border-green-500" 
+                    : "bg-purple-500/10 text-purple-500"
+                )}
+              >
+                <Radio className={cn("w-3 h-3 mr-1", wakeWordTriggered && "animate-pulse")} />
+                {wakeWordTriggered ? "Listening..." : "Say 'Hey EVA'"}
+              </Badge>
+            )}
+            {/* Wake word toggle */}
+            {voiceSupported && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (wakeWordEnabled) {
+                    stopListening();
+                    setWakeWordEnabled(false);
+                  } else {
+                    setWakeWordEnabled(true);
+                    startListening();
+                  }
+                }}
+                className={cn("h-8 w-8", wakeWordEnabled && isListening && "text-green-500")}
+                data-testid="button-toggle-wakeword"
+                title={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
+              >
+                {wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
