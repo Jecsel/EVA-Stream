@@ -51,6 +51,7 @@ export default function MeetingRoom() {
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(0);
+  const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
   const meetingStartTime = useRef(Date.now());
   const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
 
@@ -340,6 +341,7 @@ export default function MeetingRoom() {
     
     api.addEventListeners({
       videoConferenceJoined: async () => {
+        setHasJoinedMeeting(true);
         // Auto-enable transcription state when joining - captions auto-enable via JitsiMeeting component
         // This makes "Hey EVA" wake word detection work immediately without manual toggle
         setTimeout(() => {
@@ -376,6 +378,7 @@ export default function MeetingRoom() {
         }
       },
       videoConferenceLeft: () => {
+        setHasJoinedMeeting(false);
         stopObserving();
         stopScreenCapture();
         setIsJitsiTranscribing(false);
@@ -501,7 +504,7 @@ export default function MeetingRoom() {
                  onScreenObserverChange={setIsScreenObserverEnabled}
                />
              )}
-             {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && (
+             {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && hasJoinedMeeting && (
                <>
                  <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                    evaConnected ? 'border-green-500/50' : 'border-border'
@@ -536,7 +539,7 @@ export default function MeetingRoom() {
              />
           </div>
 
-          {isAgentTypeSelected("eva") && meeting?.id && (
+          {isAgentTypeSelected("eva") && meeting?.id && hasJoinedMeeting && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
