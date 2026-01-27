@@ -17,6 +17,33 @@ export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartP
   const [lastProcessedContent, setLastProcessedContent] = useState<string>('');
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // Static fallback SVG for when mermaid fails
+  const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+    <rect x="25" y="25" width="150" height="50" rx="25" fill="#1967D2"/>
+    <text x="100" y="55" text-anchor="middle" fill="white" font-family="sans-serif" font-size="12">Waiting for content...</text>
+  </svg>`;
+
+  // Cleanup mermaid error elements from the DOM
+  const cleanupMermaidErrors = useCallback(() => {
+    if (containerRef.current) {
+      // Clean within container
+      containerRef.current.querySelectorAll('.error-icon, .error-text, [class*="error"]').forEach(el => el.remove());
+    }
+    // Clean any orphaned mermaid error elements from body
+    document.body.querySelectorAll('#d[id^="d"]:not([id*="mermaid"])').forEach(el => {
+      if (el.textContent?.includes('Syntax error')) {
+        el.remove();
+      }
+    });
+    // Remove any floating error containers mermaid creates
+    document.querySelectorAll('div[id^="d"]:not([id*="mermaid"])').forEach(el => {
+      const text = el.textContent || '';
+      if (text.includes('Syntax error') || text.includes('mermaid version')) {
+        el.remove();
+      }
+    });
+  }, []);
+
   useEffect(() => {
     mermaid.initialize({
       startOnLoad: false,
@@ -32,17 +59,39 @@ export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartP
         useMaxWidth: true,
       }
     });
-  }, []);
+    
+    // Set up periodic cleanup to catch any async error elements
+    const cleanupInterval = setInterval(cleanupMermaidErrors, 500);
+    
+    return () => {
+      clearInterval(cleanupInterval);
+      cleanupMermaidErrors();
+    };
+  }, [cleanupMermaidErrors]);
 
   const renderMermaidChart = useCallback(async (mermaidCode: string) => {
+    // Clean up any leftover mermaid error elements before rendering
+    cleanupMermaidErrors();
+    
     try {
+      // First validate the mermaid syntax using parse
+      await mermaid.parse(mermaidCode);
+      
+      // If parse succeeds, render the chart
       const id = `mermaid-${Date.now()}`;
       const { svg } = await mermaid.render(id, mermaidCode);
       setSvgContent(svg);
+      
+      // Clean up after successful render just in case
+      cleanupMermaidErrors();
     } catch (error) {
       console.error('Failed to render mermaid chart:', error);
+      // Clean up any error elements mermaid created
+      cleanupMermaidErrors();
+      // Use static fallback SVG - don't call mermaid.render again to avoid re-triggering errors
+      setSvgContent(fallbackSvg);
     }
-  }, []);
+  }, [cleanupMermaidErrors, fallbackSvg]);
 
   const generateFlowchartFromAPI = useCallback(async (content: string) => {
     if (!content || content.trim().length < 20) {
