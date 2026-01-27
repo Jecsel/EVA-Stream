@@ -458,15 +458,16 @@ export async function registerRoutes(
       const meeting = await storage.getMeeting(meetingId);
       const meetingContext = meeting ? `Meeting: ${meeting.title}` : "General Meeting";
 
-      // Get the SOP agent's prompt if one is selected for this meeting
+      // Get the EVA agent's prompt if one is selected for this meeting
       let customPrompt: string | undefined;
       if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
         const agentsWithPrompts = await storage.listAgentsWithPrompts();
-        const sopAgent = agentsWithPrompts.find(
-          a => a.type === "sop" && meeting.selectedAgents?.includes(a.id)
+        // Support both legacy "sop" type and new "eva" type for backward compatibility
+        const evaAgent = agentsWithPrompts.find(
+          a => (a.type === "eva" || a.type === "sop") && meeting.selectedAgents?.includes(a.id)
         );
-        if (sopAgent?.prompt?.content) {
-          customPrompt = sopAgent.prompt.content;
+        if (evaAgent?.prompt?.content) {
+          customPrompt = evaAgent.prompt.content;
         }
       }
 

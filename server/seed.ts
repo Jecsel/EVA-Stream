@@ -2,11 +2,11 @@ import { storage } from "./storage";
 
 const defaultAgents = [
   {
-    name: "SOP Generator",
-    type: "sop",
-    description: "Generates Standard Operating Procedures from meeting discussions and decisions",
-    capabilities: ["Document generation", "Process documentation", "Step-by-step guides"],
-    icon: "FileText",
+    name: "EVA Assistant",
+    type: "eva",
+    description: "Unified AI assistant that observes meetings, takes notes, generates SOPs, and answers questions in real-time",
+    capabilities: ["Screen observation", "Meeting notes", "SOP generation", "Chat assistance", "Action item tracking"],
+    icon: "Brain",
     status: "active" as const,
     isDefault: true,
   },
@@ -20,22 +20,13 @@ const defaultAgents = [
     isDefault: false,
   },
   {
-    name: "Meeting Analyst",
-    type: "analysis",
-    description: "Analyzes meeting content for insights, action items, and key decisions",
-    capabilities: ["Sentiment analysis", "Key points extraction", "Action item tracking"],
-    icon: "BarChart",
-    status: "active" as const,
-    isDefault: false,
-  },
-  {
-    name: "Transcription Assistant",
+    name: "Meeting Transcriber",
     type: "transcription",
-    description: "Provides accurate meeting transcription with speaker identification",
-    capabilities: ["Real-time transcription", "Speaker diarization", "Timestamp tracking"],
+    description: "Provides accurate real-time speech-to-text transcription",
+    capabilities: ["Real-time transcription", "Speaker identification", "Timestamp tracking"],
     icon: "Mic",
     status: "active" as const,
-    isDefault: false,
+    isDefault: true,
   },
 ];
 

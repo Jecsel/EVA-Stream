@@ -57,22 +57,21 @@ The platform supports multiple AI agents that can be enabled/disabled per meetin
 
 | Agent | Type | Functionality |
 |-------|------|---------------|
-| **NoteTaker** | assistant | Automatically captures meeting notes, extracts key discussion points, and action items from live transcripts |
+| **EVA Assistant** | eva | Unified AI assistant with tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis and SOP generation) |
 | **Meeting Transcriber** | transcription | Real-time speech-to-text with speaker identification |
 | **Flowchart Builder** | flowchart | Auto-generates visual flowcharts from SOP content using Mermaid.js (updates in real-time as SOP changes) |
-| **EVA SOP Assistant** | sop | Analyzes screen shares and conversations to generate/update SOPs in real-time |
 
 Each agent:
 - Only runs when explicitly selected in the meeting
 - Uses its own custom prompt (configurable in Admin panel)
-- Has a dedicated UI panel that shows/hides based on selection
+- EVA Assistant uses a unified tabbed panel (EVAPanel.tsx) instead of separate panels
 - Properly starts/stops when toggled during a live meeting
 
 ### Data Flow
 1. User creates/joins meeting via Dashboard
 2. Jitsi handles video/audio streaming
 3. Selected agents activate based on user's agent choices
-4. EVA connects via WebSocket for real-time observation (if SOP agent selected)
+4. EVA connects via WebSocket for real-time observation (if EVA agent selected)
 5. AI responses update SOP document and flowchart visualization
 6. Meeting data persisted to PostgreSQL
 
@@ -87,7 +86,7 @@ Each agent:
 ### Admin Panel
 - **Route**: `/admin` - accessible via Settings icon in header
 - **User Management**: Full CRUD with role (admin/user) and status (active/inactive/suspended)
-- **Prompt Management**: Configure AI prompts by type (chat, summary, analysis, sop)
+- **Prompt Management**: Configure AI prompts by type (chat, summary, analysis, eva)
 - **Security**: Bcrypt password hashing, passwords never returned in API responses
 
 ### Third-Party Services

@@ -1,14 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
-import { AIChatPanel } from "@/components/AIChatPanel";
+import { EVAPanel } from "@/components/EVAPanel";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
-import { NoteTakerPanel } from "@/components/NoteTakerPanel";
 import { AgentSelector } from "@/components/AgentSelector";
-import { ObservationPanel } from "@/components/ObservationPanel";
-import { MessageSquare, Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, ClipboardList } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -36,12 +34,10 @@ export default function MeetingRoom() {
   const roomId = params?.id || "demo-room";
   const queryClient = useQueryClient();
   
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
-  const [isNotesOpen, setIsNotesOpen] = useState(true);
-  const [isObservationOpen, setIsObservationOpen] = useState(true);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
@@ -65,18 +61,15 @@ export default function MeetingRoom() {
   const [isSopUpdating, setIsSopUpdating] = useState(false);
   const [isNoteTakerProcessing, setIsNoteTakerProcessing] = useState(false);
 
-  // Track if meeting has been properly ended
   const hasEndedMeetingRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
   const sopContentRef = useRef(sopContent);
   const meetingActiveRef = useRef(false);
 
-  // Keep refs in sync
   useEffect(() => {
     sopContentRef.current = sopContent;
   }, [sopContent]);
 
-  // Mark meeting as active after 2 seconds (meaningful session)
   useEffect(() => {
     const timer = setTimeout(() => {
       meetingActiveRef.current = true;
@@ -84,26 +77,24 @@ export default function MeetingRoom() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Load meeting data first
   const { data: meeting } = useQuery({
     queryKey: ["meeting", roomId],
     queryFn: () => api.getMeetingByRoomId(roomId),
   });
 
-  // Load available agents
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
   });
 
-  // Helper to check if an agent of a specific type is selected
   const isAgentTypeSelected = useCallback((agentType: string): boolean => {
+    // Support backward compatibility: treat legacy "sop" type as "eva"
+    const typesToCheck = agentType === "eva" ? ["eva", "sop"] : [agentType];
     return agents.some(agent => 
-      agent.type === agentType && selectedAgents.includes(agent.id)
+      typesToCheck.includes(agent.type) && selectedAgents.includes(agent.id)
     );
   }, [agents, selectedAgents]);
 
-  // Fetch JaaS JWT token for authenticated Jitsi meetings
   const { data: jaasToken } = useQuery({
     queryKey: ["jaas-token", roomId],
     queryFn: async () => {
@@ -116,20 +107,17 @@ export default function MeetingRoom() {
         }),
       });
       if (!response.ok) {
-        // If JaaS token fails, return null (will fall back to public Jitsi)
         return null;
       }
       return response.json();
     },
     retry: false,
-    staleTime: 1000 * 60 * 60 * 2, // Token valid for 2 hours
+    staleTime: 1000 * 60 * 60 * 2,
   });
 
-  // Update meeting ID ref and always select all agents when joining a meeting
   useEffect(() => {
     if (meeting?.id) {
       meetingIdRef.current = meeting.id;
-      // Always select all agents when entering a meeting
       if (agents.length > 0) {
         const allAgentIds = agents.map(a => a.id);
         setSelectedAgents(allAgentIds);
@@ -137,7 +125,6 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id, agents]);
 
-  // Track previous agent selection to detect toggle changes
   const prevSelectedAgentsRef = useRef<string[]>([]);
 
   const formatDuration = (seconds: number) => {
@@ -150,7 +137,6 @@ export default function MeetingRoom() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Meeting duration timer
   useEffect(() => {
     const timer = setInterval(() => {
       setMeetingDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
@@ -158,7 +144,6 @@ export default function MeetingRoom() {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-save meeting on page navigation or tab close
   const autoSaveMeeting = useCallback(() => {
     if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
       const duration = formatDuration(Math.floor((Date.now() - meetingStartTime.current) / 1000));
@@ -169,11 +154,10 @@ export default function MeetingRoom() {
         `/api/meetings/${meetingIdRef.current}/end-beacon`, 
         new Blob([params.toString()], { type: 'application/x-www-form-urlencoded' })
       );
-      hasEndedMeetingRef.current = true; // Prevent duplicate saves
+      hasEndedMeetingRef.current = true;
     }
   }, []);
 
-  // Warn user before leaving and auto-save
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
@@ -184,9 +168,7 @@ export default function MeetingRoom() {
       }
     };
 
-    // pagehide fires when navigating away (more reliable than beforeunload for some browsers)
     const handlePageHide = (e: PageTransitionEvent) => {
-      // Only save if this is a real navigation (not just back-forward cache)
       if (!e.persisted) {
         autoSaveMeeting();
       }
@@ -201,25 +183,20 @@ export default function MeetingRoom() {
     };
   }, [autoSaveMeeting]);
 
-  // End meeting and create recording
   const handleEndMeeting = async () => {
     if (!meeting?.id || isEndingMeeting) return;
     
     setIsEndingMeeting(true);
     try {
-      // Stop all active features
       stopObserving();
       stopScreenCapture();
       stopTranscription();
       
-      // End meeting and create recording
       const duration = formatDuration(meetingDuration);
       const result = await api.endMeeting(meeting.id, sopContent, duration);
       
       if (result.recording) {
-        // Mark as properly ended to prevent beforeunload warning
         hasEndedMeetingRef.current = true;
-        // Success - redirect to dashboard
         setLocation("/");
       } else {
         throw new Error("Recording not created");
@@ -227,23 +204,19 @@ export default function MeetingRoom() {
     } catch (error) {
       console.error("Failed to end meeting:", error);
       setIsEndingMeeting(false);
-      // Keep user in room on failure - they can try again
       addSystemMessage("Failed to save recording. Please try ending the call again.");
     }
   };
 
-  // Load chat messages
   const { data: chatMessages = [] } = useQuery({
     queryKey: ["messages", meeting?.id],
     queryFn: () => api.getChatMessages(meeting!.id),
     enabled: !!meeting?.id,
-    refetchInterval: 3000, // Refresh every 3 seconds for live updates
+    refetchInterval: 3000,
   });
 
-  // EVA Live connection for real-time screen analysis
   const handleEvaMessage = useCallback((message: { type: string; content: string }) => {
     if (message.type === "text" && message.content && meeting?.id) {
-      // Save AI message to database
       api.createChatMessage(meeting.id, {
         role: "ai",
         content: message.content,
@@ -278,11 +251,9 @@ export default function MeetingRoom() {
       const isFinal = message.isFinal ?? false;
       
       setTranscripts(prev => {
-        // If this is an interim result, update the last non-final entry or add new one
         if (!isFinal) {
           const lastIndex = prev.length - 1;
           if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
-            // Update the last interim entry
             const updated = [...prev];
             updated[lastIndex] = {
               ...updated[lastIndex],
@@ -291,7 +262,6 @@ export default function MeetingRoom() {
             };
             return updated;
           } else {
-            // Add new interim entry
             return [...prev, {
               id: `transcript-${Date.now()}`,
               text: message.content,
@@ -301,10 +271,8 @@ export default function MeetingRoom() {
             }];
           }
         } else {
-          // Final result - replace last interim or add as new
           const lastIndex = prev.length - 1;
           if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
-            // Replace interim with final
             const updated = [...prev];
             updated[lastIndex] = {
               ...updated[lastIndex],
@@ -314,7 +282,6 @@ export default function MeetingRoom() {
             };
             return updated;
           } else {
-            // Add new final entry
             return [...prev, {
               id: `transcript-${Date.now()}`,
               text: message.content,
@@ -326,7 +293,6 @@ export default function MeetingRoom() {
         }
       });
 
-      // Only save final transcripts to database
       if (isFinal && meeting?.id) {
         api.createTranscriptSegment(meeting.id, {
           text: message.content,
@@ -358,7 +324,6 @@ export default function MeetingRoom() {
     }
   }, [isTranscribing, startTranscription, stopTranscription]);
 
-  // Start/stop features when agent toggles change during meeting
   useEffect(() => {
     if (!jitsiApi || agents.length === 0) return;
     
@@ -367,23 +332,20 @@ export default function MeetingRoom() {
     );
     const isTranscriptionSelected = isAgentTypeSelected("transcription");
     
-    // Transcription agent toggled ON
     if (!wasTranscriptionSelected && isTranscriptionSelected && !isTranscribing) {
       startTranscription();
     }
-    // Transcription agent toggled OFF
     if (wasTranscriptionSelected && !isTranscriptionSelected && isTranscribing) {
       stopTranscription();
     }
     
-    // Check SOP agent for EVA observation
-    const wasSopSelected = agents.some(
-      a => a.type === "sop" && prevSelectedAgentsRef.current.includes(a.id)
+    // Support backward compatibility: treat legacy "sop" type as "eva"
+    const wasEvaSelected = agents.some(
+      a => (a.type === "eva" || a.type === "sop") && prevSelectedAgentsRef.current.includes(a.id)
     );
-    const isSopSelected = isAgentTypeSelected("sop");
+    const isEvaSelected = isAgentTypeSelected("eva");
     
-    // SOP agent toggled OFF - stop EVA observation
-    if (wasSopSelected && !isSopSelected && isObserving) {
+    if (wasEvaSelected && !isEvaSelected && isObserving) {
       stopObserving();
       stopScreenCapture();
     }
@@ -391,7 +353,6 @@ export default function MeetingRoom() {
     prevSelectedAgentsRef.current = selectedAgents;
   }, [selectedAgents, agents, jitsiApi, isTranscribing, isObserving, isAgentTypeSelected, startTranscription, stopTranscription, stopObserving, stopScreenCapture]);
 
-  // Convert database messages to UI format
   const messages: Message[] = chatMessages.map(msg => ({
     id: msg.id,
     role: msg.role as "user" | "ai",
@@ -400,15 +361,13 @@ export default function MeetingRoom() {
     context: msg.context || undefined,
   }));
 
-  // Add welcome message if no messages exist
   const displayMessages = messages.length === 0 ? [{
     id: "welcome",
     role: "ai" as const,
-    content: "Hello! I'm EVA, your AI SOP assistant. I can observe your screen share and help document processes in real-time. Click the eye icon to start screen analysis.",
+    content: "Hello! I'm EVA, your unified AI assistant. I can observe your screen, take meeting notes, and help document processes in real-time. Use the tabs above to switch between Chat, Notes, and Observation modes.",
     timestamp: new Date(),
   }] : messages;
 
-  // Mutation to save chat messages
   const saveChatMessage = useMutation({
     mutationFn: (data: { role: string; content: string; context?: string }) =>
       api.createChatMessage(meeting!.id, data),
@@ -420,10 +379,8 @@ export default function MeetingRoom() {
   const handleJitsiApiReady = (api: any) => {
     setJitsiApi(api);
     
-    // Listen for Jitsi events
     api.addEventListeners({
       videoConferenceJoined: async () => {
-        // Only start transcription if Meeting Transcriber agent is selected
         if (isAgentTypeSelected("transcription")) {
           await startTranscription();
         }
@@ -432,11 +389,9 @@ export default function MeetingRoom() {
         setIsScreenSharing(payload.on);
         
         if (payload.on) {
-          // Only show EVA messages and auto-start if SOP agent is selected
-          if (isAgentTypeSelected("sop")) {
+          if (isAgentTypeSelected("eva")) {
             addSystemMessage("Screen sharing started. EVA is now analyzing the visual content.");
             
-            // Start EVA observation when screen sharing starts
             if (evaConnected && isObserving) {
               try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ 
@@ -451,7 +406,7 @@ export default function MeetingRoom() {
             }
           }
         } else {
-          if (isAgentTypeSelected("sop")) {
+          if (isAgentTypeSelected("eva")) {
             addSystemMessage("Screen sharing ended.");
           }
           stopScreenCapture();
@@ -477,12 +432,10 @@ export default function MeetingRoom() {
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
 
-    // Get AI response from backend (which also saves messages)
     try {
       setIsSopUpdating(true);
       const response = await api.sendAIChat(meeting.id, content, isScreenSharing);
       
-      // Refresh messages after AI response
       queryClient.invalidateQueries({ queryKey: ["messages", meeting.id] });
       
       if (response.sopUpdate && !sopContent.includes(response.sopUpdate.trim())) {
@@ -516,7 +469,6 @@ export default function MeetingRoom() {
     } else {
       startObserving();
       
-      // Always prompt for screen capture when starting observation
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
           video: { frameRate: 1 } 
@@ -531,11 +483,26 @@ export default function MeetingRoom() {
     }
   };
 
+  const handleStartObservation = async () => {
+    if (!isObserving) {
+      startObserving();
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { frameRate: 1 } 
+        });
+        startScreenCapture(stream);
+        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
+      } catch (e) {
+        console.log("Could not start screen capture:", e);
+        addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
+        stopObserving();
+      }
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative">
-        {/* Top Bar */}
         <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-background z-10">
           <div className="flex items-center gap-3">
             <Button 
@@ -563,7 +530,6 @@ export default function MeetingRoom() {
           </div>
           
           <div className="flex items-center gap-2">
-             {/* Agent Selector */}
              {meeting?.id && (
                <AgentSelector
                  meetingId={meeting.id}
@@ -572,8 +538,7 @@ export default function MeetingRoom() {
                  onAgentsChange={setSelectedAgents}
                />
              )}
-             {/* EVA Status Indicator - only show if SOP agent is selected */}
-             {isAgentTypeSelected("sop") && (
+             {isAgentTypeSelected("eva") && (
                <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                  evaConnected ? 'border-green-500/50' : 'border-border'
                }`}>
@@ -594,7 +559,6 @@ export default function MeetingRoom() {
           </div>
         </header>
 
-        {/* Video Area */}
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
              <JitsiMeeting 
@@ -607,26 +571,35 @@ export default function MeetingRoom() {
              />
           </div>
 
-          {/* Right Panel - AI Chat - only show if SOP agent selected */}
-          {isAgentTypeSelected("sop") && (
+          {isAgentTypeSelected("eva") && meeting?.id && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
-                ${isChatOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
+                ${isEVAPanelOpen ? 'w-[400px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
                 rounded-2xl overflow-hidden shadow-xl border border-border
               `}
             >
-              <AIChatPanel 
-                messages={displayMessages} 
+              <EVAPanel 
+                meetingId={meeting.id}
+                messages={displayMessages}
+                chatMessages={chatMessages}
                 onSendMessage={handleSendMessage}
                 isScreenSharing={isScreenSharing}
+                isObserving={isObserving}
+                evaStatus={evaStatus}
+                onStartObservation={handleStartObservation}
+                onStopObservation={() => {
+                  stopObserving();
+                  stopScreenCapture();
+                }}
+                isNoteTakerProcessing={isNoteTakerProcessing}
+                onRefreshNotes={handleRefreshNoteTaker}
                 className="h-full"
               />
             </div>
           )}
 
-          {/* SOP Document - only show if SOP agent selected */}
-          {isAgentTypeSelected("sop") && (
+          {isAgentTypeSelected("eva") && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
@@ -643,7 +616,6 @@ export default function MeetingRoom() {
             </div>
           )}
 
-          {/* SOP Flowchart - only show if flowchart agent selected */}
           {isAgentTypeSelected("flowchart") && (
             <div 
               className={`
@@ -660,7 +632,6 @@ export default function MeetingRoom() {
             </div>
           )}
 
-          {/* Live Transcript - only show if transcription agent selected */}
           {isAgentTypeSelected("transcription") && (
             <div 
               className={`
@@ -678,62 +649,10 @@ export default function MeetingRoom() {
               />
             </div>
           )}
-
-          {/* NoteTaker Panel - only show if assistant agent selected */}
-          {isAgentTypeSelected("assistant") && (
-            <div 
-              className={`
-                transition-all duration-500 ease-in-out transform origin-right
-                ${isNotesOpen ? 'w-[350px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-                rounded-2xl overflow-hidden shadow-xl border border-border
-              `}
-            >
-              <NoteTakerPanel 
-                  messages={chatMessages}
-                  isProcessing={isNoteTakerProcessing}
-                  onRefresh={handleRefreshNoteTaker}
-                  className="h-full"
-              />
-            </div>
-          )}
-
-          {/* EVA Ops Memory Observation Panel - only show if SOP agent selected */}
-          {isAgentTypeSelected("sop") && meeting?.id && (
-            <div 
-              className={`
-                transition-all duration-500 ease-in-out transform origin-right
-                ${isObservationOpen ? 'w-[380px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden hidden'}
-                rounded-2xl overflow-hidden shadow-xl border border-border
-              `}
-            >
-              <ObservationPanel 
-                  meetingId={meeting.id}
-                  className="h-full"
-                  onStartRecording={async () => {
-                    if (!isObserving) {
-                      startObserving();
-                      try {
-                        const stream = await navigator.mediaDevices.getDisplayMedia({ 
-                          video: { frameRate: 1 } 
-                        });
-                        startScreenCapture(stream);
-                        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
-                      } catch (e) {
-                        console.log("Could not start screen capture:", e);
-                        addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
-                        stopObserving();
-                      }
-                    }
-                  }}
-              />
-            </div>
-          )}
         </div>
 
-        {/* Bottom Controls */}
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
-            {/* EVA Observation Toggle - only show if SOP agent is selected */}
-            {isAgentTypeSelected("sop") && (
+            {isAgentTypeSelected("eva") && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -743,6 +662,7 @@ export default function MeetingRoom() {
                       className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-purple-600 border-purple-600 hover:bg-purple-700' : 'border-border bg-card hover:bg-muted'}`}
                       onClick={toggleEvaObservation}
                       disabled={!evaConnected}
+                      data-testid="button-toggle-eva-observation"
                     >
                       {isObserving ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
                     </Button>
@@ -752,27 +672,26 @@ export default function MeetingRoom() {
               </TooltipProvider>
             )}
 
-            {/* Chat Panel - only show if SOP agent is selected */}
-            {isAgentTypeSelected("sop") && (
+            {isAgentTypeSelected("eva") && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button 
-                      variant={isChatOpen ? "default" : "outline"} 
+                      variant={isEVAPanelOpen ? "default" : "outline"} 
                       size="icon" 
-                      className={`h-12 w-12 rounded-full border-2 ${isChatOpen ? 'bg-primary border-primary hover:bg-primary/90' : 'border-border bg-card hover:bg-muted'}`}
-                      onClick={() => setIsChatOpen(!isChatOpen)}
+                      className={`h-12 w-12 rounded-full border-2 ${isEVAPanelOpen ? 'bg-primary border-primary hover:bg-primary/90' : 'border-border bg-card hover:bg-muted'}`}
+                      onClick={() => setIsEVAPanelOpen(!isEVAPanelOpen)}
+                      data-testid="button-toggle-eva-panel"
                     >
-                      <MessageSquare className="h-5 w-5" />
+                      <Brain className="h-5 w-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle EVA SOP Assistant</TooltipContent>
+                  <TooltipContent>Toggle EVA Assistant</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
 
-            {/* SOP Document - only show if SOP agent is selected */}
-            {isAgentTypeSelected("sop") && (
+            {isAgentTypeSelected("eva") && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -781,6 +700,7 @@ export default function MeetingRoom() {
                       size="icon" 
                       className={`h-12 w-12 rounded-full border-2 ${isSOPOpen ? 'bg-secondary border-secondary hover:bg-secondary/90' : 'border-border bg-card hover:bg-muted'}`}
                       onClick={() => setIsSOPOpen(!isSOPOpen)}
+                      data-testid="button-toggle-sop"
                     >
                       <FileText className="h-5 w-5" />
                     </Button>
@@ -790,27 +710,6 @@ export default function MeetingRoom() {
               </TooltipProvider>
             )}
 
-            {/* EVA Ops Memory Panel - only show if SOP agent is selected */}
-            {isAgentTypeSelected("sop") && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant={isObservationOpen ? "default" : "outline"} 
-                      size="icon" 
-                      className={`h-12 w-12 rounded-full border-2 ${isObservationOpen ? 'bg-purple-600 border-purple-600 hover:bg-purple-700 text-white' : 'border-border bg-card hover:bg-muted'}`}
-                      onClick={() => setIsObservationOpen(!isObservationOpen)}
-                      data-testid="button-toggle-observation"
-                    >
-                      <ClipboardList className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Toggle EVA Ops Memory</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            {/* Live Transcript - only show if transcription agent is selected */}
             {isAgentTypeSelected("transcription") && (
               <TooltipProvider>
                 <Tooltip>
@@ -830,27 +729,6 @@ export default function MeetingRoom() {
               </TooltipProvider>
             )}
 
-            {/* NoteTaker - only show if assistant agent is selected */}
-            {isAgentTypeSelected("assistant") && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant={isNotesOpen ? "default" : "outline"} 
-                      size="icon" 
-                      className={`h-12 w-12 rounded-full border-2 ${isNotesOpen ? 'bg-blue-500 border-blue-500 hover:bg-blue-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
-                      onClick={() => setIsNotesOpen(!isNotesOpen)}
-                      data-testid="button-toggle-notes"
-                    >
-                      <ClipboardList className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Toggle Meeting Notes</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            {/* Flowchart - only show if flowchart agent is selected */}
             {isAgentTypeSelected("flowchart") && (
               <TooltipProvider>
                 <Tooltip>
@@ -860,6 +738,7 @@ export default function MeetingRoom() {
                       size="icon" 
                       className={`h-12 w-12 rounded-full border-2 ${isFlowchartOpen ? 'bg-orange-500 border-orange-500 hover:bg-orange-600 text-white' : 'border-border bg-card hover:bg-muted'}`}
                       onClick={() => setIsFlowchartOpen(!isFlowchartOpen)}
+                      data-testid="button-toggle-flowchart"
                     >
                       <GitGraph className="h-5 w-5" />
                     </Button>
