@@ -131,3 +131,47 @@ export async function getDefaultVoiceId(): Promise<string> {
     return DEFAULT_VOICE_ID;
   }
 }
+
+export interface SpeechToTextResult {
+  text: string;
+  alignment?: {
+    characters: string[];
+    character_start_times_seconds: number[];
+    character_end_times_seconds: number[];
+  };
+}
+
+export async function speechToText(
+  audioBuffer: Buffer,
+  language: string = 'en',
+  mimeType: string = 'audio/webm'
+): Promise<SpeechToTextResult> {
+  if (!ELEVENLABS_API_KEY) {
+    throw new Error('ELEVENLABS_API_KEY is not configured');
+  }
+
+  const extension = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const formData = new FormData();
+  const audioBlob = new Blob([audioBuffer], { type: mimeType });
+  formData.append('file', audioBlob, `audio.${extension}`);
+  formData.append('model_id', 'scribe_v2');
+  formData.append('language', language);
+
+  const response = await fetch(
+    `${ELEVENLABS_API_URL}/speech-to-text`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+      },
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to transcribe speech: ${error}`);
+  }
+
+  return response.json();
+}

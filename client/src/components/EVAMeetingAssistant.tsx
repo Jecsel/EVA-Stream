@@ -20,7 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
-import { useVoiceActivation } from "@/hooks/useVoiceActivation";
+import { useElevenLabsAudio } from "@/hooks/useElevenLabsAudio";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
 interface AgendaItem {
@@ -146,16 +146,16 @@ export function EVAMeetingAssistant({
     }
   }, []);
 
-  // Browser-based voice activation hook for wake word detection
+  // ElevenLabs-based audio transcription and wake word detection
   const {
     isListening,
-    isSupported: voiceSupported,
+    isProcessing,
     startListening,
     stopListening,
-  } = useVoiceActivation({
+  } = useElevenLabsAudio({
     wakeWord: "hey eva",
     onWakeWordDetected: () => {
-      console.log("[EVA] Wake word detected!");
+      console.log("[EVA] Wake word detected via ElevenLabs!");
       setWakeWordTriggered(true);
       setTimeout(() => setWakeWordTriggered(false), 2000);
       
@@ -164,17 +164,9 @@ export function EVAMeetingAssistant({
         playWakeupCall();
       }
     },
-    onSpeechResult: handleVoiceSpeechResult,
+    onCommand: handleVoiceSpeechResult,
     enabled: wakeWordEnabled,
   });
-
-  // Auto-start listening when component mounts
-  useEffect(() => {
-    if (wakeWordEnabled && voiceSupported) {
-      startListening();
-    }
-    return () => stopListening();
-  }, [wakeWordEnabled, voiceSupported, startListening, stopListening]);
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
@@ -450,42 +442,42 @@ export function EVAMeetingAssistant({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Wake word status - browser speech recognition */}
-            {voiceSupported && isListening && (
+            {/* Wake word status - ElevenLabs STT */}
+            {isListening && (
               <Badge 
                 variant="outline" 
                 className={cn(
                   "text-xs px-2 transition-colors",
                   wakeWordTriggered 
                     ? "bg-green-500/20 text-green-500 border-green-500" 
+                    : isProcessing
+                    ? "bg-amber-500/10 text-amber-500"
                     : "bg-purple-500/10 text-purple-500"
                 )}
               >
-                <Radio className={cn("w-3 h-3 mr-1", wakeWordTriggered && "animate-pulse")} />
-                {wakeWordTriggered ? "Listening..." : "Say 'Hey EVA'"}
+                <Radio className={cn("w-3 h-3 mr-1", (wakeWordTriggered || isProcessing) && "animate-pulse")} />
+                {wakeWordTriggered ? "Listening..." : isProcessing ? "Processing..." : "Say 'Hey EVA'"}
               </Badge>
             )}
             {/* Wake word toggle */}
-            {voiceSupported && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (wakeWordEnabled) {
-                    stopListening();
-                    setWakeWordEnabled(false);
-                  } else {
-                    setWakeWordEnabled(true);
-                    startListening();
-                  }
-                }}
-                className={cn("h-8 w-8", wakeWordEnabled && isListening && "text-green-500")}
-                data-testid="button-toggle-wakeword"
-                title={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
-              >
-                {wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (wakeWordEnabled) {
+                  stopListening();
+                  setWakeWordEnabled(false);
+                } else {
+                  setWakeWordEnabled(true);
+                  startListening();
+                }
+              }}
+              className={cn("h-8 w-8", wakeWordEnabled && isListening && "text-green-500")}
+              data-testid="button-toggle-wakeword"
+              title={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
+            >
+              {wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            </Button>
             <Button
               variant="ghost"
               size="icon"

@@ -2330,6 +2330,26 @@ Format the response as JSON with these fields:
     }
   });
 
+  // Speech-to-Text endpoint using ElevenLabs (with increased body limit for audio)
+  app.post("/api/eva/stt", express.json({ limit: '10mb' }), async (req, res) => {
+    try {
+      const { audio, language = 'en', mimeType = 'audio/webm' } = req.body;
+      if (!audio) {
+        res.status(400).json({ error: "Audio data is required" });
+        return;
+      }
+
+      // Decode base64 audio
+      const audioBuffer = Buffer.from(audio, 'base64');
+      const { speechToText } = await import('./elevenlabs');
+      const result = await speechToText(audioBuffer, language, mimeType);
+      res.json(result);
+    } catch (error: any) {
+      console.error("STT error:", error);
+      res.status(500).json({ error: error.message || "Failed to transcribe speech" });
+    }
+  });
+
   // Ask EVA - AI chat endpoint
   app.post("/api/eva/ask", async (req, res) => {
     try {
