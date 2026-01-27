@@ -488,7 +488,7 @@ export function EVAPanel({
           )}
         </TabsContent>
 
-        <TabsContent value="observe" className="flex-1 flex flex-col m-0 data-[state=inactive]:hidden">
+        <TabsContent value="observe" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="p-3 border-b border-border">
             <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
               {(["observe", "structure", "instruct"] as Phase[]).map((phase, index) => {
