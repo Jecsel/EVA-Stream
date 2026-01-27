@@ -755,24 +755,35 @@ export function EVAMeetingAssistant({
                   <p className="text-xs mt-1">Upload PDF, DOCX, TXT files for EVA to reference.</p>
                 </div>
               ) : (
-                files.map((file) => (
-                  <Card key={file.id}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-3">
-                        <FileIcon className="w-8 h-8 text-blue-500" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{file.originalName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {(parseInt(file.size) / 1024).toFixed(1)} KB • {format(new Date(file.uploadedAt), "MMM d, HH:mm")}
-                          </p>
+                files.map((file) => {
+                  const getFileExtension = (mimeType: string, filename: string) => {
+                    const ext = filename.split('.').pop()?.toUpperCase();
+                    if (ext) return ext;
+                    const typePart = mimeType.split("/")[1];
+                    if (typePart?.includes('word')) return 'DOCX';
+                    if (typePart?.includes('pdf')) return 'PDF';
+                    if (typePart?.includes('text')) return 'TXT';
+                    return typePart?.substring(0, 4).toUpperCase() || 'FILE';
+                  };
+                  return (
+                    <Card key={file.id}>
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                          <FileIcon className="w-8 h-8 text-blue-500 shrink-0" />
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <p className="text-sm font-medium truncate">{file.originalName}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {(parseInt(file.size) / 1024).toFixed(1)} KB • {format(new Date(file.uploadedAt), "MMM d, HH:mm")}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="text-xs shrink-0">
+                            {getFileExtension(file.mimeType, file.originalName)}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="text-xs">
-                          {file.mimeType.split("/")[1]?.toUpperCase() || "FILE"}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </ScrollArea>
