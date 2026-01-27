@@ -60,6 +60,7 @@ export function EVAMeetingAssistant({
   const [agendaContent, setAgendaContent] = useState("");
   const [newNoteContent, setNewNoteContent] = useState("");
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -325,6 +326,7 @@ export function EVAMeetingAssistant({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsUploading(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
       const dataUrl = event.target?.result as string;
@@ -351,7 +353,12 @@ export function EVAMeetingAssistant({
         }
       } catch (error) {
         console.error("Failed to upload file:", error);
+      } finally {
+        setIsUploading(false);
       }
+    };
+    reader.onerror = () => {
+      setIsUploading(false);
     };
     reader.readAsDataURL(file);
   };
@@ -772,18 +779,28 @@ export function EVAMeetingAssistant({
 
           {/* Upload button */}
           <div className="p-3 border-t">
-            <label className="cursor-pointer">
+            <label className={cn("cursor-pointer", isUploading && "pointer-events-none")}>
               <input
                 type="file"
                 accept=".txt,.pdf,.docx,.pptx,.md,.csv,.json"
                 className="hidden"
                 onChange={handleFileUpload}
+                disabled={isUploading}
                 data-testid="input-file-upload"
               />
-              <Button variant="outline" className="w-full" asChild>
+              <Button variant="outline" className="w-full" disabled={isUploading} asChild>
                 <span>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Document
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Document
+                    </>
+                  )}
                 </span>
               </Button>
             </label>
