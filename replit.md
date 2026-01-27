@@ -107,6 +107,7 @@ Each agent:
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
 - `GEMINI_API_KEY`: Google Gemini API key for AI features
+- `ELEVENLABS_API_KEY`: 11Labs API key for AI Voice Assistant
 - `EXTERNAL_API_KEY`: (Optional) API key to protect the external meeting creation endpoint
 
 ## External API
