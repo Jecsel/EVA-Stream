@@ -18,7 +18,6 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useEvaLive } from "@/hooks/useEvaLive";
-import { useAudioTranscript } from "@/hooks/useAudioTranscript";
 import { useJitsiTranscription } from "@/hooks/useJitsiTranscription";
 import type { ChatMessage } from "@shared/schema";
 
@@ -46,6 +45,7 @@ export default function MeetingRoom() {
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
   const [transcripts, setTranscripts] = useState<Array<{id: string; text: string; speaker: string; timestamp: Date; isFinal: boolean;}>>([]);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
+  const [isJitsiTranscribing, setIsJitsiTranscribing] = useState(false);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(0);
@@ -193,7 +193,6 @@ export default function MeetingRoom() {
     try {
       stopObserving();
       stopScreenCapture();
-      stopTranscription();
       
       const duration = formatDuration(meetingDuration);
       const result = await api.endMeeting(meeting.id, sopContent, duration);
@@ -257,6 +256,11 @@ export default function MeetingRoom() {
   }, [evaConnected, sendTextMessage]);
 
   const handleJitsiTranscript = useCallback((transcript: { text: string; speaker: string; isFinal: boolean }) => {
+    if (!isJitsiTranscribing) {
+      setIsJitsiTranscribing(true);
+      setTranscriptStatus("transcribing");
+    }
+    
     if (transcript.isFinal) {
       setTranscripts(prev => [...prev, {
         id: `jitsi-${Date.now()}`,
@@ -276,7 +280,19 @@ export default function MeetingRoom() {
         });
       }
     }
-  }, [meeting?.id]);
+  }, [meeting?.id, isJitsiTranscribing]);
+
+  const handleToggleJitsiTranscription = useCallback(() => {
+    if (jitsiApi) {
+      try {
+        jitsiApi.executeCommand('toggleSubtitles');
+        setIsJitsiTranscribing(!isJitsiTranscribing);
+        setTranscriptStatus(isJitsiTranscribing ? "idle" : "transcribing");
+      } catch (err) {
+        console.error("Failed to toggle Jitsi captions:", err);
+      }
+    }
+  }, [jitsiApi, isJitsiTranscribing]);
 
   const {
     isActive: isWakeWordActive,
@@ -291,98 +307,8 @@ export default function MeetingRoom() {
     handleJitsiTranscriptionEvent(text, participant, isFinal);
   }, [handleJitsiTranscriptionEvent]);
 
-  const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
-    if (message.type === "transcript" && message.content) {
-      const isFinal = message.isFinal ?? false;
-      
-      setTranscripts(prev => {
-        if (!isFinal) {
-          const lastIndex = prev.length - 1;
-          if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
-            const updated = [...prev];
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              text: message.content,
-              timestamp: new Date(),
-            };
-            return updated;
-          } else {
-            return [...prev, {
-              id: `transcript-${Date.now()}`,
-              text: message.content,
-              speaker: message.speaker || "User",
-              timestamp: new Date(),
-              isFinal: false,
-            }];
-          }
-        } else {
-          const lastIndex = prev.length - 1;
-          if (lastIndex >= 0 && !prev[lastIndex].isFinal) {
-            const updated = [...prev];
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              text: message.content,
-              timestamp: new Date(),
-              isFinal: true,
-            };
-            return updated;
-          } else {
-            return [...prev, {
-              id: `transcript-${Date.now()}`,
-              text: message.content,
-              speaker: message.speaker || "User",
-              timestamp: new Date(),
-              isFinal: true,
-            }];
-          }
-        }
-      });
-
-      if (isFinal && meeting?.id) {
-        api.createTranscriptSegment(meeting.id, {
-          text: message.content,
-          speaker: message.speaker || "User",
-          isFinal: true,
-        }).catch(err => {
-          console.error("Failed to save transcript segment:", err);
-        });
-      }
-    }
-  }, [meeting?.id]);
-
-  const {
-    isConnected: transcriptConnected,
-    isTranscribing,
-    startTranscription,
-    stopTranscription,
-  } = useAudioTranscript({
-    meetingId: meeting?.id || "",
-    onTranscript: handleTranscript,
-    onStatusChange: setTranscriptStatus,
-  });
-
-  const handleToggleTranscription = useCallback(async () => {
-    if (isTranscribing) {
-      stopTranscription();
-    } else {
-      await startTranscription();
-    }
-  }, [isTranscribing, startTranscription, stopTranscription]);
-
   useEffect(() => {
     if (!jitsiApi || agents.length === 0) return;
-    
-    const wasTranscriptionSelected = agents.some(
-      a => a.type === "transcription" && prevSelectedAgentsRef.current.includes(a.id)
-    );
-    const isTranscriptionSelected = isAgentTypeSelected("transcription");
-    
-    if (!wasTranscriptionSelected && isTranscriptionSelected && !isTranscribing) {
-      startTranscription();
-    }
-    if (wasTranscriptionSelected && !isTranscriptionSelected && isTranscribing) {
-      stopTranscription();
-    }
     
     // Support backward compatibility: treat legacy "sop" type as "eva"
     const wasEvaSelected = agents.some(
@@ -396,7 +322,7 @@ export default function MeetingRoom() {
     }
     
     prevSelectedAgentsRef.current = selectedAgents;
-  }, [selectedAgents, agents, jitsiApi, isTranscribing, isObserving, isAgentTypeSelected, startTranscription, stopTranscription, stopObserving, stopScreenCapture]);
+  }, [selectedAgents, agents, jitsiApi, isObserving, isAgentTypeSelected, stopObserving, stopScreenCapture]);
 
   const messages: Message[] = chatMessages.map(msg => ({
     id: msg.id,
@@ -426,9 +352,7 @@ export default function MeetingRoom() {
     
     api.addEventListeners({
       videoConferenceJoined: async () => {
-        if (isAgentTypeSelected("transcription")) {
-          await startTranscription();
-        }
+        // Jitsi transcription auto-enables via closed captions in JitsiMeeting component
       },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
@@ -460,7 +384,8 @@ export default function MeetingRoom() {
       videoConferenceLeft: () => {
         stopObserving();
         stopScreenCapture();
-        stopTranscription();
+        setIsJitsiTranscribing(false);
+        setTranscriptStatus("idle");
       }
     });
   };
@@ -584,18 +509,32 @@ export default function MeetingRoom() {
                />
              )}
              {isAgentTypeSelected("eva") && (
-               <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
-                 evaConnected ? 'border-green-500/50' : 'border-border'
-               }`}>
-                  <span className={`w-2 h-2 rounded-full ${
-                    evaStatus === "connected" ? "bg-green-500 animate-pulse" :
-                    evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
-                    "bg-gray-500"
-                  }`} />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
-                  </span>
-               </div>
+               <>
+                 <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
+                   evaConnected ? 'border-green-500/50' : 'border-border'
+                 }`}>
+                    <span className={`w-2 h-2 rounded-full ${
+                      evaStatus === "connected" ? "bg-green-500 animate-pulse" :
+                      evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
+                      "bg-gray-500"
+                    }`} />
+                    <span className="text-xs font-medium text-muted-foreground">
+                      EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
+                    </span>
+                 </div>
+                 <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all ${
+                   isWakeWordActive ? 'border-purple-500/50 bg-purple-500/10' : 'border-border'
+                 }`} data-testid="indicator-wake-word">
+                    <span className={`w-2 h-2 rounded-full transition-colors ${
+                      isWakeWordActive ? "bg-purple-500 animate-pulse" : "bg-gray-500"
+                    }`} />
+                    <span className={`text-xs font-medium transition-colors ${
+                      isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
+                    }`}>
+                      {isWakeWordActive ? '"Hey EVA" Listening...' : 'Say "Hey EVA"'}
+                    </span>
+                 </div>
+               </>
              )}
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -725,8 +664,8 @@ export default function MeetingRoom() {
             >
               <LiveTranscriptPanel 
                   transcripts={transcripts}
-                  isTranscribing={isTranscribing}
-                  onToggleTranscription={handleToggleTranscription}
+                  isTranscribing={isJitsiTranscribing}
+                  onToggleTranscription={handleToggleJitsiTranscription}
                   status={transcriptStatus}
                   className="h-full"
               />

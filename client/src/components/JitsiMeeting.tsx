@@ -1,6 +1,6 @@
 import { JitsiMeeting as JitsiReactMeeting } from '@jitsi/react-sdk';
 import { Loader2 } from "lucide-react";
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface JitsiMeetingProps {
   roomName: string;
@@ -23,6 +23,23 @@ export function JitsiMeeting({
   appId
 }: JitsiMeetingProps) {
   const [loading, setLoading] = useState(true);
+  const apiRef = useRef<any>(null);
+  const eventHandlersRef = useRef<{ event: string; handler: Function }[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (apiRef.current && eventHandlersRef.current.length > 0) {
+        eventHandlersRef.current.forEach(({ event, handler }) => {
+          try {
+            apiRef.current.removeEventListener(event, handler);
+          } catch (e) {
+            console.log('Could not remove event listener:', event);
+          }
+        });
+        eventHandlersRef.current = [];
+      }
+    };
+  }, []);
 
   // If using JaaS (appId provided), the room name format is typically "vpaas-magic-cookie-id/roomName"
   const formattedRoomName = appId ? `${appId}/${roomName}` : roomName;
@@ -120,17 +137,22 @@ export function JitsiMeeting({
         }}
         onApiReady={(externalApi) => {
           setLoading(false);
+          apiRef.current = externalApi;
+          eventHandlersRef.current = [];
+
+          const registerEvent = (event: string, handler: Function) => {
+            externalApi.addEventListener(event, handler);
+            eventHandlersRef.current.push({ event, handler });
+          };
           
           // Auto-start cloud recording when using JaaS
           if (jwt) {
-            // Wait for the conference to be joined, then start recording
-            externalApi.addEventListener('videoConferenceJoined', () => {
+            const recordingHandler = () => {
               console.log('Conference joined, starting cloud recording...');
-              // Small delay to ensure connection is stable
               setTimeout(() => {
                 try {
                   externalApi.executeCommand('startRecording', {
-                    mode: 'file', // Cloud recording mode
+                    mode: 'file',
                     shouldShare: true,
                   });
                   console.log('Cloud recording started automatically');
@@ -138,47 +160,33 @@ export function JitsiMeeting({
                   console.error('Failed to start recording:', err);
                 }
               }, 2000);
-            });
+            };
+            registerEvent('videoConferenceJoined', recordingHandler);
           }
           
           // Listen for transcription/subtitle events from Jitsi
           if (onTranscriptionReceived) {
-            // Listen for subtitles (real-time captions)
-            externalApi.addEventListener('subtitlesReceived', (event: {
-              text: string;
-              participant: { name: string };
-              isFinal?: boolean;
-            }) => {
+            const subtitlesHandler = (event: any) => {
               console.log('Subtitles received:', event);
               onTranscriptionReceived(
                 event.text,
                 event.participant?.name || 'Unknown',
                 event.isFinal ?? true
               );
-            });
+            };
+            registerEvent('subtitlesReceived', subtitlesHandler);
             
-            // Listen for transcription chunks (alternative event)
-            externalApi.addEventListener('transcriptionChunkReceived', (event: {
-              text: string;
-              participant: { name: string };
-              final?: boolean;
-            }) => {
+            const transcriptionChunkHandler = (event: any) => {
               console.log('Transcription chunk received:', event);
               onTranscriptionReceived(
                 event.text,
                 event.participant?.name || 'Unknown',
                 event.final ?? true
               );
-            });
+            };
+            registerEvent('transcriptionChunkReceived', transcriptionChunkHandler);
             
-            // Listen for endpoint text message (another transcription event type)
-            externalApi.addEventListener('endpointTextMessageReceived', (event: {
-              data: {
-                text?: string;
-                transcript?: string;
-              };
-              senderInfo?: { displayName: string };
-            }) => {
+            const endpointTextHandler = (event: any) => {
               const text = event.data?.text || event.data?.transcript;
               if (text) {
                 console.log('Endpoint text message received:', event);
@@ -188,20 +196,20 @@ export function JitsiMeeting({
                   true
                 );
               }
-            });
+            };
+            registerEvent('endpointTextMessageReceived', endpointTextHandler);
 
-            // Auto-enable closed captions after joining
-            externalApi.addEventListener('videoConferenceJoined', () => {
+            const captionsHandler = () => {
               setTimeout(() => {
                 try {
-                  // Toggle closed captions on to start receiving transcription
                   externalApi.executeCommand('toggleSubtitles');
                   console.log('Auto-enabled closed captions for transcription');
                 } catch (err) {
                   console.log('Could not auto-enable captions:', err);
                 }
               }, 3000);
-            });
+            };
+            registerEvent('videoConferenceJoined', captionsHandler);
           }
           
           if (onApiReady) onApiReady(externalApi);
