@@ -10,24 +10,6 @@ const defaultAgents = [
     status: "active" as const,
     isDefault: true,
   },
-  {
-    name: "Flowchart Creator",
-    type: "flowchart",
-    description: "Creates visual flowcharts and process diagrams based on meeting content",
-    capabilities: ["Visual diagrams", "Process flows", "Decision trees"],
-    icon: "GitBranch",
-    status: "active" as const,
-    isDefault: false,
-  },
-  {
-    name: "Meeting Transcriber",
-    type: "transcription",
-    description: "Provides accurate real-time speech-to-text transcription",
-    capabilities: ["Real-time transcription", "Speaker identification", "Timestamp tracking"],
-    icon: "Mic",
-    status: "active" as const,
-    isDefault: true,
-  },
 ];
 
 function seedLog(message: string): void {
