@@ -125,20 +125,17 @@ export default function MeetingRoom() {
     staleTime: 1000 * 60 * 60 * 2, // Token valid for 2 hours
   });
 
-  // Update meeting ID ref and selected agents when meeting loads
-  // Auto-select all agents when joining a meeting
+  // Update meeting ID ref and always select all agents when joining a meeting
   useEffect(() => {
     if (meeting?.id) {
       meetingIdRef.current = meeting.id;
-      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
-        setSelectedAgents(meeting.selectedAgents);
-      } else if (agents.length > 0) {
-        // Auto-select all agents by default
+      // Always select all agents when entering a meeting
+      if (agents.length > 0) {
         const allAgentIds = agents.map(a => a.id);
         setSelectedAgents(allAgentIds);
       }
     }
-  }, [meeting?.id, meeting?.selectedAgents, agents]);
+  }, [meeting?.id, agents]);
 
   // Track previous agent selection to detect toggle changes
   const prevSelectedAgentsRef = useRef<string[]>([]);
