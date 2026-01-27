@@ -331,14 +331,15 @@ export function EVAMeetingAssistant({
     });
   };
 
-  // File upload handler
+  // File upload handler - uses base64 encoding for binary files (PDF, DOCX)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const content = event.target?.result as string;
+      const dataUrl = event.target?.result as string;
+      const base64Content = dataUrl.split(',')[1] || '';
       
       try {
         const res = await fetch(`/api/eva/meetings/${meetingId}/files`, {
@@ -349,18 +350,21 @@ export function EVAMeetingAssistant({
             originalName: file.name,
             mimeType: file.type,
             size: file.size.toString(),
-            content: content?.substring(0, 50000), // Limit content size
+            content: base64Content,
+            encoding: 'base64',
           }),
         });
         
         if (res.ok) {
           queryClient.invalidateQueries({ queryKey: ["eva-files", meetingId] });
+        } else {
+          console.error("File upload failed:", await res.text());
         }
       } catch (error) {
         console.error("Failed to upload file:", error);
       }
     };
-    reader.readAsText(file);
+    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
