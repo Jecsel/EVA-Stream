@@ -356,7 +356,13 @@ export default function MeetingRoom() {
     
     api.addEventListeners({
       videoConferenceJoined: async () => {
-        // Jitsi transcription auto-enables via closed captions in JitsiMeeting component
+        // Auto-enable transcription state when joining - captions auto-enable via JitsiMeeting component
+        // This makes "Hey EVA" wake word detection work immediately without manual toggle
+        setTimeout(() => {
+          setIsJitsiTranscribing(true);
+          setTranscriptStatus("transcribing");
+          console.log("Auto-enabled Jitsi transcription for wake word detection");
+        }, 3500); // Slightly after captions auto-enable (3000ms in JitsiMeeting)
       },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
