@@ -26,8 +26,8 @@ const DEFAULT_WAKE_WORD_VARIANTS = [
   "ava,",
 ];
 
-const SILENCE_THRESHOLD_MS = 2000;
-const MAX_COMMAND_WAIT_MS = 10000;
+const SILENCE_THRESHOLD_MS = 2500;
+const MAX_COMMAND_WAIT_MS = 8000;
 const MIN_COMMAND_LENGTH = 3;
 
 export function useJitsiTranscription({
@@ -41,10 +41,8 @@ export function useJitsiTranscription({
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   
   const isActiveRef = useRef(false);
-  const lastWakeWordTimeRef = useRef<number>(0);
   const lastTranscriptTimeRef = useRef<number>(0);
-  const transcriptBufferRef = useRef<string>("");
-  const currentInterimRef = useRef<string>("");
+  const commandBufferRef = useRef<string[]>([]);
   const silenceCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const maxWaitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onWakeWordRef = useRef(onWakeWord);
@@ -81,42 +79,51 @@ export function useJitsiTranscription({
   const sendCommand = useCallback(() => {
     cleanup();
     
-    const fullCommand = (transcriptBufferRef.current + " " + currentInterimRef.current).trim();
+    const fullCommand = commandBufferRef.current.join(" ").trim();
+    console.log("[EVA Wake] Sending command, buffer:", commandBufferRef.current, "full:", fullCommand);
     
     if (fullCommand.length >= MIN_COMMAND_LENGTH) {
-      console.log("[EVA Wake] Sending command:", fullCommand);
+      console.log("[EVA Wake] Command sent:", fullCommand);
       onWakeWordRef.current?.(fullCommand);
     } else {
       console.log("[EVA Wake] Command too short, ignoring:", fullCommand);
     }
     
-    transcriptBufferRef.current = "";
-    currentInterimRef.current = "";
+    commandBufferRef.current = [];
     isActiveRef.current = false;
     setIsActive(false);
     setIsListening(false);
   }, [cleanup]);
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback((initialCommand: string) => {
     cleanup();
     
     isActiveRef.current = true;
-    setIsActive(true);
-    setIsListening(true);
-    lastWakeWordTimeRef.current = Date.now();
+    commandBufferRef.current = initialCommand ? [initialCommand] : [];
     lastTranscriptTimeRef.current = Date.now();
     
+    setIsActive(true);
+    setIsListening(true);
+    
+    console.log("[EVA Wake] Started listening, initial command:", initialCommand);
+    
     silenceCheckIntervalRef.current = setInterval(() => {
+      if (!isActiveRef.current) return;
+      
       const silenceDuration = Date.now() - lastTranscriptTimeRef.current;
-      if (silenceDuration >= SILENCE_THRESHOLD_MS && isActiveRef.current) {
-        console.log("[EVA Wake] Silence detected after", silenceDuration, "ms");
+      console.log("[EVA Wake] Silence check:", silenceDuration, "ms, buffer:", commandBufferRef.current);
+      
+      if (silenceDuration >= SILENCE_THRESHOLD_MS) {
+        console.log("[EVA Wake] Silence detected, sending command");
         sendCommand();
       }
     }, 500);
     
     maxWaitTimeoutRef.current = setTimeout(() => {
-      console.log("[EVA Wake] Max wait time reached");
-      sendCommand();
+      if (isActiveRef.current) {
+        console.log("[EVA Wake] Max wait time reached, sending command");
+        sendCommand();
+      }
     }, MAX_COMMAND_WAIT_MS);
   }, [cleanup, sendCommand]);
 
@@ -131,7 +138,6 @@ export function useJitsiTranscription({
       }
 
       const now = Date.now();
-      lastTranscriptTimeRef.current = now;
 
       const entry: TranscriptEntry = {
         id: `${now}-${Math.random().toString(36).substr(2, 9)}`,
@@ -141,11 +147,7 @@ export function useJitsiTranscription({
         isFinal,
       };
 
-      setTranscripts((prev) => {
-        const updated = [...prev, entry].slice(-100);
-        return updated;
-      });
-
+      setTranscripts((prev) => [...prev, entry].slice(-100));
       onTranscript?.(entry);
 
       const wakeWordMatch = findWakeWord(text);
@@ -154,19 +156,13 @@ export function useJitsiTranscription({
         console.log("[EVA Wake] Wake word detected in:", text);
         
         const commandPart = text.slice(wakeWordMatch.index + wakeWordMatch.length).trim();
-        transcriptBufferRef.current = "";
-        currentInterimRef.current = commandPart;
+        startListening(commandPart);
+      } else if (isActiveRef.current) {
+        lastTranscriptTimeRef.current = now;
         
-        startListening();
-      } else if (isActiveRef.current && now - lastWakeWordTimeRef.current < MAX_COMMAND_WAIT_MS) {
-        if (isFinal) {
-          transcriptBufferRef.current += " " + currentInterimRef.current;
-          transcriptBufferRef.current += " " + text;
-          currentInterimRef.current = "";
-          console.log("[EVA Wake] Final chunk buffered:", transcriptBufferRef.current.trim());
-        } else {
-          currentInterimRef.current = text;
-          console.log("[EVA Wake] Interim chunk:", text);
+        if (isFinal && text.trim()) {
+          commandBufferRef.current.push(text.trim());
+          console.log("[EVA Wake] Buffered final chunk:", text, "Buffer now:", commandBufferRef.current);
         }
       }
     },
@@ -179,8 +175,7 @@ export function useJitsiTranscription({
 
   const cancelCommand = useCallback(() => {
     cleanup();
-    transcriptBufferRef.current = "";
-    currentInterimRef.current = "";
+    commandBufferRef.current = [];
     isActiveRef.current = false;
     setIsActive(false);
     setIsListening(false);
