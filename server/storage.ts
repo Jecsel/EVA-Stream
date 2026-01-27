@@ -171,7 +171,7 @@ export interface IStorage {
   // EVA - Meeting Agendas
   getMeetingAgenda(meetingId: string): Promise<MeetingAgenda | undefined>;
   createMeetingAgenda(agenda: InsertMeetingAgenda): Promise<MeetingAgenda>;
-  updateMeetingAgenda(meetingId: string, items: any[]): Promise<MeetingAgenda | undefined>;
+  updateMeetingAgenda(meetingId: string, items: any[], content?: string): Promise<MeetingAgenda | undefined>;
 
   // EVA - Meeting Notes
   getMeetingNotes(meetingId: string): Promise<MeetingNote[]>;
@@ -727,10 +727,10 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updateMeetingAgenda(meetingId: string, items: any[]): Promise<MeetingAgenda | undefined> {
+  async updateMeetingAgenda(meetingId: string, items: any[], content?: string): Promise<MeetingAgenda | undefined> {
     const [result] = await db
       .update(meetingAgendas)
-      .set({ items, updatedAt: new Date() })
+      .set({ items, content, updatedAt: new Date() })
       .where(eq(meetingAgendas.meetingId, meetingId))
       .returning();
     return result;

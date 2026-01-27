@@ -349,7 +349,8 @@ export type SopVersion = typeof sopVersions.$inferSelect;
 export const meetingAgendas = pgTable("meeting_agendas", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
-  items: jsonb("items").notNull().default([]), // array of { id, title, covered: boolean, order: number }
+  items: jsonb("items").notNull().default([]), // legacy: array of { id, title, covered: boolean, order: number }
+  content: text("content"), // rich text HTML content for agenda
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

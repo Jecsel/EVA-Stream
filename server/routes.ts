@@ -2021,26 +2021,31 @@ export async function registerRoutes(
     }
   });
 
-  // Create/Update meeting agenda
-  const agendaItemSchema = z.object({
-    id: z.string(),
-    title: z.string(),
-    covered: z.boolean().default(false),
-    order: z.number(),
+  // Create/Update meeting agenda (supports rich text content)
+  const agendaContentSchema = z.object({
+    content: z.string().optional(),
+    items: z.array(z.object({
+      id: z.string(),
+      title: z.string(),
+      covered: z.boolean().default(false),
+      order: z.number(),
+    })).optional(),
   });
 
   app.post("/api/eva/meetings/:meetingId/agenda", async (req, res) => {
     try {
-      const items = z.array(agendaItemSchema).parse(req.body.items || []);
+      const { content, items } = agendaContentSchema.parse(req.body);
       const existing = await storage.getMeetingAgenda(req.params.meetingId);
       
       if (existing) {
-        const updated = await storage.updateMeetingAgenda(req.params.meetingId, items);
+        const updatedItems = items !== undefined ? items : (existing.items as any[]);
+        const updated = await storage.updateMeetingAgenda(req.params.meetingId, updatedItems, content);
         res.json(updated);
       } else {
         const created = await storage.createMeetingAgenda({
           meetingId: req.params.meetingId,
-          items,
+          items: items || [],
+          content,
         });
         res.json(created);
       }

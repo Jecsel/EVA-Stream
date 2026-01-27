@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useVoiceActivation } from "@/hooks/useVoiceActivation";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
 interface AgendaItem {
@@ -56,7 +57,7 @@ export function EVAMeetingAssistant({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [newAgendaItem, setNewAgendaItem] = useState("");
+  const [agendaContent, setAgendaContent] = useState("");
   const [newNoteContent, setNewNoteContent] = useState("");
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   
@@ -139,13 +140,13 @@ export function EVAMeetingAssistant({
     enabled: meetingStatus === "completed",
   });
 
-  // Update agenda mutation
+  // Update agenda mutation (now saves rich text HTML)
   const updateAgendaMutation = useMutation({
-    mutationFn: async (items: AgendaItem[]) => {
+    mutationFn: async (content: string) => {
       const res = await fetch(`/api/eva/meetings/${meetingId}/agenda`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ content }),
       });
       return res.json();
     },
@@ -290,37 +291,25 @@ export function EVAMeetingAssistant({
     askEvaMutation.mutate(inputValue);
   };
 
-  // Handle adding agenda item
-  const handleAddAgendaItem = () => {
-    if (!newAgendaItem.trim()) return;
-    
-    const currentItems = (agenda?.items || []) as AgendaItem[];
-    const newItem: AgendaItem = {
-      id: Date.now().toString(),
-      title: newAgendaItem,
-      covered: false,
-      order: currentItems.length,
-    };
-    
-    updateAgendaMutation.mutate([...currentItems, newItem]);
-    setNewAgendaItem("");
-  };
+  // Handle agenda content change
+  const handleAgendaChange = useCallback((content: string) => {
+    setAgendaContent(content);
+  }, []);
 
-  // Toggle agenda item covered status
-  const toggleAgendaCovered = (itemId: string) => {
-    const currentItems = (agenda?.items || []) as AgendaItem[];
-    const updatedItems = currentItems.map(item =>
-      item.id === itemId ? { ...item, covered: !item.covered } : item
-    );
-    updateAgendaMutation.mutate(updatedItems);
-  };
+  // Save agenda content (called on blur for auto-save)
+  const handleSaveAgenda = useCallback(() => {
+    const trimmedContent = agendaContent.trim();
+    if (trimmedContent && trimmedContent !== '<p></p>') {
+      updateAgendaMutation.mutate(agendaContent);
+    }
+  }, [agendaContent, updateAgendaMutation]);
 
-  // Delete agenda item
-  const deleteAgendaItem = (itemId: string) => {
-    const currentItems = (agenda?.items || []) as AgendaItem[];
-    const updatedItems = currentItems.filter(item => item.id !== itemId);
-    updateAgendaMutation.mutate(updatedItems);
-  };
+  // Sync agenda content from fetched data
+  useEffect(() => {
+    if (agenda?.content && typeof agenda.content === 'string') {
+      setAgendaContent(agenda.content);
+    }
+  }, [agenda]);
 
   // Handle note creation
   const handleCreateNote = (isImportant: boolean = false) => {
@@ -373,9 +362,7 @@ export function EVAMeetingAssistant({
     }
   }, [messages]);
 
-  const agendaItems = (agenda?.items || []) as AgendaItem[];
-  const coveredCount = agendaItems.filter(i => i.covered).length;
-
+  
   return (
     <div className={cn("flex flex-col h-full bg-background border-l", className)}>
       {/* Header */}
@@ -708,88 +695,41 @@ export function EVAMeetingAssistant({
           </div>
         </TabsContent>
 
-        {/* Agenda Tab */}
+        {/* Agenda Tab - Rich Text Editor */}
         <TabsContent value="agenda" className="flex-1 flex flex-col overflow-hidden m-0">
-          {/* Progress bar */}
-          {agendaItems.length > 0 && (
-            <div className="px-3 pt-3">
-              <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                <span>Progress</span>
-                <span>{coveredCount}/{agendaItems.length} covered</span>
+          <div className="flex-1 flex flex-col p-3 overflow-hidden">
+            {agendaLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
-                  style={{ width: `${agendaItems.length ? (coveredCount / agendaItems.length) * 100 : 0}%` }}
+            ) : (
+              <>
+                <RichTextEditor
+                  content={agendaContent}
+                  onChange={handleAgendaChange}
+                  onBlur={handleSaveAgenda}
+                  placeholder="Add your meeting agenda here... Use the toolbar to format text, create lists, and organize topics."
+                  className="flex-1 overflow-auto"
+                  minHeight="200px"
                 />
-              </div>
-            </div>
-          )}
-
-          <ScrollArea className="flex-1">
-            <div className="p-3 space-y-2">
-              {agendaLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                <div className="flex justify-end mt-3 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveAgenda}
+                    disabled={updateAgendaMutation.isPending}
+                    data-testid="button-save-agenda"
+                  >
+                    {updateAgendaMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <Check className="w-4 h-4 mr-2" />
+                    )}
+                    Save Agenda
+                  </Button>
                 </div>
-              ) : agendaItems.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <List className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No agenda items yet.</p>
-                  <p className="text-xs mt-1">Add topics to discuss in this meeting.</p>
-                </div>
-              ) : (
-                agendaItems.map((item, index) => (
-                  <Card key={item.id} className={cn(item.covered && "bg-muted/50")}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={item.covered}
-                          onCheckedChange={() => toggleAgendaCovered(item.id)}
-                          data-testid={`checkbox-agenda-${item.id}`}
-                        />
-                        <span className={cn(
-                          "flex-1 text-sm",
-                          item.covered && "line-through text-muted-foreground"
-                        )}>
-                          {index + 1}. {item.title}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteAgendaItem(item.id)}
-                          data-testid={`button-delete-agenda-${item.id}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-
-          {/* Add agenda item */}
-          <div className="p-3 border-t">
-            <div className="flex gap-2">
-              <Input
-                value={newAgendaItem}
-                onChange={(e) => setNewAgendaItem(e.target.value)}
-                placeholder="Add agenda item..."
-                className="flex-1"
-                onKeyDown={(e) => e.key === "Enter" && handleAddAgendaItem()}
-                data-testid="input-new-agenda"
-              />
-              <Button
-                onClick={handleAddAgendaItem}
-                disabled={!newAgendaItem.trim() || updateAgendaMutation.isPending}
-                data-testid="button-add-agenda"
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
+              </>
+            )}
           </div>
         </TabsContent>
 
