@@ -706,6 +706,14 @@ export async function registerRoutes(
     endDate: z.string().optional(),
     attendeeEmails: z.array(z.string().email()).optional(),
     description: z.string().optional(),
+    agenda: z.string().optional(),
+    files: z.array(z.object({
+      filename: z.string(),
+      originalName: z.string(),
+      mimeType: z.string(),
+      size: z.string(),
+      content: z.string().optional(),
+    })).optional(),
     userId: z.string().optional(),
     userEmail: z.string().email().optional(),
     eventType: z.enum(["event", "task"]).optional().default("event"),
@@ -774,6 +782,37 @@ export async function registerRoutes(
         } catch (calendarError) {
           console.error("Failed to create calendar event:", calendarError);
           // Continue without calendar event - meeting is still created
+        }
+      }
+
+      // Create agenda if provided
+      if (validated.agenda) {
+        try {
+          await storage.createMeetingAgenda({
+            meetingId: meeting.id,
+            items: [],
+            content: validated.agenda,
+          });
+        } catch (agendaError) {
+          console.error("Failed to create meeting agenda:", agendaError);
+        }
+      }
+
+      // Upload files if provided
+      if (validated.files && validated.files.length > 0) {
+        for (const file of validated.files) {
+          try {
+            await storage.createMeetingFile({
+              meetingId: meeting.id,
+              filename: file.filename,
+              originalName: file.originalName,
+              mimeType: file.mimeType,
+              size: file.size,
+              content: file.content,
+            });
+          } catch (fileError) {
+            console.error("Failed to upload meeting file:", fileError);
+          }
         }
       }
 

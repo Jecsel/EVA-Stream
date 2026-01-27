@@ -241,6 +241,14 @@ export const api = {
     endDate?: string;
     attendeeEmails?: string[];
     description?: string;
+    agenda?: string;
+    files?: Array<{
+      filename: string;
+      originalName: string;
+      mimeType: string;
+      size: string;
+      content?: string;
+    }>;
     userId?: string;
     userEmail?: string;
     eventType?: "event" | "task";

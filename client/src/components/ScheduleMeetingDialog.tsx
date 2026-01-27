@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
-import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown, Paperclip, FileText, Trash2, List, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
   DialogContent,
@@ -69,10 +69,18 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   const [endTime, setEndTime] = useState("");
   const [isAllDay, setIsAllDay] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceType>("none");
-  const [description, setDescription] = useState("");
+  const [agenda, setAgenda] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<Array<{
+    filename: string;
+    originalName: string;
+    mimeType: string;
+    size: string;
+    content?: string;
+  }>>([]);
   const [attendeeInput, setAttendeeInput] = useState("");
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ connected: false, email: null });
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isLoadingGoogleStatus, setIsLoadingGoogleStatus] = useState(true);
@@ -215,6 +223,50 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
     }
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (const file of Array.from(files)) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const content = event.target?.result as string;
+        const newFile = {
+          filename: `${Date.now()}-${file.name}`,
+          originalName: file.name,
+          mimeType: file.type,
+          size: file.size.toString(),
+          content: file.type.startsWith('text/') ? content : undefined,
+        };
+        setAttachedFiles(prev => [...prev, newFile]);
+      };
+      if (file.type.startsWith('text/')) {
+        reader.readAsText(file);
+      } else {
+        setAttachedFiles(prev => [...prev, {
+          filename: `${Date.now()}-${file.name}`,
+          originalName: file.name,
+          mimeType: file.type,
+          size: file.size.toString(),
+        }]);
+      }
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeFile = (filename: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.filename !== filename));
+  };
+
+  const formatFileSize = (size: string) => {
+    const bytes = parseInt(size);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleSchedule = async () => {
     if (!title || !date) {
       toast({
@@ -274,7 +326,9 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
         scheduledDate: scheduledDate.toISOString(),
         endDate: endDate?.toISOString(),
         attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
-        description: description || undefined,
+        description: agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined,
+        agenda: agenda || undefined,
+        files: attachedFiles.length > 0 ? attachedFiles : undefined,
         userId: user?.uid,
         userEmail: user?.email || undefined,
         eventType,
@@ -296,7 +350,8 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
       setEndTime("");
       setIsAllDay(false);
       setRecurrence("none");
-      setDescription("");
+      setAgenda("");
+      setAttachedFiles([]);
       setAttendeeEmails([]);
       setEventType("event");
       onOpenChange(false);
@@ -476,15 +531,72 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description (optional)</Label>
-            <Textarea
-              id="description"
-              placeholder="Meeting agenda or notes..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              data-testid="input-meeting-description"
+            <div className="flex items-center gap-2">
+              <List className="w-4 h-4 text-muted-foreground" />
+              <Label>Agenda (optional)</Label>
+            </div>
+            <div className="border rounded-lg overflow-hidden">
+              <RichTextEditor
+                content={agenda}
+                onChange={setAgenda}
+                placeholder="Add meeting agenda items..."
+                minHeight="100px"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-muted-foreground" />
+              <Label>Attachments (optional)</Label>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              data-testid="input-file-upload"
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full"
+              data-testid="button-attach-files"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Attach Files
+            </Button>
+            {attachedFiles.length > 0 && (
+              <div className="space-y-2 mt-2">
+                {attachedFiles.map((file) => (
+                  <div
+                    key={file.filename}
+                    className="flex items-center justify-between p-2 bg-muted rounded-md text-sm"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="w-4 h-4 flex-shrink-0 text-blue-500" />
+                      <span className="truncate">{file.originalName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({formatFileSize(file.size)})
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(file.filename)}
+                      className="h-6 w-6 p-0"
+                      data-testid={`button-remove-file-${file.filename}`}
+                    >
+                      <Trash2 className="w-3 h-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="border rounded-lg p-4 space-y-3">
