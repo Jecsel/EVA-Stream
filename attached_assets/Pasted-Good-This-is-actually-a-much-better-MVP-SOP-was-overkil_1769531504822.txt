@@ -1,0 +1,241 @@
+Good. This is actually a much better MVP. SOP was overkill for now. This version is clearer, easier to sell, and easier to ship.
+
+I’ll be blunt and structure this cleanly so you can almost paste it into a spec.
+
+New Agent: AI Meeting Assistant (EVA)
+
+This agent is meeting-focused, not process-focused. One job: help humans not forget shit.
+
+Core Concept (Simple, No BS)
+
+EVA:
+
+Listens to the meeting
+
+Understands the agenda + uploaded docs
+
+Answers questions by voice or text
+
+Takes notes only when told
+
+Produces a clean meeting summary
+
+No SOPs. No flowcharts. Just meetings done right.
+
+Activation & Control
+Voice Trigger
+
+Wake word: “Hey EVA”
+
+Fallback: tap mic button (mobile-first, don’t rely only on voice)
+
+Examples:
+
+“Hey EVA, what’s this meeting about?”
+
+“Hey EVA, take note of this”
+
+“Hey EVA, did we miss anything important?”
+
+Important:
+EVA should respond by voice + text (voice can be toggled).
+
+Inputs EVA Can Use
+1. Live Meeting Audio
+
+Who said what
+
+Topics discussed
+
+Decisions made
+
+Questions raised but not answered
+
+2. Meeting Agenda
+
+User can:
+
+Add agenda before meeting
+
+Edit agenda during meeting
+
+EVA uses agenda as:
+
+Context anchor
+
+Checklist for “did we cover everything?”
+
+3. Uploaded Files / Documents
+
+Supported (initial MVP):
+
+PDF
+
+DOCX
+
+PPT
+
+TXT
+
+What EVA does with them:
+
+Reads and understands the content
+
+Links discussion back to the document
+
+Detects:
+
+Sections not discussed
+
+Conflicts between doc and discussion
+
+Talking points people skipped
+
+What Users Can Ask EVA
+Meeting Understanding
+
+“What’s this meeting about?”
+
+“Summarize the goal of this meeting”
+
+“What are we trying to decide today?”
+
+Coverage & Gaps
+
+“What do we need to discuss again?”
+
+“Did we miss anything from the agenda?”
+
+“Which agenda items were not covered?”
+
+“Was anything mentioned but not resolved?”
+
+This is where EVA becomes actually useful, not just fancy.
+
+Notes (Explicit Only)
+
+EVA does NOT take notes automatically.
+
+Trigger phrases:
+
+“Hey EVA, take note of this”
+
+“EVA, add this to notes”
+
+“EVA, mark this as important”
+
+What gets saved:
+
+Timestamp
+
+Speaker (if possible)
+
+Short, clean note
+
+No rambling transcripts. Just intentional notes.
+
+Post-Meeting Summary (Auto)
+
+After meeting ends, EVA generates:
+
+Meeting Summary
+
+Purpose of the meeting
+
+Key topics discussed
+
+Decisions made
+
+Open questions
+
+Missed or unresolved agenda items
+
+Optional:
+
+Voice playback using ElevenLabs
+
+“Listen to summary” button
+
+ElevenLabs Integration (Focused, Not Noisy)
+Use ElevenLabs ONLY for:
+
+EVA voice responses
+
+Post-meeting spoken summary
+
+Do NOT:
+
+Read full notes
+
+Narrate everything
+
+Interrupt discussions
+
+Voice should feel like:
+
+“Helpful assistant, not a podcast host”
+
+Agent Lifecycle
+
+Meeting starts
+
+AI Meeting Assistant agent enabled
+
+EVA:
+
+Loads agenda
+
+Indexes uploaded docs
+
+Listens passively
+
+User interacts via:
+
+Voice (“Hey EVA”)
+
+Chat input
+
+Meeting ends
+
+EVA generates summary + optional audio
+
+Clean. Predictable. Safe.
+
+UI/UX (Mobile-First Reality Check)
+EVA Panel Tabs
+
+Ask EVA
+
+Notes
+
+Agenda
+
+Files
+
+Summary (appears after meeting)
+
+Key Buttons
+
+🎤 Hold-to-talk (mobile)
+
+🧠 “Ask EVA”
+
+📝 “Take Note”
+
+🔊 “Voice On / Off”
+
+Why This Is the Right Move
+
+I’ll be honest:
+
+This is sellable
+
+This is understandable
+
+This avoids SOP complexity
+
+This fits meetings — not post-meeting bureaucracy
+
+This makes ElevenLabs feel essential, not cosmetic
+
+You can always add SOP later when users ask for it.
