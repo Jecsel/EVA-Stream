@@ -39,7 +39,7 @@ export default function MeetingRoom() {
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
   const [isMeetingAssistantEnabled, setIsMeetingAssistantEnabled] = useState(true);
-  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
+  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
