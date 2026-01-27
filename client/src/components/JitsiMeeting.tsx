@@ -6,6 +6,7 @@ interface JitsiMeetingProps {
   roomName: string;
   displayName: string;
   onApiReady?: (api: any) => void;
+  onTranscriptionReceived?: (text: string, participant: string, isFinal: boolean) => void;
   className?: string;
   // Optional JaaS properties for future integration
   jwt?: string;
@@ -15,7 +16,8 @@ interface JitsiMeetingProps {
 export function JitsiMeeting({ 
   roomName, 
   displayName, 
-  onApiReady, 
+  onApiReady,
+  onTranscriptionReceived,
   className,
   jwt,
   appId
@@ -61,6 +63,16 @@ export function JitsiMeeting({
           // Enable live streaming/recording transcription
           liveStreamingEnabled: true,
           transcribingEnabled: true,
+          // Enable transcription/closed captions
+          transcription: {
+            enabled: true,
+            autoCaptionOnRecord: true,
+            useAppLanguage: true,
+          },
+          // Enable subtitles/closed captions for transcription
+          p2p: {
+            enabled: false, // Disable P2P for better transcription support
+          },
           toolbarButtons: [
             'camera',
             'chat',
@@ -126,6 +138,69 @@ export function JitsiMeeting({
                   console.error('Failed to start recording:', err);
                 }
               }, 2000);
+            });
+          }
+          
+          // Listen for transcription/subtitle events from Jitsi
+          if (onTranscriptionReceived) {
+            // Listen for subtitles (real-time captions)
+            externalApi.addEventListener('subtitlesReceived', (event: {
+              text: string;
+              participant: { name: string };
+              isFinal?: boolean;
+            }) => {
+              console.log('Subtitles received:', event);
+              onTranscriptionReceived(
+                event.text,
+                event.participant?.name || 'Unknown',
+                event.isFinal ?? true
+              );
+            });
+            
+            // Listen for transcription chunks (alternative event)
+            externalApi.addEventListener('transcriptionChunkReceived', (event: {
+              text: string;
+              participant: { name: string };
+              final?: boolean;
+            }) => {
+              console.log('Transcription chunk received:', event);
+              onTranscriptionReceived(
+                event.text,
+                event.participant?.name || 'Unknown',
+                event.final ?? true
+              );
+            });
+            
+            // Listen for endpoint text message (another transcription event type)
+            externalApi.addEventListener('endpointTextMessageReceived', (event: {
+              data: {
+                text?: string;
+                transcript?: string;
+              };
+              senderInfo?: { displayName: string };
+            }) => {
+              const text = event.data?.text || event.data?.transcript;
+              if (text) {
+                console.log('Endpoint text message received:', event);
+                onTranscriptionReceived(
+                  text,
+                  event.senderInfo?.displayName || 'Unknown',
+                  true
+                );
+              }
+            });
+
+            // Auto-enable closed captions after joining
+            externalApi.addEventListener('videoConferenceJoined', () => {
+              setTimeout(() => {
+                try {
+                  // Toggle closed captions on to start receiving transcription
+                  externalApi.executeCommand('toggleSubtitles');
+                  console.log('Auto-enabled closed captions for transcription');
+                } catch (err) {
+                  console.log('Could not auto-enable captions:', err);
+                }
+              }, 3000);
             });
           }
           
