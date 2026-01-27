@@ -82,6 +82,70 @@ export function EVAMeetingAssistant({
     }
   }, []);
 
+  // Track wakeup call state to prevent rapid repeated triggers
+  const wakeupInFlightRef = useRef(false);
+  const lastWakeupTimeRef = useRef(0);
+  const WAKEUP_DEBOUNCE_MS = 3000;
+
+  // Play wakeup call greeting using ElevenLabs TTS
+  const playWakeupCall = useCallback(async () => {
+    const now = Date.now();
+    
+    // Debounce: skip if called too recently or already in flight
+    if (wakeupInFlightRef.current || now - lastWakeupTimeRef.current < WAKEUP_DEBOUNCE_MS) {
+      return;
+    }
+    
+    wakeupInFlightRef.current = true;
+    lastWakeupTimeRef.current = now;
+    
+    const greetings = [
+      "Yes, I'm listening!",
+      "I'm here!",
+      "How can I help?",
+      "Yes?",
+    ];
+    const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+    
+    try {
+      const response = await fetch("/api/eva/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: greeting }),
+      });
+      
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Stop any currently playing audio first
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+        }
+        
+        setIsPlaying(true);
+        audioRef.current = new Audio(audioUrl);
+        audioRef.current.onended = () => {
+          setIsPlaying(false);
+          URL.revokeObjectURL(audioUrl);
+          wakeupInFlightRef.current = false;
+        };
+        audioRef.current.onerror = () => {
+          setIsPlaying(false);
+          URL.revokeObjectURL(audioUrl);
+          wakeupInFlightRef.current = false;
+        };
+        audioRef.current.play();
+      } else {
+        wakeupInFlightRef.current = false;
+      }
+    } catch (error) {
+      console.error("Failed to play wakeup call:", error);
+      wakeupInFlightRef.current = false;
+    }
+  }, []);
+
   // Browser-based voice activation hook for wake word detection
   const {
     isListening,
@@ -94,6 +158,11 @@ export function EVAMeetingAssistant({
       console.log("[EVA] Wake word detected!");
       setWakeWordTriggered(true);
       setTimeout(() => setWakeWordTriggered(false), 2000);
+      
+      // Play ElevenLabs TTS wakeup call
+      if (voiceEnabled) {
+        playWakeupCall();
+      }
     },
     onSpeechResult: handleVoiceSpeechResult,
     enabled: wakeWordEnabled,
