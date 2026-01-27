@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Monitor, Brain, MessageSquare, FileText, Eye, Play, Pause, Check, ChevronRight, Loader2, RefreshCw, AlertCircle, HelpCircle, FileCheck } from "lucide-react";
+import { Send, Bot, User, Monitor, Brain, MessageSquare, FileText, Eye, Play, Pause, Check, ChevronRight, Loader2, RefreshCw, AlertCircle, HelpCircle, FileCheck, Paperclip, X, File } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -79,7 +79,10 @@ export function EVAPanel({
   const [activeTab, setActiveTab] = useState<"chat" | "notes" | "observe">("chat");
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const [activeSession, setActiveSession] = useState<ObservationSession | null>(null);
@@ -95,12 +98,72 @@ export function EVAPanel({
     }
   }, [messages]);
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
-    onSendMessage(inputValue);
+  const handleSend = async () => {
+    if (!inputValue.trim() && !attachedFile) return;
+    
+    let messageContent = inputValue;
+    
+    if (attachedFile) {
+      setIsProcessingFile(true);
+      try {
+        const fileContent = await readFileAsText(attachedFile);
+        const fileInfo = `[Attached Document: ${attachedFile.name}]\n\n${fileContent}`;
+        messageContent = inputValue ? `${inputValue}\n\n${fileInfo}` : `Please analyze this document:\n\n${fileInfo}`;
+      } catch (error) {
+        console.error('Failed to read file:', error);
+        messageContent = inputValue || "Please analyze the attached document.";
+      }
+      setIsProcessingFile(false);
+      setAttachedFile(null);
+    }
+    
+    onSendMessage(messageContent);
     setInputValue("");
     setIsTyping(true);
     setTimeout(() => setIsTyping(false), 2000);
+  };
+
+  const readFileAsText = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const allowedTypes = ['text/plain', 'text/markdown', 'text/csv', 'application/json'];
+      const allowedExtensions = ['.txt', '.md', '.csv', '.json'];
+      const maxSize = 1 * 1024 * 1024; // 1MB for text files
+      
+      const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+      const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
+      
+      if (!isValidType) {
+        alert('Unsupported file type. Please use .txt, .md, .csv, or .json files.');
+        return;
+      }
+      
+      if (file.size > maxSize) {
+        alert('File is too large. Maximum size is 1MB for text files.');
+        return;
+      }
+      
+      setAttachedFile(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -388,28 +451,70 @@ export function EVAPanel({
           </ScrollArea>
 
           <div className="p-4 border-t border-border bg-card">
-            <div className="relative flex items-center">
-              <Input
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask EVA about the meeting..."
-                className="pr-12 bg-background border-input focus-visible:ring-primary/50 h-12 rounded-full pl-5"
-                data-testid="input-eva-chat"
+            {attachedFile && (
+              <div className="mb-2 flex items-center gap-2 p-2 bg-muted/50 rounded-lg border border-border">
+                <File className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-foreground truncate flex-1">{attachedFile.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {(attachedFile.size / 1024).toFixed(1)}KB
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={removeAttachment}
+                  data-testid="button-remove-attachment"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
+            <div className="relative flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                accept=".txt,.md,.csv,.json"
+                className="hidden"
+                data-testid="input-file-attachment"
               />
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute right-1.5 hover:bg-primary/10 hover:text-primary rounded-full w-9 h-9"
-                onClick={handleSend}
-                disabled={!inputValue.trim()}
-                data-testid="button-send-message"
+                className="hover:bg-primary/10 hover:text-primary rounded-full w-10 h-10 flex-shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessingFile}
+                data-testid="button-attach-file"
               >
-                <Send className="w-4 h-4" />
+                <Paperclip className="w-5 h-5" />
               </Button>
+              <div className="relative flex-1">
+                <Input
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={attachedFile ? "Add a message about this document..." : "Ask EVA about the meeting..."}
+                  className="pr-12 bg-background border-input focus-visible:ring-primary/50 h-12 rounded-full pl-5"
+                  data-testid="input-eva-chat"
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 hover:bg-primary/10 hover:text-primary rounded-full w-9 h-9"
+                  onClick={handleSend}
+                  disabled={(!inputValue.trim() && !attachedFile) || isProcessingFile}
+                  data-testid="button-send-message"
+                >
+                  {isProcessingFile ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
             </div>
             <p className="text-[10px] text-center text-muted-foreground mt-2">
-              EVA can see shared screens and answer questions in real-time.
+              Attach text files (.txt, .md, .csv, .json) for EVA to analyze
             </p>
           </div>
         </TabsContent>
