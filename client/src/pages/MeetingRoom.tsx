@@ -256,6 +256,10 @@ export default function MeetingRoom() {
   }, [evaConnected, sendTextMessage]);
 
   const handleJitsiTranscript = useCallback((transcript: { text: string; speaker: string; isFinal: boolean }) => {
+    if (!transcript.text || typeof transcript.text !== 'string') {
+      return;
+    }
+    
     if (!isJitsiTranscribing) {
       setIsJitsiTranscribing(true);
       setTranscriptStatus("transcribing");
@@ -270,7 +274,7 @@ export default function MeetingRoom() {
         isFinal: true,
       }]);
 
-      if (meeting?.id) {
+      if (meeting?.id && transcript.text.trim().length > 0) {
         api.createTranscriptSegment(meeting.id, {
           text: transcript.text,
           speaker: transcript.speaker || "Participant",

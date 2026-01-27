@@ -168,21 +168,25 @@ export function JitsiMeeting({
           if (onTranscriptionReceived) {
             const subtitlesHandler = (event: any) => {
               console.log('Subtitles received:', event);
-              onTranscriptionReceived(
-                event.text,
-                event.participant?.name || 'Unknown',
-                event.isFinal ?? true
-              );
+              const text = event.text || event.data?.text || '';
+              if (text) {
+                onTranscriptionReceived(
+                  text,
+                  event.participant?.name || 'Unknown',
+                  event.isFinal ?? true
+                );
+              }
             };
             registerEvent('subtitlesReceived', subtitlesHandler);
             
             const transcriptionChunkHandler = (event: any) => {
               console.log('Transcription chunk received:', event);
-              onTranscriptionReceived(
-                event.text,
-                event.participant?.name || 'Unknown',
-                event.final ?? true
-              );
+              const text = event.data?.final || event.data?.stable || event.text || '';
+              const participantName = event.data?.participant?.name || event.participant?.name || 'Unknown';
+              const isFinal = !!event.data?.final || event.final === true;
+              if (text) {
+                onTranscriptionReceived(text, participantName, isFinal);
+              }
             };
             registerEvent('transcriptionChunkReceived', transcriptionChunkHandler);
             

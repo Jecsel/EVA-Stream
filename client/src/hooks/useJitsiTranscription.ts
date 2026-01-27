@@ -27,6 +27,10 @@ export function useJitsiTranscription({
 
   const handleTranscription = useCallback(
     (text: string, participant: string, isFinal: boolean) => {
+      if (!text || typeof text !== 'string') {
+        return;
+      }
+      
       const entry: TranscriptEntry = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         text,
