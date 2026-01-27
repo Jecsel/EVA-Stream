@@ -7,7 +7,8 @@ import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -37,6 +38,8 @@ export default function MeetingRoom() {
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
+  const [isMeetingAssistantEnabled, setIsMeetingAssistantEnabled] = useState(true);
+  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
@@ -129,6 +132,44 @@ export default function MeetingRoom() {
   }, [meeting?.id, agents]);
 
   const prevSelectedAgentsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!isMeetingAssistantEnabled && isScreenObserverEnabled && evaPanelMode === "assistant") {
+      setEvaPanelMode("observe");
+    } else if (isMeetingAssistantEnabled && !isScreenObserverEnabled && evaPanelMode === "observe") {
+      setEvaPanelMode("assistant");
+    }
+  }, [isMeetingAssistantEnabled, isScreenObserverEnabled, evaPanelMode]);
+
+  useEffect(() => {
+    if (roomId) {
+      const key = `agent-toggles-${roomId}`;
+      sessionStorage.setItem(key, JSON.stringify({
+        meetingAssistant: isMeetingAssistantEnabled,
+        screenObserver: isScreenObserverEnabled
+      }));
+    }
+  }, [roomId, isMeetingAssistantEnabled, isScreenObserverEnabled]);
+
+  useEffect(() => {
+    if (roomId) {
+      const key = `agent-toggles-${roomId}`;
+      const saved = sessionStorage.getItem(key);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed.meetingAssistant === 'boolean') {
+            setIsMeetingAssistantEnabled(parsed.meetingAssistant);
+          }
+          if (typeof parsed.screenObserver === 'boolean') {
+            setIsScreenObserverEnabled(parsed.screenObserver);
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+    }
+  }, [roomId]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -248,12 +289,19 @@ export default function MeetingRoom() {
     onStatusChange: setEvaStatus,
   });
 
+  useEffect(() => {
+    if (!isScreenObserverEnabled && isObserving) {
+      stopObserving();
+      stopScreenCapture();
+    }
+  }, [isScreenObserverEnabled, isObserving, stopObserving, stopScreenCapture]);
+
   const handleWakeWord = useCallback((command: string) => {
-    if (evaConnected && command.trim()) {
+    if (evaConnected && command.trim() && isMeetingAssistantEnabled) {
       console.log("Hey EVA detected! Command:", command);
       sendTextMessage(command);
     }
-  }, [evaConnected, sendTextMessage]);
+  }, [evaConnected, sendTextMessage, isMeetingAssistantEnabled]);
 
   const handleJitsiTranscript = useCallback((transcript: { text: string; speaker: string; isFinal: boolean }) => {
     if (!transcript.text || typeof transcript.text !== 'string') {
@@ -309,8 +357,10 @@ export default function MeetingRoom() {
   });
 
   const onJitsiTranscriptionReceived = useCallback((text: string, participant: string, isFinal: boolean) => {
-    handleJitsiTranscriptionEvent(text, participant, isFinal);
-  }, [handleJitsiTranscriptionEvent]);
+    if (isMeetingAssistantEnabled) {
+      handleJitsiTranscriptionEvent(text, participant, isFinal);
+    }
+  }, [handleJitsiTranscriptionEvent, isMeetingAssistantEnabled]);
 
   useEffect(() => {
     if (!jitsiApi || agents.length === 0) return;
@@ -369,8 +419,8 @@ export default function MeetingRoom() {
         setIsScreenSharing(payload.on);
         
         if (payload.on) {
-          if (isAgentTypeSelected("eva")) {
-            addSystemMessage("Screen sharing started. EVA is now analyzing the visual content.");
+          if (isAgentTypeSelected("eva") && isScreenObserverEnabled) {
+            addSystemMessage("Screen sharing started. Screen Observer is analyzing the visual content.");
             
             if (evaConnected && isObserving) {
               try {
@@ -378,15 +428,15 @@ export default function MeetingRoom() {
                   video: { frameRate: 1 } 
                 });
                 startScreenCapture(stream);
-                addSystemMessage("EVA is now observing your shared screen.");
+                addSystemMessage("Screen Observer is now observing your shared screen.");
               } catch (e) {
-                console.log("Could not start screen capture for EVA:", e);
-                addSystemMessage("Could not access screen for EVA observation. Please enable EVA observation manually.");
+                console.log("Could not start screen capture for Screen Observer:", e);
+                addSystemMessage("Could not access screen for observation. Please enable Screen Observer manually.");
               }
             }
           }
         } else {
-          if (isAgentTypeSelected("eva")) {
+          if (isAgentTypeSelected("eva") && isScreenObserverEnabled) {
             addSystemMessage("Screen sharing ended.");
           }
           stopScreenCapture();
@@ -446,8 +496,12 @@ export default function MeetingRoom() {
     if (isObserving) {
       stopObserving();
       stopScreenCapture();
-      addSystemMessage("EVA stopped observing the screen.");
+      addSystemMessage("Screen Observer stopped.");
     } else {
+      if (!isScreenObserverEnabled) {
+        console.log("Screen Observer is disabled, cannot start observation");
+        return;
+      }
       startObserving();
       
       try {
@@ -455,7 +509,7 @@ export default function MeetingRoom() {
           video: { frameRate: 1 } 
         });
         startScreenCapture(stream);
-        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
+        addSystemMessage("Screen Observer is now analyzing your screen in real-time.");
       } catch (e) {
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon again to try sharing your screen.");
@@ -465,6 +519,10 @@ export default function MeetingRoom() {
   };
 
   const handleStartObservation = async () => {
+    if (!isScreenObserverEnabled) {
+      console.log("Screen Observer is disabled, cannot start observation");
+      return;
+    }
     if (!isObserving) {
       startObserving();
       try {
@@ -472,7 +530,7 @@ export default function MeetingRoom() {
           video: { frameRate: 1 } 
         });
         startScreenCapture(stream);
-        addSystemMessage("EVA is now observing your screen in real-time. Analysis will appear in chat.");
+        addSystemMessage("Screen Observer is now analyzing your screen in real-time.");
       } catch (e) {
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
@@ -519,7 +577,7 @@ export default function MeetingRoom() {
                  onAgentsChange={setSelectedAgents}
                />
              )}
-             {isAgentTypeSelected("eva") && (
+             {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && (
                <>
                  <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                    evaConnected ? 'border-green-500/50' : 'border-border'
@@ -530,29 +588,31 @@ export default function MeetingRoom() {
                       "bg-gray-500"
                     }`} />
                     <span className="text-xs font-medium text-muted-foreground">
-                      EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
+                      EVA {evaStatus === "connected" ? (isObserving && isScreenObserverEnabled ? "Observing" : "Ready") : evaStatus}
                     </span>
                  </div>
-                 <div className={`border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all duration-300 ${
-                   isEvaListening 
-                     ? 'border-purple-500 bg-purple-500/20 shadow-lg shadow-purple-500/20 scale-105' 
-                     : isWakeWordActive 
-                       ? 'border-purple-500/50 bg-purple-500/10' 
-                       : 'bg-card/50 border-border'
-                 }`} data-testid="indicator-wake-word">
-                    <span className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                      isEvaListening 
-                        ? "bg-purple-500 animate-ping" 
-                        : isWakeWordActive 
-                          ? "bg-purple-500 animate-pulse"
-                          : "bg-gray-500"
-                    }`} />
-                    <span className={`text-xs font-medium transition-colors ${
-                      isEvaListening || isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
-                    }`}>
-                      {isEvaListening ? 'Listening... speak now' : isWakeWordActive ? 'Processing...' : 'Say "Hey EVA"'}
-                    </span>
-                 </div>
+                 {isMeetingAssistantEnabled && (
+                   <div className={`border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all duration-300 ${
+                     isEvaListening 
+                       ? 'border-purple-500 bg-purple-500/20 shadow-lg shadow-purple-500/20 scale-105' 
+                       : isWakeWordActive 
+                         ? 'border-purple-500/50 bg-purple-500/10' 
+                         : 'bg-card/50 border-border'
+                   }`} data-testid="indicator-wake-word">
+                      <span className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                        isEvaListening 
+                          ? "bg-purple-500 animate-ping" 
+                          : isWakeWordActive 
+                            ? "bg-purple-500 animate-pulse"
+                            : "bg-gray-500"
+                      }`} />
+                      <span className={`text-xs font-medium transition-colors ${
+                        isEvaListening || isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
+                      }`}>
+                        {isEvaListening ? 'Listening... speak now' : isWakeWordActive ? 'Processing...' : 'Say "Hey EVA"'}
+                      </span>
+                   </div>
+                 )}
                </>
              )}
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
@@ -583,42 +643,100 @@ export default function MeetingRoom() {
                 rounded-2xl overflow-hidden shadow-xl border border-border
               `}
             >
-              {/* Mode toggle buttons */}
-              <div className="flex border-b bg-muted/30">
-                <button
-                  onClick={() => setEvaPanelMode("assistant")}
-                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
-                    evaPanelMode === "assistant" 
-                      ? "bg-background text-foreground border-b-2 border-primary" 
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  data-testid="button-eva-mode-assistant"
-                >
-                  <MessageSquare className="w-3 h-3 inline mr-1" />
-                  Meeting Assistant
-                </button>
-                <button
-                  onClick={() => setEvaPanelMode("observe")}
-                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
-                    evaPanelMode === "observe" 
-                      ? "bg-background text-foreground border-b-2 border-primary" 
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  data-testid="button-eva-mode-observe"
-                >
-                  <Eye className="w-3 h-3 inline mr-1" />
-                  Screen Observer
-                </button>
+              {/* Agent header with toggles */}
+              <div className="bg-muted/30 border-b">
+                <div className="px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI Agents</span>
+                </div>
+                <div className="px-3 pb-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
+                      <span className="text-xs font-medium">Meeting Assistant</span>
+                    </div>
+                    <Switch
+                      checked={isMeetingAssistantEnabled}
+                      onCheckedChange={setIsMeetingAssistantEnabled}
+                      className="scale-75"
+                      data-testid="toggle-meeting-assistant"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-3.5 h-3.5 text-blue-500" />
+                      <span className="text-xs font-medium">Screen Observer</span>
+                    </div>
+                    <Switch
+                      checked={isScreenObserverEnabled}
+                      onCheckedChange={setIsScreenObserverEnabled}
+                      className="scale-75"
+                      data-testid="toggle-screen-observer"
+                    />
+                  </div>
+                </div>
+                
+                {/* Mode tabs - only show if both agents are enabled */}
+                {isMeetingAssistantEnabled && isScreenObserverEnabled && (
+                  <div className="flex border-t bg-background/50">
+                    <button
+                      onClick={() => setEvaPanelMode("assistant")}
+                      className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                        evaPanelMode === "assistant" 
+                          ? "bg-background text-foreground border-b-2 border-purple-500" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="button-eva-mode-assistant"
+                    >
+                      <MessageSquare className="w-3 h-3 inline mr-1" />
+                      Assistant
+                    </button>
+                    <button
+                      onClick={() => setEvaPanelMode("observe")}
+                      className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                        evaPanelMode === "observe" 
+                          ? "bg-background text-foreground border-b-2 border-blue-500" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="button-eva-mode-observe"
+                    >
+                      <Eye className="w-3 h-3 inline mr-1" />
+                      Observer
+                    </button>
+                  </div>
+                )}
+                
+                {/* Single agent header when only one is enabled */}
+                {isMeetingAssistantEnabled && !isScreenObserverEnabled && (
+                  <div className="px-3 py-2 border-t bg-purple-500/10 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="text-xs font-semibold text-purple-400">Meeting Assistant Active</span>
+                  </div>
+                )}
+                {!isMeetingAssistantEnabled && isScreenObserverEnabled && (
+                  <div className="px-3 py-2 border-t bg-blue-500/10 flex items-center gap-2">
+                    <Eye className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="text-xs font-semibold text-blue-400">Screen Observer Active</span>
+                  </div>
+                )}
               </div>
               
-              {evaPanelMode === "assistant" ? (
+              {/* Show content based on enabled agents and selected mode */}
+              {!isMeetingAssistantEnabled && !isScreenObserverEnabled ? (
+                <div className="h-[calc(100%-120px)] flex items-center justify-center text-center p-6">
+                  <div className="text-muted-foreground">
+                    <div className="text-4xl mb-3">🤖</div>
+                    <p className="text-sm font-medium mb-1">No agents active</p>
+                    <p className="text-xs">Enable an agent above to get started</p>
+                  </div>
+                </div>
+              ) : evaPanelMode === "assistant" && isMeetingAssistantEnabled ? (
                 <EVAMeetingAssistant
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
                   meetingStatus={meeting.status}
-                  className="h-[calc(100%-41px)]"
+                  className="h-[calc(100%-120px)]"
                 />
-              ) : (
+              ) : isScreenObserverEnabled ? (
                 <EVAPanel 
                   meetingId={meeting.id}
                   messages={displayMessages}
@@ -634,9 +752,9 @@ export default function MeetingRoom() {
                   }}
                   isNoteTakerProcessing={isNoteTakerProcessing}
                   onRefreshNotes={handleRefreshNoteTaker}
-                  className="h-[calc(100%-41px)]"
+                  className="h-[calc(100%-120px)]"
                 />
-              )}
+              ) : null}
             </div>
           )}
 
@@ -693,14 +811,14 @@ export default function MeetingRoom() {
         </div>
 
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
-            {isAgentTypeSelected("eva") && (
+            {isAgentTypeSelected("eva") && isScreenObserverEnabled && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button 
                       variant={isObserving ? "default" : "outline"} 
                       size="icon" 
-                      className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-purple-600 border-purple-600 hover:bg-purple-700' : 'border-border bg-card hover:bg-muted'}`}
+                      className={`h-12 w-12 rounded-full border-2 ${isObserving ? 'bg-blue-600 border-blue-600 hover:bg-blue-700' : 'border-border bg-card hover:bg-muted'}`}
                       onClick={toggleEvaObservation}
                       disabled={!evaConnected}
                       data-testid="button-toggle-eva-observation"
@@ -708,12 +826,12 @@ export default function MeetingRoom() {
                       {isObserving ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{isObserving ? "Stop EVA Observation" : "Start EVA Observation"}</TooltipContent>
+                  <TooltipContent>{isObserving ? "Stop Screen Observer" : "Start Screen Observer"}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
 
-            {isAgentTypeSelected("eva") && (
+            {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -727,12 +845,12 @@ export default function MeetingRoom() {
                       <Brain className="h-5 w-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle EVA Assistant</TooltipContent>
+                  <TooltipContent>Toggle AI Panel</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
 
-            {isAgentTypeSelected("eva") && (
+            {isAgentTypeSelected("eva") && isScreenObserverEnabled && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
