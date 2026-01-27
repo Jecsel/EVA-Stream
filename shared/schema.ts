@@ -344,3 +344,102 @@ export const insertSopVersionSchema = createInsertSchema(sopVersions).omit({
 
 export type InsertSopVersion = z.infer<typeof insertSopVersionSchema>;
 export type SopVersion = typeof sopVersions.$inferSelect;
+
+// EVA Meeting Assistant - Meeting Agendas
+export const meetingAgendas = pgTable("meeting_agendas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  items: jsonb("items").notNull().default([]), // array of { id, title, covered: boolean, order: number }
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMeetingAgendaSchema = createInsertSchema(meetingAgendas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMeetingAgenda = z.infer<typeof insertMeetingAgendaSchema>;
+export type MeetingAgenda = typeof meetingAgendas.$inferSelect;
+
+// EVA Meeting Assistant - Meeting Notes (explicit user-triggered notes)
+export const meetingNotes = pgTable("meeting_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  content: text("content").notNull(),
+  speaker: text("speaker"),
+  isImportant: boolean("is_important").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMeetingNoteSchema = createInsertSchema(meetingNotes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMeetingNote = z.infer<typeof insertMeetingNoteSchema>;
+export type MeetingNote = typeof meetingNotes.$inferSelect;
+
+// EVA Meeting Assistant - Meeting Files (uploaded documents)
+export const meetingFiles = pgTable("meeting_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: text("size").notNull(),
+  content: text("content"), // extracted text content for AI context
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+
+export const insertMeetingFileSchema = createInsertSchema(meetingFiles).omit({
+  id: true,
+  uploadedAt: true,
+});
+
+export type InsertMeetingFile = z.infer<typeof insertMeetingFileSchema>;
+export type MeetingFile = typeof meetingFiles.$inferSelect;
+
+// EVA Meeting Assistant - Meeting Summaries
+export const meetingSummaries = pgTable("meeting_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }).unique(),
+  purpose: text("purpose"),
+  keyTopics: text("key_topics").array(),
+  decisions: text("decisions").array(),
+  openQuestions: text("open_questions").array(),
+  missedAgendaItems: text("missed_agenda_items").array(),
+  fullSummary: text("full_summary"),
+  audioUrl: text("audio_url"), // ElevenLabs generated audio URL
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMeetingSummarySchema = createInsertSchema(meetingSummaries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMeetingSummary = z.infer<typeof insertMeetingSummarySchema>;
+export type MeetingSummary = typeof meetingSummaries.$inferSelect;
+
+// EVA Settings (user preferences)
+export const evaSettings = pgTable("eva_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  voiceEnabled: boolean("voice_enabled").notNull().default(true),
+  voiceId: text("voice_id").default("Rachel"), // ElevenLabs voice ID
+  wakeWordEnabled: boolean("wake_word_enabled").notNull().default(true),
+  autoSummary: boolean("auto_summary").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEvaSettingsSchema = createInsertSchema(evaSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEvaSettings = z.infer<typeof insertEvaSettingsSchema>;
+export type EvaSettings = typeof evaSettings.$inferSelect;

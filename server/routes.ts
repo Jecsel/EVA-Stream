@@ -1,11 +1,12 @@
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema } from "@shared/schema";
+import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema, insertMeetingNoteSchema, insertMeetingFileSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
+import { textToSpeech, textToSpeechStream, getVoices, getDefaultVoiceId } from "./elevenlabs";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
@@ -2002,6 +2003,450 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get SOPs by meeting error:", error);
       res.status(500).json({ error: "Failed to fetch SOPs" });
+    }
+  });
+
+  // ===============================================
+  // EVA Meeting Assistant API Routes
+  // ===============================================
+
+  // Get meeting agenda
+  app.get("/api/eva/meetings/:meetingId/agenda", async (req, res) => {
+    try {
+      const agenda = await storage.getMeetingAgenda(req.params.meetingId);
+      res.json(agenda || { meetingId: req.params.meetingId, items: [] });
+    } catch (error) {
+      console.error("Get meeting agenda error:", error);
+      res.status(500).json({ error: "Failed to fetch agenda" });
+    }
+  });
+
+  // Create/Update meeting agenda
+  const agendaItemSchema = z.object({
+    id: z.string(),
+    title: z.string(),
+    covered: z.boolean().default(false),
+    order: z.number(),
+  });
+
+  app.post("/api/eva/meetings/:meetingId/agenda", async (req, res) => {
+    try {
+      const items = z.array(agendaItemSchema).parse(req.body.items || []);
+      const existing = await storage.getMeetingAgenda(req.params.meetingId);
+      
+      if (existing) {
+        const updated = await storage.updateMeetingAgenda(req.params.meetingId, items);
+        res.json(updated);
+      } else {
+        const created = await storage.createMeetingAgenda({
+          meetingId: req.params.meetingId,
+          items,
+        });
+        res.json(created);
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Update meeting agenda error:", error);
+        res.status(500).json({ error: "Failed to update agenda" });
+      }
+    }
+  });
+
+  // Get meeting notes
+  app.get("/api/eva/meetings/:meetingId/notes", async (req, res) => {
+    try {
+      const notes = await storage.getMeetingNotes(req.params.meetingId);
+      res.json(notes);
+    } catch (error) {
+      console.error("Get meeting notes error:", error);
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  // Create meeting note
+  app.post("/api/eva/meetings/:meetingId/notes", async (req, res) => {
+    try {
+      const noteData = insertMeetingNoteSchema.parse({
+        ...req.body,
+        meetingId: req.params.meetingId,
+      });
+      const note = await storage.createMeetingNote(noteData);
+      res.json(note);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Create meeting note error:", error);
+        res.status(500).json({ error: "Failed to create note" });
+      }
+    }
+  });
+
+  // Delete meeting note
+  app.delete("/api/eva/notes/:noteId", async (req, res) => {
+    try {
+      const deleted = await storage.deleteMeetingNote(req.params.noteId);
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error("Delete meeting note error:", error);
+      res.status(500).json({ error: "Failed to delete note" });
+    }
+  });
+
+  // Get meeting files
+  app.get("/api/eva/meetings/:meetingId/files", async (req, res) => {
+    try {
+      const files = await storage.getMeetingFiles(req.params.meetingId);
+      res.json(files);
+    } catch (error) {
+      console.error("Get meeting files error:", error);
+      res.status(500).json({ error: "Failed to fetch files" });
+    }
+  });
+
+  // Upload meeting file (text content extraction)
+  app.post("/api/eva/meetings/:meetingId/files", async (req, res) => {
+    try {
+      const fileData = insertMeetingFileSchema.parse({
+        ...req.body,
+        meetingId: req.params.meetingId,
+      });
+      const file = await storage.createMeetingFile(fileData);
+      res.json(file);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("Upload meeting file error:", error);
+        res.status(500).json({ error: "Failed to upload file" });
+      }
+    }
+  });
+
+  // Delete meeting file
+  app.delete("/api/eva/files/:fileId", async (req, res) => {
+    try {
+      const deleted = await storage.deleteMeetingFile(req.params.fileId);
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error("Delete meeting file error:", error);
+      res.status(500).json({ error: "Failed to delete file" });
+    }
+  });
+
+  // Get meeting summary
+  app.get("/api/eva/meetings/:meetingId/summary", async (req, res) => {
+    try {
+      const summary = await storage.getMeetingSummary(req.params.meetingId);
+      res.json(summary || null);
+    } catch (error) {
+      console.error("Get meeting summary error:", error);
+      res.status(500).json({ error: "Failed to fetch summary" });
+    }
+  });
+
+  // Generate meeting summary
+  app.post("/api/eva/meetings/:meetingId/summary", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const meeting = await storage.getMeeting(meetingId);
+      
+      if (!meeting) {
+        res.status(404).json({ error: "Meeting not found" });
+        return;
+      }
+
+      // Get all meeting data for context
+      const agenda = await storage.getMeetingAgenda(meetingId);
+      const notes = await storage.getMeetingNotes(meetingId);
+      const transcripts = await storage.getTranscriptsByMeeting(meetingId);
+      const chatMessages = await storage.getChatMessagesByMeeting(meetingId);
+
+      // Build context for summary generation
+      let context = `Meeting: ${meeting.title}\n\n`;
+      
+      if (agenda && Array.isArray(agenda.items)) {
+        context += "Agenda Items:\n";
+        (agenda.items as any[]).forEach((item: any, i: number) => {
+          context += `${i + 1}. ${item.title} - ${item.covered ? "Covered" : "Not covered"}\n`;
+        });
+        context += "\n";
+      }
+
+      if (notes.length > 0) {
+        context += "Meeting Notes:\n";
+        notes.forEach(note => {
+          context += `- ${note.content}${note.isImportant ? " [IMPORTANT]" : ""}\n`;
+        });
+        context += "\n";
+      }
+
+      if (transcripts.length > 0) {
+        context += "Discussion Transcript:\n";
+        transcripts.forEach(t => {
+          context += `${t.speaker}: ${t.text}\n`;
+        });
+        context += "\n";
+      }
+
+      // Generate summary using Gemini
+      const summaryPrompt = `Based on the following meeting information, generate a comprehensive meeting summary.
+
+${context}
+
+Please provide:
+1. Purpose - A brief statement of the meeting's main objective
+2. Key Topics - List the main topics discussed
+3. Decisions Made - List any decisions that were made
+4. Open Questions - List any unresolved questions or items
+5. Missed Agenda Items - List any agenda items that were not covered
+6. Full Summary - A concise paragraph summarizing the entire meeting
+
+Format the response as JSON with these fields:
+{
+  "purpose": "...",
+  "keyTopics": ["...", "..."],
+  "decisions": ["...", "..."],
+  "openQuestions": ["...", "..."],
+  "missedAgendaItems": ["...", "..."],
+  "fullSummary": "..."
+}`;
+
+      const geminiResponse = await analyzeChat(summaryPrompt, "", false);
+      
+      let summaryData;
+      try {
+        // Try to parse the JSON from the response
+        const jsonMatch = geminiResponse.message.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          summaryData = JSON.parse(jsonMatch[0]);
+        } else {
+          summaryData = {
+            purpose: "Meeting summary generated",
+            keyTopics: [],
+            decisions: [],
+            openQuestions: [],
+            missedAgendaItems: [],
+            fullSummary: geminiResponse.message,
+          };
+        }
+      } catch (e) {
+        summaryData = {
+          purpose: "Meeting summary",
+          keyTopics: [],
+          decisions: [],
+          openQuestions: [],
+          missedAgendaItems: [],
+          fullSummary: geminiResponse.message,
+        };
+      }
+
+      // Check if summary already exists
+      const existingSummary = await storage.getMeetingSummary(meetingId);
+      
+      if (existingSummary) {
+        const updated = await storage.updateMeetingSummary(meetingId, summaryData);
+        res.json(updated);
+      } else {
+        const created = await storage.createMeetingSummary({
+          meetingId,
+          ...summaryData,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Generate meeting summary error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate summary" });
+    }
+  });
+
+  // ElevenLabs Text-to-Speech
+  app.post("/api/eva/tts", async (req, res) => {
+    try {
+      const { text, voiceId } = req.body;
+      if (!text) {
+        res.status(400).json({ error: "Text is required" });
+        return;
+      }
+
+      const audioBuffer = await textToSpeech(text, voiceId);
+      res.set({
+        "Content-Type": "audio/mpeg",
+        "Content-Length": audioBuffer.length,
+      });
+      res.send(audioBuffer);
+    } catch (error: any) {
+      console.error("TTS error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate speech" });
+    }
+  });
+
+  // Stream TTS
+  app.post("/api/eva/tts/stream", async (req, res) => {
+    try {
+      const { text, voiceId } = req.body;
+      if (!text) {
+        res.status(400).json({ error: "Text is required" });
+        return;
+      }
+
+      const stream = await textToSpeechStream(text, voiceId);
+      res.set({
+        "Content-Type": "audio/mpeg",
+        "Transfer-Encoding": "chunked",
+      });
+      
+      const reader = stream.getReader();
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+      };
+      pump();
+    } catch (error: any) {
+      console.error("TTS stream error:", error);
+      res.status(500).json({ error: error.message || "Failed to stream speech" });
+    }
+  });
+
+  // Get available voices
+  app.get("/api/eva/voices", async (req, res) => {
+    try {
+      const voices = await getVoices();
+      res.json(voices);
+    } catch (error: any) {
+      console.error("Get voices error:", error);
+      res.status(500).json({ error: error.message || "Failed to get voices" });
+    }
+  });
+
+  // Ask EVA - AI chat endpoint
+  app.post("/api/eva/ask", async (req, res) => {
+    try {
+      const { meetingId, question, context } = req.body;
+      if (!question) {
+        res.status(400).json({ error: "Question is required" });
+        return;
+      }
+
+      // Get meeting context
+      const meeting = meetingId ? await storage.getMeeting(meetingId) : null;
+      const agenda = meetingId ? await storage.getMeetingAgenda(meetingId) : null;
+      const notes = meetingId ? await storage.getMeetingNotes(meetingId) : [];
+      const files = meetingId ? await storage.getMeetingFiles(meetingId) : [];
+      const transcripts = meetingId ? await storage.getTranscriptsByMeeting(meetingId) : [];
+
+      // Build context for AI
+      let fullContext = "";
+      
+      if (meeting) {
+        fullContext += `Meeting: ${meeting.title}\n`;
+        fullContext += `Status: ${meeting.status}\n\n`;
+      }
+      
+      if (agenda && Array.isArray(agenda.items)) {
+        fullContext += "Agenda Items:\n";
+        (agenda.items as any[]).forEach((item: any, i: number) => {
+          fullContext += `${i + 1}. ${item.title} (${item.covered ? "Covered" : "Not covered"})\n`;
+        });
+        fullContext += "\n";
+      }
+      
+      if (notes.length > 0) {
+        fullContext += "Notes:\n";
+        notes.forEach(note => {
+          fullContext += `- ${note.content}${note.speaker ? ` (${note.speaker})` : ""}\n`;
+        });
+        fullContext += "\n";
+      }
+
+      if (files.length > 0) {
+        fullContext += "Uploaded Documents:\n";
+        files.forEach(file => {
+          fullContext += `- ${file.originalName}\n`;
+          if (file.content) {
+            fullContext += `  Content: ${file.content.substring(0, 500)}...\n`;
+          }
+        });
+        fullContext += "\n";
+      }
+
+      if (transcripts.length > 0) {
+        fullContext += "Recent Transcript:\n";
+        const recentTranscripts = transcripts.slice(-20);
+        recentTranscripts.forEach(t => {
+          fullContext += `${t.speaker}: ${t.text}\n`;
+        });
+        fullContext += "\n";
+      }
+
+      if (context) {
+        fullContext += `Additional Context: ${context}\n`;
+      }
+
+      // Use Gemini to generate response
+      const geminiResponse = await analyzeChat(question, fullContext, false);
+      const responseText = geminiResponse.message;
+      
+      // Store the chat message
+      if (meetingId) {
+        await storage.createChatMessage({
+          meetingId,
+          role: "user",
+          content: question,
+        });
+        await storage.createChatMessage({
+          meetingId,
+          role: "ai",
+          content: responseText,
+        });
+      }
+
+      res.json({ response: responseText, context: fullContext.substring(0, 500) });
+    } catch (error: any) {
+      console.error("Ask EVA error:", error);
+      res.status(500).json({ error: error.message || "Failed to get response" });
+    }
+  });
+
+  // EVA Settings
+  app.get("/api/eva/settings/:userId", async (req, res) => {
+    try {
+      const settings = await storage.getEvaSettings(req.params.userId);
+      res.json(settings || {
+        voiceEnabled: true,
+        voiceId: "Rachel",
+        wakeWordEnabled: true,
+        autoSummary: true,
+      });
+    } catch (error) {
+      console.error("Get EVA settings error:", error);
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.post("/api/eva/settings/:userId", async (req, res) => {
+    try {
+      const existing = await storage.getEvaSettings(req.params.userId);
+      
+      if (existing) {
+        const updated = await storage.updateEvaSettings(req.params.userId, req.body);
+        res.json(updated);
+      } else {
+        const created = await storage.createEvaSettings({
+          userId: req.params.userId,
+          ...req.body,
+        });
+        res.json(created);
+      }
+    } catch (error) {
+      console.error("Update EVA settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
     }
   });
 

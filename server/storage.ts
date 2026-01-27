@@ -33,6 +33,16 @@ import {
   type UpdateSop,
   type SopVersion,
   type InsertSopVersion,
+  type MeetingAgenda,
+  type InsertMeetingAgenda,
+  type MeetingNote,
+  type InsertMeetingNote,
+  type MeetingFile,
+  type InsertMeetingFile,
+  type MeetingSummary,
+  type InsertMeetingSummary,
+  type EvaSettings,
+  type InsertEvaSettings,
   users,
   meetings,
   recordings,
@@ -47,7 +57,12 @@ import {
   observations,
   clarifications,
   sops,
-  sopVersions
+  sopVersions,
+  meetingAgendas,
+  meetingNotes,
+  meetingFiles,
+  meetingSummaries,
+  evaSettings
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -152,6 +167,32 @@ export interface IStorage {
   // SOP Versions
   createSopVersion(version: InsertSopVersion): Promise<SopVersion>;
   getSopVersions(sopId: string): Promise<SopVersion[]>;
+
+  // EVA - Meeting Agendas
+  getMeetingAgenda(meetingId: string): Promise<MeetingAgenda | undefined>;
+  createMeetingAgenda(agenda: InsertMeetingAgenda): Promise<MeetingAgenda>;
+  updateMeetingAgenda(meetingId: string, items: any[]): Promise<MeetingAgenda | undefined>;
+
+  // EVA - Meeting Notes
+  getMeetingNotes(meetingId: string): Promise<MeetingNote[]>;
+  createMeetingNote(note: InsertMeetingNote): Promise<MeetingNote>;
+  deleteMeetingNote(id: string): Promise<boolean>;
+
+  // EVA - Meeting Files
+  getMeetingFiles(meetingId: string): Promise<MeetingFile[]>;
+  getMeetingFile(id: string): Promise<MeetingFile | undefined>;
+  createMeetingFile(file: InsertMeetingFile): Promise<MeetingFile>;
+  deleteMeetingFile(id: string): Promise<boolean>;
+
+  // EVA - Meeting Summaries
+  getMeetingSummary(meetingId: string): Promise<MeetingSummary | undefined>;
+  createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
+  updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
+
+  // EVA - Settings
+  getEvaSettings(userId: string): Promise<EvaSettings | undefined>;
+  createEvaSettings(settings: InsertEvaSettings): Promise<EvaSettings>;
+  updateEvaSettings(userId: string, data: Partial<InsertEvaSettings>): Promise<EvaSettings | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -670,6 +711,118 @@ export class DatabaseStorage implements IStorage {
       .from(sopVersions)
       .where(eq(sopVersions.sopId, sopId))
       .orderBy(desc(sopVersions.createdAt));
+  }
+
+  // EVA - Meeting Agendas
+  async getMeetingAgenda(meetingId: string): Promise<MeetingAgenda | undefined> {
+    const [agenda] = await db
+      .select()
+      .from(meetingAgendas)
+      .where(eq(meetingAgendas.meetingId, meetingId));
+    return agenda;
+  }
+
+  async createMeetingAgenda(agenda: InsertMeetingAgenda): Promise<MeetingAgenda> {
+    const [result] = await db.insert(meetingAgendas).values(agenda).returning();
+    return result;
+  }
+
+  async updateMeetingAgenda(meetingId: string, items: any[]): Promise<MeetingAgenda | undefined> {
+    const [result] = await db
+      .update(meetingAgendas)
+      .set({ items, updatedAt: new Date() })
+      .where(eq(meetingAgendas.meetingId, meetingId))
+      .returning();
+    return result;
+  }
+
+  // EVA - Meeting Notes
+  async getMeetingNotes(meetingId: string): Promise<MeetingNote[]> {
+    return db
+      .select()
+      .from(meetingNotes)
+      .where(eq(meetingNotes.meetingId, meetingId))
+      .orderBy(desc(meetingNotes.createdAt));
+  }
+
+  async createMeetingNote(note: InsertMeetingNote): Promise<MeetingNote> {
+    const [result] = await db.insert(meetingNotes).values(note).returning();
+    return result;
+  }
+
+  async deleteMeetingNote(id: string): Promise<boolean> {
+    const result = await db.delete(meetingNotes).where(eq(meetingNotes.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // EVA - Meeting Files
+  async getMeetingFiles(meetingId: string): Promise<MeetingFile[]> {
+    return db
+      .select()
+      .from(meetingFiles)
+      .where(eq(meetingFiles.meetingId, meetingId))
+      .orderBy(desc(meetingFiles.uploadedAt));
+  }
+
+  async getMeetingFile(id: string): Promise<MeetingFile | undefined> {
+    const [file] = await db.select().from(meetingFiles).where(eq(meetingFiles.id, id));
+    return file;
+  }
+
+  async createMeetingFile(file: InsertMeetingFile): Promise<MeetingFile> {
+    const [result] = await db.insert(meetingFiles).values(file).returning();
+    return result;
+  }
+
+  async deleteMeetingFile(id: string): Promise<boolean> {
+    const result = await db.delete(meetingFiles).where(eq(meetingFiles.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // EVA - Meeting Summaries
+  async getMeetingSummary(meetingId: string): Promise<MeetingSummary | undefined> {
+    const [summary] = await db
+      .select()
+      .from(meetingSummaries)
+      .where(eq(meetingSummaries.meetingId, meetingId));
+    return summary;
+  }
+
+  async createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary> {
+    const [result] = await db.insert(meetingSummaries).values(summary).returning();
+    return result;
+  }
+
+  async updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined> {
+    const [result] = await db
+      .update(meetingSummaries)
+      .set(data)
+      .where(eq(meetingSummaries.meetingId, meetingId))
+      .returning();
+    return result;
+  }
+
+  // EVA - Settings
+  async getEvaSettings(userId: string): Promise<EvaSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(evaSettings)
+      .where(eq(evaSettings.userId, userId));
+    return settings;
+  }
+
+  async createEvaSettings(settings: InsertEvaSettings): Promise<EvaSettings> {
+    const [result] = await db.insert(evaSettings).values(settings).returning();
+    return result;
+  }
+
+  async updateEvaSettings(userId: string, data: Partial<InsertEvaSettings>): Promise<EvaSettings | undefined> {
+    const [result] = await db
+      .update(evaSettings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(evaSettings.userId, userId))
+      .returning();
+    return result;
   }
 }
 

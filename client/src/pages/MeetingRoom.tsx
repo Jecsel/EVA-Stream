@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { EVAPanel } from "@/components/EVAPanel";
+import { EVAMeetingAssistant } from "@/components/EVAMeetingAssistant";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -35,6 +36,7 @@ export default function MeetingRoom() {
   const queryClient = useQueryClient();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
+  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
@@ -579,23 +581,60 @@ export default function MeetingRoom() {
                 rounded-2xl overflow-hidden shadow-xl border border-border
               `}
             >
-              <EVAPanel 
-                meetingId={meeting.id}
-                messages={displayMessages}
-                chatMessages={chatMessages}
-                onSendMessage={handleSendMessage}
-                isScreenSharing={isScreenSharing}
-                isObserving={isObserving}
-                evaStatus={evaStatus}
-                onStartObservation={handleStartObservation}
-                onStopObservation={() => {
-                  stopObserving();
-                  stopScreenCapture();
-                }}
-                isNoteTakerProcessing={isNoteTakerProcessing}
-                onRefreshNotes={handleRefreshNoteTaker}
-                className="h-full"
-              />
+              {/* Mode toggle buttons */}
+              <div className="flex border-b bg-muted/30">
+                <button
+                  onClick={() => setEvaPanelMode("assistant")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                    evaPanelMode === "assistant" 
+                      ? "bg-background text-foreground border-b-2 border-primary" 
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  data-testid="button-eva-mode-assistant"
+                >
+                  <MessageSquare className="w-3 h-3 inline mr-1" />
+                  Meeting Assistant
+                </button>
+                <button
+                  onClick={() => setEvaPanelMode("observe")}
+                  className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                    evaPanelMode === "observe" 
+                      ? "bg-background text-foreground border-b-2 border-primary" 
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  data-testid="button-eva-mode-observe"
+                >
+                  <Eye className="w-3 h-3 inline mr-1" />
+                  Screen Observer
+                </button>
+              </div>
+              
+              {evaPanelMode === "assistant" ? (
+                <EVAMeetingAssistant
+                  meetingId={meeting.id}
+                  meetingTitle={meeting.title}
+                  meetingStatus={meeting.status}
+                  className="h-[calc(100%-41px)]"
+                />
+              ) : (
+                <EVAPanel 
+                  meetingId={meeting.id}
+                  messages={displayMessages}
+                  chatMessages={chatMessages}
+                  onSendMessage={handleSendMessage}
+                  isScreenSharing={isScreenSharing}
+                  isObserving={isObserving}
+                  evaStatus={evaStatus}
+                  onStartObservation={handleStartObservation}
+                  onStopObservation={() => {
+                    stopObserving();
+                    stopScreenCapture();
+                  }}
+                  isNoteTakerProcessing={isNoteTakerProcessing}
+                  onRefreshNotes={handleRefreshNoteTaker}
+                  className="h-[calc(100%-41px)]"
+                />
+              )}
             </div>
           )}
 
