@@ -126,14 +126,19 @@ export default function MeetingRoom() {
   });
 
   // Update meeting ID ref and selected agents when meeting loads
+  // Auto-select all agents when joining a meeting
   useEffect(() => {
     if (meeting?.id) {
       meetingIdRef.current = meeting.id;
       if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
         setSelectedAgents(meeting.selectedAgents);
+      } else if (agents.length > 0) {
+        // Auto-select all agents by default
+        const allAgentIds = agents.map(a => a.id);
+        setSelectedAgents(allAgentIds);
       }
     }
-  }, [meeting?.id, meeting?.selectedAgents]);
+  }, [meeting?.id, meeting?.selectedAgents, agents]);
 
   // Track previous agent selection to detect toggle changes
   const prevSelectedAgentsRef = useRef<string[]>([]);
