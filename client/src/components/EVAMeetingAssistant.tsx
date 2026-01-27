@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { 
-  Send, Bot, User, Mic, MicOff, Volume2, VolumeX, 
+  Send, Bot, User, Volume2, VolumeX, 
   Plus, Trash2, Check, X, FileText, List, Files, 
   MessageSquare, ClipboardList, Loader2, Play, Square,
   Upload, File as FileIcon, ChevronDown, Radio
@@ -19,7 +19,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { useVoiceActivation } from "@/hooks/useVoiceActivation";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
@@ -42,6 +41,7 @@ interface EVAMeetingAssistantProps {
   meetingTitle?: string;
   meetingStatus?: string;
   className?: string;
+  isWakeWordActive?: boolean;
 }
 
 export function EVAMeetingAssistant({
@@ -49,59 +49,21 @@ export function EVAMeetingAssistant({
   meetingTitle,
   meetingStatus,
   className,
+  isWakeWordActive = false,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [agendaContent, setAgendaContent] = useState("");
   const [newNoteContent, setNewNoteContent] = useState("");
-  const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queryClient = useQueryClient();
-
-  // Voice activation hook
-  const handleVoiceSpeechResult = useCallback((text: string) => {
-    if (text.trim()) {
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        role: "user",
-        content: text,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-      setIsTyping(true);
-      askEvaMutationRef.current?.(text);
-    }
-  }, []);
-
-  const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
-
-  const {
-    isListening,
-    isHoldingToTalk,
-    transcript,
-    isSupported: voiceSupported,
-    startListening,
-    stopListening,
-    startHoldToTalk,
-    stopHoldToTalk,
-    wakeWordMode,
-  } = useVoiceActivation({
-    wakeWord: "hey eva",
-    onWakeWordDetected: () => {
-      setWakeWordTriggered(true);
-      setTimeout(() => setWakeWordTriggered(false), 2000);
-    },
-    onSpeechResult: handleVoiceSpeechResult,
-    enabled: wakeWordEnabled,
-  });
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
@@ -223,21 +185,6 @@ export function EVAMeetingAssistant({
       setIsTyping(false);
     },
   });
-
-  // Set the ref for voice activation to use
-  useEffect(() => {
-    askEvaMutationRef.current = (question: string) => {
-      askEvaMutation.mutate(question);
-    };
-  }, [askEvaMutation]);
-
-  // Start listening for wake word on mount
-  useEffect(() => {
-    if (wakeWordEnabled && voiceSupported) {
-      startListening();
-    }
-    return () => stopListening();
-  }, [wakeWordEnabled, voiceSupported, startListening, stopListening]);
 
   // Play voice response using ElevenLabs
   const playVoiceResponse = async (text: string) => {
@@ -385,40 +332,19 @@ export function EVAMeetingAssistant({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Wake word status indicator */}
-            {isListening && (
-              <Badge 
-                variant="outline" 
-                className={cn(
-                  "text-xs px-2 transition-colors",
-                  wakeWordTriggered ? "bg-green-500/20 text-green-500 border-green-500" : "bg-purple-500/10 text-purple-500"
-                )}
-              >
-                <Radio className="w-3 h-3 mr-1 animate-pulse" />
-                {wakeWordTriggered ? "Listening..." : "Say 'Hey EVA'"}
-              </Badge>
-            )}
-            {/* Wake word toggle */}
-            {voiceSupported && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (wakeWordEnabled) {
-                    stopListening();
-                    setWakeWordEnabled(false);
-                  } else {
-                    setWakeWordEnabled(true);
-                    startListening();
-                  }
-                }}
-                className={cn("h-8 w-8", wakeWordEnabled && isListening && "text-green-500")}
-                data-testid="button-toggle-wakeword"
-                title={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
-              >
-                {wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-              </Button>
-            )}
+            {/* Wake word status - controlled by Jitsi transcription */}
+            <Badge 
+              variant="outline" 
+              className={cn(
+                "text-xs px-2 transition-colors",
+                isWakeWordActive 
+                  ? "bg-green-500/20 text-green-500 border-green-500" 
+                  : "bg-purple-500/10 text-purple-500"
+              )}
+            >
+              <Radio className={cn("w-3 h-3 mr-1", isWakeWordActive && "animate-pulse")} />
+              {isWakeWordActive ? "Listening..." : "Say 'Hey EVA'"}
+            </Badge>
             <Button
               variant="ghost"
               size="icon"
@@ -477,8 +403,11 @@ export function EVAMeetingAssistant({
               {messages.length === 0 && (
                 <div className="text-center py-6">
                   <Bot className="w-12 h-12 mx-auto mb-3 text-purple-500/50" />
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Hi! I'm EVA, your meeting assistant. Ask me anything about this meeting.
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Hi! I'm EVA, your meeting assistant.
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Just say "Hey EVA" followed by your question - I'm always listening!
                   </p>
                   <div className="space-y-2">
                     {[
@@ -562,18 +491,7 @@ export function EVAMeetingAssistant({
             </div>
           </ScrollArea>
 
-          {/* Hold to talk indicator */}
-          {isHoldingToTalk && (
-            <div className="px-3 py-2 bg-green-500/10 border-t border-green-500/20">
-              <div className="flex items-center gap-2 text-green-500">
-                <Radio className="w-4 h-4 animate-pulse" />
-                <span className="text-sm font-medium">Listening...</span>
-                {transcript && <span className="text-sm opacity-70">"{transcript}"</span>}
-              </div>
-            </div>
-          )}
-
-          {/* Input */}
+          {/* Input - text only, no microphone button */}
           <div className="p-3 border-t">
             <div className="flex gap-2">
               <Input
@@ -584,25 +502,6 @@ export function EVAMeetingAssistant({
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 data-testid="input-ask-eva"
               />
-              {/* Hold-to-talk button */}
-              {voiceSupported && (
-                <Button
-                  variant={isHoldingToTalk ? "default" : "outline"}
-                  onMouseDown={startHoldToTalk}
-                  onMouseUp={stopHoldToTalk}
-                  onMouseLeave={stopHoldToTalk}
-                  onTouchStart={startHoldToTalk}
-                  onTouchEnd={stopHoldToTalk}
-                  className={cn(
-                    "transition-colors",
-                    isHoldingToTalk && "bg-green-500 hover:bg-green-600"
-                  )}
-                  data-testid="button-hold-to-talk"
-                  title="Hold to talk"
-                >
-                  <Mic className="w-4 h-4" />
-                </Button>
-              )}
               <Button 
                 onClick={handleSend} 
                 disabled={!inputValue.trim() || isTyping}
@@ -632,29 +531,24 @@ export function EVAMeetingAssistant({
                 notes.map((note) => (
                   <Card key={note.id} className={cn(note.isImportant && "border-amber-500/50")}>
                     <CardContent className="p-3">
-                      <div className="flex justify-between items-start gap-2">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
                           <p className="text-sm">{note.content}</p>
                           <div className="flex items-center gap-2 mt-1">
                             {note.speaker && (
-                              <Badge variant="outline" className="text-xs">
+                              <span className="text-xs text-muted-foreground">
                                 {note.speaker}
-                              </Badge>
+                              </span>
                             )}
                             <span className="text-xs text-muted-foreground">
-                              {format(new Date(note.createdAt), "HH:mm")}
+                              {format(new Date(note.createdAt), "h:mm a")}
                             </span>
-                            {note.isImportant && (
-                              <Badge className="bg-amber-500/20 text-amber-600 text-xs">
-                                Important
-                              </Badge>
-                            )}
                           </div>
                         </div>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          className="h-6 w-6"
                           onClick={() => deleteNoteMutation.mutate(note.id)}
                           data-testid={`button-delete-note-${note.id}`}
                         >
@@ -667,22 +561,25 @@ export function EVAMeetingAssistant({
               )}
             </div>
           </ScrollArea>
-
+          
           {/* Add note input */}
-          <div className="p-3 border-t space-y-2">
-            <Textarea
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              placeholder="Add a note..."
-              className="min-h-[60px] text-sm"
-              data-testid="input-new-note"
-            />
+          <div className="p-3 border-t">
             <div className="flex gap-2">
+              <Textarea
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                placeholder="Add a note..."
+                className="min-h-[60px] text-sm"
+                data-testid="input-new-note"
+              />
+            </div>
+            <div className="flex gap-2 mt-2">
               <Button
                 size="sm"
-                onClick={() => handleCreateNote(false)}
-                disabled={!newNoteContent.trim() || createNoteMutation.isPending}
+                variant="outline"
                 className="flex-1"
+                onClick={() => handleCreateNote(false)}
+                disabled={!newNoteContent.trim()}
                 data-testid="button-add-note"
               >
                 <Plus className="w-3 h-3 mr-1" />
@@ -691,12 +588,13 @@ export function EVAMeetingAssistant({
               <Button
                 size="sm"
                 variant="outline"
+                className="flex-1 text-amber-500 border-amber-500/50"
                 onClick={() => handleCreateNote(true)}
-                disabled={!newNoteContent.trim() || createNoteMutation.isPending}
-                className="text-amber-600"
+                disabled={!newNoteContent.trim()}
                 data-testid="button-add-important-note"
               >
-                ⭐ Important
+                <Plus className="w-3 h-3 mr-1" />
+                Important
               </Button>
             </div>
           </div>
@@ -704,39 +602,34 @@ export function EVAMeetingAssistant({
 
         {/* Agenda Tab - Rich Text Editor */}
         <TabsContent value="agenda" className="flex-1 flex flex-col overflow-hidden m-0">
-          <div className="flex-1 flex flex-col p-3 overflow-hidden">
-            {agendaLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <>
-                <RichTextEditor
-                  content={agendaContent}
-                  onChange={handleAgendaChange}
-                  onBlur={handleSaveAgenda}
-                  placeholder="Add your meeting agenda here... Use the toolbar to format text, create lists, and organize topics."
-                  className="flex-1 overflow-auto"
-                  minHeight="200px"
-                />
-                <div className="flex justify-end mt-3 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSaveAgenda}
-                    disabled={updateAgendaMutation.isPending}
-                    data-testid="button-save-agenda"
-                  >
-                    {updateAgendaMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Check className="w-4 h-4 mr-2" />
-                    )}
-                    Save Agenda
-                  </Button>
-                </div>
-              </>
-            )}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="p-3 flex-1 overflow-hidden">
+              <RichTextEditor
+                content={agendaContent}
+                onChange={handleAgendaChange}
+                onBlur={handleSaveAgenda}
+                placeholder="Add meeting agenda items..."
+                className="h-full"
+              />
+            </div>
+            <div className="px-3 pb-3 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {updateAgendaMutation.isPending ? "Saving..." : "Auto-saves on blur"}
+              </span>
+              <Button
+                size="sm"
+                onClick={handleSaveAgenda}
+                disabled={updateAgendaMutation.isPending}
+                data-testid="button-save-agenda"
+              >
+                {updateAgendaMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <Check className="w-3 h-3 mr-1" />
+                )}
+                Save
+              </Button>
+            </div>
           </div>
         </TabsContent>
 
@@ -751,67 +644,52 @@ export function EVAMeetingAssistant({
               ) : files.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Files className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No documents uploaded.</p>
-                  <p className="text-xs mt-1">Upload PDF, DOCX, TXT files for EVA to reference.</p>
+                  <p className="text-sm">No files uploaded yet.</p>
+                  <p className="text-xs mt-1">Upload documents for EVA to analyze</p>
                 </div>
               ) : (
-                files.map((file) => {
-                  const getFileExtension = (mimeType: string, filename: string) => {
-                    const ext = filename.split('.').pop()?.toUpperCase();
-                    if (ext) return ext;
-                    const typePart = mimeType.split("/")[1];
-                    if (typePart?.includes('word')) return 'DOCX';
-                    if (typePart?.includes('pdf')) return 'PDF';
-                    if (typePart?.includes('text')) return 'TXT';
-                    return typePart?.substring(0, 4).toUpperCase() || 'FILE';
-                  };
-                  return (
-                    <Card key={file.id}>
-                      <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                          <FileIcon className="w-8 h-8 text-blue-500 shrink-0" />
-                          <div className="flex-1 min-w-0 overflow-hidden">
-                            <p className="text-sm font-medium truncate">{file.originalName}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {(parseInt(file.size) / 1024).toFixed(1)} KB • {format(new Date(file.uploadedAt), "MMM d, HH:mm")}
-                            </p>
-                          </div>
-                          <Badge variant="outline" className="text-xs shrink-0">
-                            {getFileExtension(file.mimeType, file.originalName)}
-                          </Badge>
+                files.map((file) => (
+                  <Card key={file.id}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2">
+                        <FileIcon className="w-4 h-4 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{file.originalName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(file.uploadedAt), "MMM d, h:mm a")}
+                          </p>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
               )}
             </div>
           </ScrollArea>
-
-          {/* Upload button */}
+          
+          {/* File upload */}
           <div className="p-3 border-t">
-            <label className={cn("cursor-pointer", isUploading && "pointer-events-none")}>
+            <label className="block">
               <input
                 type="file"
-                accept=".txt,.pdf,.docx,.pptx,.md,.csv,.json"
                 className="hidden"
                 onChange={handleFileUpload}
-                disabled={isUploading}
+                accept=".pdf,.doc,.docx,.txt,.md"
                 data-testid="input-file-upload"
               />
-              <Button variant="outline" className="w-full" disabled={isUploading} asChild>
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={isUploading}
+                asChild
+              >
                 <span>
                   {isUploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading...
-                    </>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Document
-                    </>
+                    <Upload className="w-4 h-4 mr-2" />
                   )}
+                  Upload Document
                 </span>
               </Button>
             </label>
@@ -825,7 +703,7 @@ export function EVAMeetingAssistant({
               {meetingStatus !== "completed" ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">Summary will be available after the meeting ends.</p>
+                  <p className="text-sm">Meeting summary will be available after the meeting ends.</p>
                 </div>
               ) : summaryLoading ? (
                 <div className="flex justify-center py-8">
@@ -833,93 +711,73 @@ export function EVAMeetingAssistant({
                 </div>
               ) : summary ? (
                 <div className="space-y-4">
-                  {summary.purpose && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">Purpose</h4>
-                      <p className="text-sm text-muted-foreground">{summary.purpose}</p>
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Summary</h4>
+                    <div className="prose prose-sm dark:prose-invert">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {summary.fullSummary || summary.purpose || "No summary available."}
+                      </ReactMarkdown>
                     </div>
-                  )}
-
-                  {summary.keyTopics && summary.keyTopics.length > 0 && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-2">Key Topics</h4>
-                      <ul className="space-y-1">
-                        {summary.keyTopics.map((topic, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <Check className="w-4 h-4 text-green-500 mt-0.5" />
-                            {topic}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
+                  </div>
                   {summary.decisions && summary.decisions.length > 0 && (
                     <div>
-                      <h4 className="font-medium text-sm mb-2">Decisions Made</h4>
+                      <h4 className="text-sm font-semibold mb-2">Decisions & Action Items</h4>
                       <ul className="space-y-1">
-                        {summary.decisions.map((decision, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-purple-500">→</span>
-                            {decision}
+                        {summary.decisions.map((item: string, idx: number) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm">
+                            <Checkbox className="mt-0.5" />
+                            <span>{item}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
-
-                  {summary.openQuestions && summary.openQuestions.length > 0 && (
+                  {summary.keyTopics && summary.keyTopics.length > 0 && (
                     <div>
-                      <h4 className="font-medium text-sm mb-2">Open Questions</h4>
-                      <ul className="space-y-1">
-                        {summary.openQuestions.map((question, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-amber-500">?</span>
-                            {question}
-                          </li>
+                      <h4 className="text-sm font-semibold mb-2">Key Topics</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {summary.keyTopics.map((topic: string, idx: number) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">
+                            {topic}
+                          </Badge>
                         ))}
-                      </ul>
+                      </div>
                     </div>
-                  )}
-
-                  {summary.fullSummary && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">Full Summary</h4>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{summary.fullSummary}</p>
-                    </div>
-                  )}
-
-                  {/* Play summary button */}
-                  {voiceEnabled && summary.fullSummary && (
-                    <Button
-                      variant="outline"
-                      onClick={() => playVoiceResponse(summary.fullSummary || "")}
-                      disabled={isPlaying}
-                      className="w-full"
-                      data-testid="button-play-summary"
-                    >
-                      {isPlaying ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Playing...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 mr-2" />
-                          Listen to Summary
-                        </>
-                      )}
-                    </Button>
                   )}
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No summary generated yet.</p>
+                  <p className="text-sm">No summary available yet.</p>
                 </div>
               )}
             </div>
           </ScrollArea>
+          
+          {/* Voice playback for summary */}
+          {(summary?.fullSummary || summary?.purpose) && (
+            <div className="p-3 border-t">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => playVoiceResponse(summary.fullSummary || summary.purpose || "")}
+                disabled={isPlaying}
+                data-testid="button-play-summary"
+              >
+                {isPlaying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Playing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Play Summary
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -708,6 +708,7 @@ export default function MeetingRoom() {
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
                   meetingStatus={meeting.status}
+                  isWakeWordActive={isWakeWordActive}
                   className="h-[calc(100%-120px)]"
                 />
               ) : isScreenObserverEnabled ? (
