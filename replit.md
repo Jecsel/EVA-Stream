@@ -54,13 +54,11 @@ When a meeting recording is uploaded (via JaaS webhook), the system automaticall
 Users can also manually trigger transcription from the Recording Detail page using the "Generate Transcript" button.
 
 ### Meeting Agents System
-The platform supports multiple AI agents that can be enabled/disabled per meeting:
+The platform supports AI agents that can be enabled/disabled per meeting:
 
 | Agent | Type | Functionality |
 |-------|------|---------------|
 | **EVA Assistant** | eva | Unified AI assistant with tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis and SOP generation) |
-| **Meeting Transcriber** | transcription | Real-time speech-to-text with speaker identification |
-| **Flowchart Builder** | flowchart | Auto-generates visual flowcharts from SOP content using Mermaid.js (updates in real-time as SOP changes) |
 | **AI Voice Assistant** | voice_11labs | Voice-powered AI meeting assistant using 11Labs - enables natural voice interactions, text-to-speech for SOPs, and real-time voice responses |
 
 Each agent:
@@ -68,6 +66,7 @@ Each agent:
 - Uses its own custom prompt (configurable in Admin panel)
 - EVA Assistant uses a unified tabbed panel (EVAPanel.tsx) instead of separate panels
 - Properly starts/stops when toggled during a live meeting
+- EVA panel only appears after the user has joined the meeting (not in the pre-join lobby)
 
 ### Data Flow
 1. User creates/joins meeting via Dashboard
