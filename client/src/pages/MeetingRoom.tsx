@@ -575,6 +575,10 @@ export default function MeetingRoom() {
                  roomId={roomId}
                  selectedAgents={selectedAgents}
                  onAgentsChange={setSelectedAgents}
+                 isMeetingAssistantEnabled={isMeetingAssistantEnabled}
+                 onMeetingAssistantChange={setIsMeetingAssistantEnabled}
+                 isScreenObserverEnabled={isScreenObserverEnabled}
+                 onScreenObserverChange={setIsScreenObserverEnabled}
                />
              )}
              {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && (
@@ -643,44 +647,14 @@ export default function MeetingRoom() {
                 rounded-2xl overflow-hidden shadow-xl border border-border
               `}
             >
-              {/* Agent header with toggles */}
+              {/* Panel header with mode indicator */}
               <div className="bg-muted/30 border-b">
-                <div className="px-3 py-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI Agents</span>
-                </div>
-                <div className="px-3 pb-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
-                      <span className="text-xs font-medium">Meeting Assistant</span>
-                    </div>
-                    <Switch
-                      checked={isMeetingAssistantEnabled}
-                      onCheckedChange={setIsMeetingAssistantEnabled}
-                      className="scale-75"
-                      data-testid="toggle-meeting-assistant"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Eye className="w-3.5 h-3.5 text-blue-500" />
-                      <span className="text-xs font-medium">Screen Observer</span>
-                    </div>
-                    <Switch
-                      checked={isScreenObserverEnabled}
-                      onCheckedChange={setIsScreenObserverEnabled}
-                      className="scale-75"
-                      data-testid="toggle-screen-observer"
-                    />
-                  </div>
-                </div>
-                
                 {/* Mode tabs - only show if both agents are enabled */}
                 {isMeetingAssistantEnabled && isScreenObserverEnabled && (
-                  <div className="flex border-t bg-background/50">
+                  <div className="flex bg-background/50">
                     <button
                       onClick={() => setEvaPanelMode("assistant")}
-                      className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
                         evaPanelMode === "assistant" 
                           ? "bg-background text-foreground border-b-2 border-purple-500" 
                           : "text-muted-foreground hover:text-foreground"
@@ -688,11 +662,11 @@ export default function MeetingRoom() {
                       data-testid="button-eva-mode-assistant"
                     >
                       <MessageSquare className="w-3 h-3 inline mr-1" />
-                      Assistant
+                      Meeting Assistant
                     </button>
                     <button
                       onClick={() => setEvaPanelMode("observe")}
-                      className={`flex-1 py-2 px-3 text-xs font-medium transition-colors ${
+                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
                         evaPanelMode === "observe" 
                           ? "bg-background text-foreground border-b-2 border-blue-500" 
                           : "text-muted-foreground hover:text-foreground"
@@ -700,22 +674,22 @@ export default function MeetingRoom() {
                       data-testid="button-eva-mode-observe"
                     >
                       <Eye className="w-3 h-3 inline mr-1" />
-                      Observer
+                      Screen Observer
                     </button>
                   </div>
                 )}
                 
                 {/* Single agent header when only one is enabled */}
                 {isMeetingAssistantEnabled && !isScreenObserverEnabled && (
-                  <div className="px-3 py-2 border-t bg-purple-500/10 flex items-center gap-2">
+                  <div className="px-3 py-2.5 bg-purple-500/10 flex items-center gap-2">
                     <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
-                    <span className="text-xs font-semibold text-purple-400">Meeting Assistant Active</span>
+                    <span className="text-xs font-semibold text-purple-400">Meeting Assistant</span>
                   </div>
                 )}
                 {!isMeetingAssistantEnabled && isScreenObserverEnabled && (
-                  <div className="px-3 py-2 border-t bg-blue-500/10 flex items-center gap-2">
+                  <div className="px-3 py-2.5 bg-blue-500/10 flex items-center gap-2">
                     <Eye className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-semibold text-blue-400">Screen Observer Active</span>
+                    <span className="text-xs font-semibold text-blue-400">Screen Observer</span>
                   </div>
                 )}
               </div>

@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, ChevronDown, Loader2 } from "lucide-react";
+import { Bot, ChevronDown, Loader2, MessageSquare, Eye } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import type { Agent } from "@shared/schema";
 
@@ -18,6 +19,10 @@ interface AgentSelectorProps {
   roomId: string;
   selectedAgents: string[];
   onAgentsChange: (agentIds: string[]) => void;
+  isMeetingAssistantEnabled?: boolean;
+  onMeetingAssistantChange?: (enabled: boolean) => void;
+  isScreenObserverEnabled?: boolean;
+  onScreenObserverChange?: (enabled: boolean) => void;
   className?: string;
 }
 
@@ -26,6 +31,10 @@ export function AgentSelector({
   roomId,
   selectedAgents, 
   onAgentsChange,
+  isMeetingAssistantEnabled = true,
+  onMeetingAssistantChange,
+  isScreenObserverEnabled = false,
+  onScreenObserverChange,
   className = ""
 }: AgentSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -107,6 +116,57 @@ export function AgentSelector({
             Select which AI agents to include in this call
           </p>
         </div>
+        
+        {/* EVA Assistant Toggles */}
+        {onMeetingAssistantChange && onScreenObserverChange && (
+          <div className="p-2 border-b border-border bg-muted/20">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-2.5 mb-2">
+              EVA Assistant
+            </div>
+            <div className="space-y-1">
+              <div 
+                className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isMeetingAssistantEnabled ? 'bg-purple-500/10' : 'hover:bg-muted/50'}`}
+                data-testid="toggle-meeting-assistant-row"
+              >
+                <div className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded flex items-center justify-center ${isMeetingAssistantEnabled ? 'bg-purple-500/20 text-purple-500' : 'bg-muted text-muted-foreground'}`}>
+                    <MessageSquare className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-medium text-sm">Meeting Assistant</span>
+                    <p className="text-[10px] text-muted-foreground">Voice commands & Q&A</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={isMeetingAssistantEnabled}
+                  onCheckedChange={onMeetingAssistantChange}
+                  className="scale-90"
+                  data-testid="toggle-meeting-assistant"
+                />
+              </div>
+              <div 
+                className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isScreenObserverEnabled ? 'bg-blue-500/10' : 'hover:bg-muted/50'}`}
+                data-testid="toggle-screen-observer-row"
+              >
+                <div className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded flex items-center justify-center ${isScreenObserverEnabled ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
+                    <Eye className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-medium text-sm">Screen Observer</span>
+                    <p className="text-[10px] text-muted-foreground">Analyzes shared screens</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={isScreenObserverEnabled}
+                  onCheckedChange={onScreenObserverChange}
+                  className="scale-90"
+                  data-testid="toggle-screen-observer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
         
         <ScrollArea className="max-h-[280px]">
           {isLoading ? (
