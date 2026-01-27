@@ -104,244 +104,241 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Navigation */}
-      <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-6 bg-background sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="md:hidden">
-                <Menu className="w-5 h-5" />
-            </Button>
-            <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-primary-foreground">
-                    <Video className="w-5 h-5" />
-                </div>
-                <span className="text-xl font-medium tracking-tight hidden md:block">EVA Ops Memory</span>
-            </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center text-sm text-muted-foreground mr-4">
-                <span className="px-2">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-                <HelpCircle className="w-5 h-5" />
-            </Button>
-            <Link href="/admin">
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" data-testid="button-admin">
-                  <Settings className="w-5 h-5" />
-              </Button>
-            </Link>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
-                  {user?.photoURL ? (
-                    <img 
-                      src={user.photoURL} 
-                      alt={user.displayName || "User"} 
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10 flex items-center justify-center">
-                      <User className="w-4 h-4 text-white" />
-                    </div>
-                  )}
+      <div className="min-h-screen bg-background flex flex-col">
+          {/* Navigation */}
+          <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-6 bg-background sticky top-0 z-50">
+            <div className="flex items-center gap-4">
+                <Button variant="ghost" size="icon" className="md:hidden">
+                    <Menu className="w-5 h-5" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
-                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-500 focus:text-red-500" data-testid="button-logout">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-        </div>
-      </header>
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-primary-foreground">
+                        <Video className="w-5 h-5" />
+                    </div>
+                    <span className="text-xl font-medium tracking-tight hidden md:block">EVA Stream</span>
+                </div>
+            </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-8">
-        {/* Hero / Action Section */}
-        <div className="grid md:grid-cols-2 gap-8 mb-12 items-center">
-            <div className="space-y-6">
-                <h1 className="text-3xl md:text-4xl font-normal tracking-tight text-foreground">
-                    Capture how work <br />
-                    <span className="text-muted-foreground">is actually done.</span>
-                </h1>
-                <p className="text-lg text-muted-foreground max-w-md leading-relaxed">
-                    EVA observes your meetings and screen shares to create decision-based SOPs that capture intent, decisions, and exceptions - not just steps.
-                </p>
-                
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button size="lg" className="bg-primary hover:bg-primary/90 text-white gap-2 h-12 px-6 text-base shadow-lg shadow-primary/20">
-                                <Video className="w-5 h-5" />
-                                New meeting
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-64 p-2">
-                            <DropdownMenuItem onClick={handleCreateForLater} className="gap-3 py-3 cursor-pointer">
-                                <LinkIcon className="w-4 h-4" />
-                                Create a meeting for later
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={handleCreateInstant} className="gap-3 py-3 cursor-pointer">
-                                <Plus className="w-4 h-4" />
-                                Start an instant meeting
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setScheduleDialogOpen(true)} className="gap-3 py-3 cursor-pointer" data-testid="menu-schedule-calendar">
-                                <Calendar className="w-4 h-4" />
-                                Schedule in Calendar
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <div className="relative w-full sm:w-64">
-                            <Keyboard className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                            <Input 
-                                placeholder="Enter a code or link" 
-                                className="pl-10 h-12 bg-background border-border focus-visible:ring-primary"
-                                value={meetingCode}
-                                onChange={(e) => setMeetingCode(e.target.value)}
-                            />
+            <div className="flex items-center gap-4">
+                <div className="hidden md:flex items-center text-sm text-muted-foreground mr-4">
+                    <span className="px-2">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+                    <HelpCircle className="w-5 h-5" />
+                </Button>
+                <Link href="/admin">
+                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" data-testid="button-admin">
+                      <Settings className="w-5 h-5" />
+                  </Button>
+                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
+                      {user?.photoURL ? (
+                        <img 
+                          src={user.photoURL} 
+                          alt={user.displayName || "User"} 
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent border border-white/10 flex items-center justify-center">
+                          <User className="w-4 h-4 text-white" />
                         </div>
-                        <Button 
-                            variant="ghost" 
-                            className={`h-12 px-4 ${meetingCode ? 'text-primary' : 'text-muted-foreground opacity-50 cursor-not-allowed'}`}
-                            disabled={!meetingCode}
-                            onClick={() => setLocation(`/meeting/${meetingCode}`)}
-                        >
-                            Join
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
+                        <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="text-red-500 focus:text-red-500" data-testid="button-logout">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+          </header>
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-8">
+            {/* Hero / Action Section */}
+            <div className="grid md:grid-cols-2 gap-8 mb-12 items-center">
+                <div className="space-y-6">
+                    <h1 className="text-3xl md:text-4xl font-normal tracking-tight text-foreground">
+                        Capture how work <br />
+                        <span className="text-muted-foreground">is actually done.</span>
+                    </h1>
+                    <p className="text-lg text-muted-foreground max-w-md leading-relaxed">
+                        EVA observes your meetings and screen shares to create decision-based SOPs that capture intent, decisions, and exceptions - not just steps.
+                    </p>
+                    
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button size="lg" className="bg-primary hover:bg-primary/90 text-white gap-2 h-12 px-6 text-base shadow-lg shadow-primary/20">
+                                    <Video className="w-5 h-5" />
+                                    New meeting
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-64 p-2">
+                                <DropdownMenuItem onClick={handleCreateForLater} className="gap-3 py-3 cursor-pointer">
+                                    <LinkIcon className="w-4 h-4" />
+                                    Create a meeting for later
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={handleCreateInstant} className="gap-3 py-3 cursor-pointer">
+                                    <Plus className="w-4 h-4" />
+                                    Start an instant meeting
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setScheduleDialogOpen(true)} className="gap-3 py-3 cursor-pointer" data-testid="menu-schedule-calendar">
+                                    <Calendar className="w-4 h-4" />
+                                    Schedule in Calendar
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div className="relative w-full sm:w-64">
+                                <Keyboard className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                <Input 
+                                    placeholder="Enter a code or link" 
+                                    className="pl-10 h-12 bg-background border-border focus-visible:ring-primary"
+                                    value={meetingCode}
+                                    onChange={(e) => setMeetingCode(e.target.value)}
+                                />
+                            </div>
+                            <Button 
+                                variant="ghost" 
+                                className={`h-12 px-4 ${meetingCode ? 'text-primary' : 'text-muted-foreground opacity-50 cursor-not-allowed'}`}
+                                disabled={!meetingCode}
+                                onClick={() => setLocation(`/meeting/${meetingCode}`)}
+                            >
+                                Join
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Illustration / Visual */}
+                <div className="hidden md:flex justify-center relative">
+                    <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full opacity-50" />
+                    <div className="relative bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full transform rotate-1 hover:rotate-0 transition-transform duration-500">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex -space-x-2">
+                                {[1,2,3].map(i => (
+                                    <div key={i} className={`w-8 h-8 rounded-full border-2 border-card bg-zinc-700 flex items-center justify-center text-[10px]`}>
+                                        User
+                                    </div>
+                                ))}
+                            </div>
+                            <span className="text-xs text-green-500 font-medium bg-green-500/10 px-2 py-1 rounded-full animate-pulse">Live</span>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Observing...</div>
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-lg">🛠️</span>
+                                <span>Tool: Salesforce</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-lg">🎯</span>
+                                <span>Intent: Lead qualification</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-lg">⚖️</span>
+                                <span>Decision: If qualified → schedule call</span>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex gap-2">
+                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
+                                <span className="text-xs">EVA</span>
+                            </div>
+                            <div className="flex-1 bg-muted/50 rounded-lg p-2 text-xs text-muted-foreground">
+                                Capturing workflow patterns...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Recordings Section */}
+            <div className="mt-12 md:mt-16 grid lg:grid-cols-3 gap-8 lg:gap-12">
+                {/* Left Column: Recordings Grid (Takes up 2/3 space on large screens) */}
+                <div className="lg:col-span-2">
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 className="text-xl font-semibold text-foreground">Past Recordings</h2>
+                            <p className="text-sm text-muted-foreground">Access your AI-analyzed meeting history</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="relative hidden sm:block">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <Input placeholder="Search recordings..." className="pl-9 w-48 h-9 text-sm bg-card border-border" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {recordingsLoading ? (
+                            <div className="col-span-2 text-center py-12 text-muted-foreground">
+                                Loading recordings...
+                            </div>
+                        ) : formattedRecordings.length === 0 ? (
+                            <div className="col-span-2 text-center py-12 text-muted-foreground">
+                                No recordings yet. Start a meeting to create your first recording.
+                            </div>
+                        ) : (
+                            formattedRecordings.map(rec => (
+                                <MeetingCard key={rec.id} recording={rec} />
+                            ))
+                        )}
+                    </div>
+                    
+                    <div className="mt-8 flex justify-center">
+                        <Button variant="outline" className="text-muted-foreground border-border hover:bg-muted">
+                            View older recordings
                         </Button>
                     </div>
                 </div>
-            </div>
 
-            {/* Illustration / Visual */}
-            <div className="hidden md:flex justify-center relative">
-                <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full opacity-50" />
-                <div className="relative bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full transform rotate-1 hover:rotate-0 transition-transform duration-500">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex -space-x-2">
-                            {[1,2,3].map(i => (
-                                <div key={i} className={`w-8 h-8 rounded-full border-2 border-card bg-zinc-700 flex items-center justify-center text-[10px]`}>
-                                    User
-                                </div>
-                            ))}
-                        </div>
-                        <span className="text-xs text-green-500 font-medium bg-green-500/10 px-2 py-1 rounded-full animate-pulse">Live</span>
-                    </div>
-                    <div className="space-y-3">
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Observing...</div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <span className="text-lg">🛠️</span>
-                            <span>Tool: Salesforce</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <span className="text-lg">🎯</span>
-                            <span>Intent: Lead qualification</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <span className="text-lg">⚖️</span>
-                            <span>Decision: If qualified → schedule call</span>
-                        </div>
-                    </div>
-                    <div className="mt-6 flex gap-2">
-                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
-                            <span className="text-xs">EVA</span>
-                        </div>
-                        <div className="flex-1 bg-muted/50 rounded-lg p-2 text-xs text-muted-foreground">
-                            Capturing workflow patterns...
-                        </div>
-                    </div>
+                {/* Right Column: Meetings List (Takes up 1/3 space on large screens) */}
+                <div className="lg:col-span-1 lg:pl-8 lg:border-l border-border/50">
+                    <MeetingsList />
                 </div>
             </div>
-        </div>
-
-        {/* Recordings Section */}
-        <div className="mt-12 md:mt-16 grid lg:grid-cols-3 gap-8 lg:gap-12">
-            {/* Left Column: Recordings Grid (Takes up 2/3 space on large screens) */}
-            <div className="lg:col-span-2">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h2 className="text-xl font-semibold text-foreground">Past Recordings</h2>
-                        <p className="text-sm text-muted-foreground">Access your AI-analyzed meeting history</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="relative hidden sm:block">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input placeholder="Search recordings..." className="pl-9 w-48 h-9 text-sm bg-card border-border" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {recordingsLoading ? (
-                        <div className="col-span-2 text-center py-12 text-muted-foreground">
-                            Loading recordings...
-                        </div>
-                    ) : formattedRecordings.length === 0 ? (
-                        <div className="col-span-2 text-center py-12 text-muted-foreground">
-                            No recordings yet. Start a meeting to create your first recording.
-                        </div>
-                    ) : (
-                        formattedRecordings.map(rec => (
-                            <MeetingCard key={rec.id} recording={rec} />
-                        ))
-                    )}
-                </div>
-                
-                <div className="mt-8 flex justify-center">
-                    <Button variant="outline" className="text-muted-foreground border-border hover:bg-muted">
-                        View older recordings
-                    </Button>
-                </div>
-            </div>
-
-            {/* Right Column: Meetings List (Takes up 1/3 space on large screens) */}
-            <div className="lg:col-span-1 lg:pl-8 lg:border-l border-border/50">
-                <MeetingsList />
-            </div>
-        </div>
-      </main>
-
-      {/* Generated Link Dialog - placed at root level to avoid stacking context issues */}
-      <Dialog open={!!generatedLink} onOpenChange={(open) => !open && setGeneratedLink("")}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Here's the link to your meeting</DialogTitle>
-            <DialogDescription>
-              Copy this link and send it to people you want to meet with. Be sure to save it so you can use it later, too.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-2 bg-muted/50 p-3 rounded-md mt-2 overflow-hidden">
-            <span className="text-sm flex-1 truncate font-mono text-muted-foreground">{generatedLink}</span>
-            <Button variant="ghost" size="icon" onClick={copyLink} className="h-8 w-8 shrink-0">
-              {isCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            </Button>
-          </div>
-          <DialogFooter className="sm:justify-start">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Schedule Meeting Dialog */}
-      <ScheduleMeetingDialog 
-        open={scheduleDialogOpen} 
-        onOpenChange={setScheduleDialogOpen}
-        onSuccess={(link) => {
-          setGeneratedLink(link);
-          queryClient.invalidateQueries({ queryKey: ["meetings"] });
-        }}
-      />
-    </div>
+          </main>
+          {/* Generated Link Dialog - placed at root level to avoid stacking context issues */}
+          <Dialog open={!!generatedLink} onOpenChange={(open) => !open && setGeneratedLink("")}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Here's the link to your meeting</DialogTitle>
+                <DialogDescription>
+                  Copy this link and send it to people you want to meet with. Be sure to save it so you can use it later, too.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-2 bg-muted/50 p-3 rounded-md mt-2 overflow-hidden">
+                <span className="text-sm flex-1 truncate font-mono text-muted-foreground">{generatedLink}</span>
+                <Button variant="ghost" size="icon" onClick={copyLink} className="h-8 w-8 shrink-0">
+                  {isCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <DialogFooter className="sm:justify-start">
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">Close</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* Schedule Meeting Dialog */}
+          <ScheduleMeetingDialog 
+            open={scheduleDialogOpen} 
+            onOpenChange={setScheduleDialogOpen}
+            onSuccess={(link) => {
+              setGeneratedLink(link);
+              queryClient.invalidateQueries({ queryKey: ["meetings"] });
+            }}
+          />
+      </div>
   );
 }
