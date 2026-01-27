@@ -300,6 +300,7 @@ export default function MeetingRoom() {
 
   const {
     isActive: isWakeWordActive,
+    isListening: isEvaListening,
     handleTranscription: handleJitsiTranscriptionEvent,
   } = useJitsiTranscription({
     onWakeWord: handleWakeWord,
@@ -532,16 +533,24 @@ export default function MeetingRoom() {
                       EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
                     </span>
                  </div>
-                 <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all ${
-                   isWakeWordActive ? 'border-purple-500/50 bg-purple-500/10' : 'border-border'
+                 <div className={`border px-3 py-1.5 rounded-full flex items-center gap-2 transition-all duration-300 ${
+                   isEvaListening 
+                     ? 'border-purple-500 bg-purple-500/20 shadow-lg shadow-purple-500/20 scale-105' 
+                     : isWakeWordActive 
+                       ? 'border-purple-500/50 bg-purple-500/10' 
+                       : 'bg-card/50 border-border'
                  }`} data-testid="indicator-wake-word">
-                    <span className={`w-2 h-2 rounded-full transition-colors ${
-                      isWakeWordActive ? "bg-purple-500 animate-pulse" : "bg-gray-500"
+                    <span className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                      isEvaListening 
+                        ? "bg-purple-500 animate-ping" 
+                        : isWakeWordActive 
+                          ? "bg-purple-500 animate-pulse"
+                          : "bg-gray-500"
                     }`} />
                     <span className={`text-xs font-medium transition-colors ${
-                      isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
+                      isEvaListening || isWakeWordActive ? "text-purple-400" : "text-muted-foreground"
                     }`}>
-                      {isWakeWordActive ? '"Hey EVA" Listening...' : 'Say "Hey EVA"'}
+                      {isEvaListening ? 'Listening... speak now' : isWakeWordActive ? 'Processing...' : 'Say "Hey EVA"'}
                     </span>
                  </div>
                </>

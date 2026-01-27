@@ -45,7 +45,7 @@ export async function getVoices(): Promise<Voice[]> {
 
 export async function textToSpeech(
   text: string,
-  voiceId: string = 'Rachel',
+  voiceId: string = '21m00Tcm4TlvDq8ikWAM',
   settings: Partial<VoiceSettings> = {}
 ): Promise<Buffer> {
   if (!ELEVENLABS_API_KEY) {
@@ -81,7 +81,7 @@ export async function textToSpeech(
 
 export async function textToSpeechStream(
   text: string,
-  voiceId: string = 'Rachel',
+  voiceId: string = '21m00Tcm4TlvDq8ikWAM',
   settings: Partial<VoiceSettings> = {}
 ): Promise<ReadableStream<Uint8Array>> {
   if (!ELEVENLABS_API_KEY) {
@@ -114,6 +114,8 @@ export async function textToSpeechStream(
   return response.body as ReadableStream<Uint8Array>;
 }
 
+const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+
 export async function getDefaultVoiceId(): Promise<string> {
   try {
     const voices = await getVoices();
@@ -123,9 +125,9 @@ export async function getDefaultVoiceId(): Promise<string> {
     const premade = voices.find(v => v.category === 'premade');
     if (premade) return premade.voice_id;
     
-    return voices[0]?.voice_id || 'Rachel';
+    return voices[0]?.voice_id || DEFAULT_VOICE_ID;
   } catch (error) {
     console.error('Error getting default voice:', error);
-    return 'Rachel';
+    return DEFAULT_VOICE_ID;
   }
 }
