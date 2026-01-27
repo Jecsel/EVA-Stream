@@ -364,7 +364,7 @@ export default function MeetingRoom() {
   const displayMessages = messages.length === 0 ? [{
     id: "welcome",
     role: "ai" as const,
-    content: "Hello! I'm EVA, your unified AI assistant. I can observe your screen, take meeting notes, and help document processes in real-time. Use the tabs above to switch between Chat, Notes, and Observation modes.",
+    content: "Hello! I'm EVA, your AI assistant. I can observe your screen, take meeting notes, and help document processes in real-time. Use the tabs above to switch between Chat, Notes, and Observation modes.",
     timestamp: new Date(),
   }] : messages;
 
