@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -588,6 +588,10 @@ export default function RecordingDetail() {
               <MessageSquare className="w-4 h-4" />
               Transcript
             </TabsTrigger>
+            <TabsTrigger value="notes" className="flex items-center gap-2" data-testid="tab-notes">
+              <ClipboardList className="w-4 h-4" />
+              Meeting Notes
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="sop" className="mt-0">
@@ -935,6 +939,99 @@ export default function RecordingDetail() {
                       )}
                     </div>
                   )}
+                </div>
+              </ScrollArea>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="notes" className="mt-0">
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+                <h2 className="text-sm font-medium flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-blue-400" />
+                  Meeting Notes
+                  {(() => {
+                    const noteTakerMessages = chatMessages.filter(m => m.context === "NoteTaker");
+                    return noteTakerMessages.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        ({noteTakerMessages.length} update{noteTakerMessages.length !== 1 ? "s" : ""})
+                      </span>
+                    );
+                  })()}
+                </h2>
+              </div>
+              <ScrollArea className="h-[calc(100vh-350px)]">
+                <div className="p-6" data-testid="content-notes">
+                  {(() => {
+                    const noteTakerMessages = chatMessages.filter(m => m.context === "NoteTaker");
+                    const latestNotes = noteTakerMessages[noteTakerMessages.length - 1];
+                    
+                    if (!latestNotes) {
+                      return (
+                        <div className="text-center py-8 space-y-2">
+                          <ClipboardList className="w-12 h-12 mx-auto text-muted-foreground/30" />
+                          <p className="text-muted-foreground italic">No meeting notes were captured during this session.</p>
+                          <p className="text-sm text-muted-foreground/70">
+                            Notes are automatically generated when the NoteTaker agent is enabled during a live meeting.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    const parseNotes = (content: string) => {
+                      const sections: { title: string; items: string[] }[] = [];
+                      let currentSection: { title: string; items: string[] } | null = null;
+                      const lines = content.split('\n');
+                      for (const line of lines) {
+                        if (line.startsWith('## ') || line.startsWith('### ')) {
+                          if (currentSection) sections.push(currentSection);
+                          currentSection = { title: line.replace(/^#+\s*/, ''), items: [] };
+                        } else if (line.startsWith('- ') && currentSection) {
+                          currentSection.items.push(line.substring(2));
+                        } else if (line.trim() && currentSection && !line.startsWith('#')) {
+                          currentSection.items.push(line.trim());
+                        }
+                      }
+                      if (currentSection) sections.push(currentSection);
+                      return sections;
+                    };
+
+                    const sections = parseNotes(latestNotes.content);
+
+                    return (
+                      <div className="space-y-6">
+                        {sections.length > 0 ? (
+                          sections.map((section, idx) => (
+                            <div key={idx} className="space-y-2">
+                              <h3 className="text-sm font-semibold text-blue-400">{section.title}</h3>
+                              <ul className="space-y-1">
+                                {section.items.map((item, itemIdx) => (
+                                  <li 
+                                    key={itemIdx}
+                                    className="text-sm text-foreground/90 flex items-start gap-2"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-2 flex-shrink-0" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="prose prose-invert prose-sm max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {latestNotes.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                        <div className="pt-4 border-t border-border/50">
+                          <p className="text-xs text-muted-foreground">
+                            Last updated: {format(new Date(latestNotes.createdAt), "MMM d, yyyy 'at' h:mm:ss a")}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </ScrollArea>
             </div>
