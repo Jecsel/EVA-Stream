@@ -950,21 +950,13 @@ export default function RecordingDetail() {
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-blue-400" />
                   Meeting Notes
-                  {(() => {
-                    const noteTakerMessages = chatMessages.filter(m => m.context === "NoteTaker");
-                    return noteTakerMessages.length > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        ({noteTakerMessages.length} update{noteTakerMessages.length !== 1 ? "s" : ""})
-                      </span>
-                    );
-                  })()}
                 </h2>
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-6" data-testid="content-notes">
                   {(() => {
-                    const noteTakerMessages = chatMessages.filter(m => m.context === "NoteTaker");
-                    const latestNotes = noteTakerMessages[noteTakerMessages.length - 1];
+                    const evaNotesMessages = chatMessages.filter(m => m.role === "ai" && m.content?.includes("##"));
+                    const latestNotes = evaNotesMessages[evaNotesMessages.length - 1];
                     
                     if (!latestNotes) {
                       return (
@@ -972,7 +964,7 @@ export default function RecordingDetail() {
                           <ClipboardList className="w-12 h-12 mx-auto text-muted-foreground/30" />
                           <p className="text-muted-foreground italic">No meeting notes were captured during this session.</p>
                           <p className="text-sm text-muted-foreground/70">
-                            Notes are automatically generated when the NoteTaker agent is enabled during a live meeting.
+                            Notes are captured automatically by EVA during live meetings.
                           </p>
                         </div>
                       );

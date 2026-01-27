@@ -120,14 +120,6 @@ export const api = {
     return response.json();
   },
 
-  async refreshNoteTaker(meetingId: string): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${API_BASE}/meetings/${meetingId}/notetaker/refresh`, {
-      method: "POST",
-    });
-    if (!response.ok) throw new Error("Failed to refresh notes");
-    return response.json();
-  },
-
   async getSopsByMeeting(meetingId: string): Promise<any[]> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/sops`);
     if (!response.ok) throw new Error("Failed to fetch SOPs");

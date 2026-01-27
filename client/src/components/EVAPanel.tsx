@@ -34,8 +34,6 @@ interface EVAPanelProps {
   evaStatus?: "connected" | "disconnected" | "connecting";
   onStartObservation?: () => void;
   onStopObservation?: () => void;
-  isNoteTakerProcessing?: boolean;
-  onRefreshNotes?: () => void;
   className?: string;
 }
 
@@ -72,8 +70,6 @@ export function EVAPanel({
   evaStatus = "disconnected",
   onStartObservation,
   onStopObservation,
-  isNoteTakerProcessing,
-  onRefreshNotes,
   className,
 }: EVAPanelProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "notes" | "observe">("chat");
@@ -173,8 +169,8 @@ export function EVAPanel({
     }
   };
 
-  const noteTakerMessages = chatMessages.filter(m => m.context === "NoteTaker");
-  const latestNotes = noteTakerMessages[noteTakerMessages.length - 1];
+  const evaNotesMessages = chatMessages.filter(m => m.role === "ai" && m.content?.includes("##"));
+  const latestNotes = evaNotesMessages[evaNotesMessages.length - 1];
 
   const parseNotes = (content: string) => {
     const sections: { title: string; items: string[] }[] = [];
@@ -524,28 +520,11 @@ export function EVAPanel({
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-400" />
               <span className="font-medium text-sm">Meeting Notes</span>
-              {isNoteTakerProcessing && (
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  <span className="text-xs text-muted-foreground">Updating</span>
-                </span>
-              )}
             </div>
-            {onRefreshNotes && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onRefreshNotes}
-                disabled={isNoteTakerProcessing}
-                data-testid="button-refresh-notes"
-              >
-                <RefreshCw className={cn("w-4 h-4", isNoteTakerProcessing && "animate-spin")} />
-              </Button>
-            )}
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4" data-testid="content-notetaker">
+            <div className="p-4 space-y-4" data-testid="content-notes">
               {!latestNotes ? (
                 <div className="text-center py-8">
                   <FileText className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
@@ -553,7 +532,7 @@ export function EVAPanel({
                     Notes will appear as the meeting progresses
                   </p>
                   <p className="text-xs text-muted-foreground/70 mt-1">
-                    EVA analyzes transcriptions to extract key points and action items
+                    EVA listens and captures key points automatically
                   </p>
                 </div>
               ) : (
@@ -583,14 +562,6 @@ export function EVAPanel({
               )}
             </div>
           </ScrollArea>
-
-          {noteTakerMessages.length > 1 && (
-            <div className="p-2 border-t border-border bg-muted/20">
-              <p className="text-xs text-muted-foreground text-center">
-                {noteTakerMessages.length} note update{noteTakerMessages.length !== 1 ? "s" : ""} captured
-              </p>
-            </div>
-          )}
         </TabsContent>
 
         <TabsContent value="observe" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">

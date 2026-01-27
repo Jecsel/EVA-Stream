@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema, insertMeetingNoteSchema, insertMeetingFileSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateMeetingNotes, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import { textToSpeech, textToSpeechStream, getVoices, getDefaultVoiceId } from "./elevenlabs";
 import jwt from "jsonwebtoken";
@@ -322,14 +322,6 @@ export async function registerRoutes(
         meetingId,
       });
       const segment = await storage.createTranscriptSegment(validated);
-      
-      // Check if NoteTaker agent is enabled for this meeting (only for final segments)
-      if (validated.isFinal && validated.text && validated.text.trim().length > 0) {
-        processNoteTakerAsync(meetingId).catch(err => 
-          console.error("NoteTaker processing error:", err)
-        );
-      }
-      
       res.json(segment);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -339,95 +331,6 @@ export async function registerRoutes(
       }
     }
   });
-  
-  // NoteTaker debounce - only process every 15 seconds per meeting
-  const noteTakerDebounce = new Map<string, NodeJS.Timeout>();
-  const noteTakerLastProcess = new Map<string, number>();
-  const NOTETAKER_DEBOUNCE_MS = 15000; // 15 seconds
-  
-  // NoteTaker processing function (runs asynchronously with debounce)
-  async function processNoteTakerAsync(meetingId: string) {
-    // Clear any existing debounce timer for this meeting
-    const existingTimer = noteTakerDebounce.get(meetingId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-    
-    // Check if we processed recently - if so, schedule for later
-    const lastProcess = noteTakerLastProcess.get(meetingId) || 0;
-    const timeSinceLastProcess = Date.now() - lastProcess;
-    
-    if (timeSinceLastProcess < NOTETAKER_DEBOUNCE_MS) {
-      // Schedule to run after remaining debounce time
-      const timer = setTimeout(() => {
-        noteTakerDebounce.delete(meetingId);
-        executeNoteTaker(meetingId).catch(err => 
-          console.error("NoteTaker execution error:", err)
-        );
-      }, NOTETAKER_DEBOUNCE_MS - timeSinceLastProcess);
-      noteTakerDebounce.set(meetingId, timer);
-      return;
-    }
-    
-    // Process immediately
-    await executeNoteTaker(meetingId);
-  }
-  
-  async function executeNoteTaker(meetingId: string) {
-    noteTakerLastProcess.set(meetingId, Date.now());
-    
-    const meeting = await storage.getMeeting(meetingId);
-    if (!meeting?.selectedAgents || meeting.selectedAgents.length === 0) {
-      return;
-    }
-    
-    // Check if NoteTaker (type: "assistant") is enabled
-    const agentsWithPrompts = await storage.listAgentsWithPrompts();
-    const noteTakerAgent = agentsWithPrompts.find(
-      a => a.type === "assistant" && meeting.selectedAgents?.includes(a.id)
-    );
-    
-    if (!noteTakerAgent) {
-      return;
-    }
-    
-    // Get recent transcripts (last 10 for context)
-    const transcripts = await storage.getTranscriptsByMeeting(meetingId);
-    const recentTranscripts = transcripts
-      .filter(t => t.isFinal && t.text.trim().length > 0)
-      .slice(-10)
-      .map(t => ({
-        speaker: t.speaker,
-        text: t.text,
-        timestamp: t.createdAt,
-      }));
-    
-    if (recentTranscripts.length === 0) {
-      return;
-    }
-    
-    // Get existing notes (last AI message with notes context)
-    const existingMessages = await storage.getChatMessagesByMeeting(meetingId);
-    const existingNotesMsg = existingMessages
-      .filter(m => m.role === "ai" && m.context === "NoteTaker")
-      .pop();
-    const existingNotes = existingNotesMsg?.content || "";
-    
-    // Generate notes using NoteTaker
-    const customPrompt = noteTakerAgent.prompt?.content;
-    const notes = await generateMeetingNotes(recentTranscripts, existingNotes, customPrompt);
-    
-    if (notes.content && notes.content !== existingNotes) {
-      // Save the notes as an AI message
-      await storage.createChatMessage({
-        meetingId,
-        role: "ai",
-        content: notes.content,
-        context: "NoteTaker",
-      });
-      console.log(`NoteTaker generated notes for meeting ${meetingId}`);
-    }
-  }
 
   app.get("/api/meetings/:meetingId/transcripts", async (req, res) => {
     try {
@@ -438,16 +341,6 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/meetings/:meetingId/notetaker/refresh", async (req, res) => {
-    try {
-      const meetingId = req.params.meetingId;
-      await executeNoteTaker(meetingId);
-      res.json({ success: true, message: "Notes refreshed" });
-    } catch (error) {
-      console.error("NoteTaker refresh error:", error);
-      res.status(500).json({ error: "Failed to refresh notes" });
-    }
-  });
 
   // AI Chat endpoint - EVA SOP Assistant
   app.post("/api/meetings/:meetingId/chat", async (req, res) => {
