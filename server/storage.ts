@@ -65,7 +65,7 @@ import {
   evaSettings
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { eq, desc, ilike, or, and, gte } from "drizzle-orm";
 
 export type AgentWithPrompt = Agent & { prompt?: Prompt | null };
 
@@ -359,10 +359,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async listUpcomingMeetings(): Promise<Meeting[]> {
+    const now = new Date();
     return db
       .select()
       .from(meetings)
-      .where(eq(meetings.status, "scheduled"))
+      .where(
+        and(
+          eq(meetings.status, "scheduled"),
+          gte(meetings.scheduledDate, now)
+        )
+      )
       .orderBy(meetings.scheduledDate);
   }
 
