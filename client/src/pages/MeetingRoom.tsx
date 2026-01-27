@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useEvaLive } from "@/hooks/useEvaLive";
 import { useAudioTranscript } from "@/hooks/useAudioTranscript";
+import { useJitsiTranscription } from "@/hooks/useJitsiTranscription";
 import type { ChatMessage } from "@shared/schema";
 
 interface Message {
@@ -247,6 +248,48 @@ export default function MeetingRoom() {
     onSopUpdate: handleSopUpdate,
     onStatusChange: setEvaStatus,
   });
+
+  const handleWakeWord = useCallback((command: string) => {
+    if (evaConnected && command.trim()) {
+      console.log("Hey EVA detected! Command:", command);
+      sendTextMessage(command);
+    }
+  }, [evaConnected, sendTextMessage]);
+
+  const handleJitsiTranscript = useCallback((transcript: { text: string; speaker: string; isFinal: boolean }) => {
+    if (transcript.isFinal) {
+      setTranscripts(prev => [...prev, {
+        id: `jitsi-${Date.now()}`,
+        text: transcript.text,
+        speaker: transcript.speaker || "Participant",
+        timestamp: new Date(),
+        isFinal: true,
+      }]);
+
+      if (meeting?.id) {
+        api.createTranscriptSegment(meeting.id, {
+          text: transcript.text,
+          speaker: transcript.speaker || "Participant",
+          isFinal: true,
+        }).catch(err => {
+          console.error("Failed to save Jitsi transcript:", err);
+        });
+      }
+    }
+  }, [meeting?.id]);
+
+  const {
+    isActive: isWakeWordActive,
+    handleTranscription: handleJitsiTranscriptionEvent,
+  } = useJitsiTranscription({
+    onWakeWord: handleWakeWord,
+    onTranscript: handleJitsiTranscript,
+    wakeWord: "hey eva",
+  });
+
+  const onJitsiTranscriptionReceived = useCallback((text: string, participant: string, isFinal: boolean) => {
+    handleJitsiTranscriptionEvent(text, participant, isFinal);
+  }, [handleJitsiTranscriptionEvent]);
 
   const handleTranscript = useCallback((message: { type: string; content: string; isFinal?: boolean; speaker?: string }) => {
     if (message.type === "transcript" && message.content) {
@@ -567,6 +610,7 @@ export default function MeetingRoom() {
                roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
+               onTranscriptionReceived={onJitsiTranscriptionReceived}
                className="bg-zinc-900"
                jwt={jaasToken?.token}
                appId={jaasToken?.appId}
