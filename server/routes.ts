@@ -2294,6 +2294,24 @@ Format the response as JSON with these fields:
     }
   });
 
+  // ElevenLabs Conversational AI - get signed URL for WebSocket connection
+  app.get("/api/elevenlabs/signed-url", async (req, res) => {
+    try {
+      const agentId = process.env.ELEVENLABS_AGENT_ID;
+      if (!agentId) {
+        res.status(400).json({ error: "ElevenLabs Agent ID not configured" });
+        return;
+      }
+
+      const { getConversationalAgentSignedUrl } = await import('./elevenlabs');
+      const signedUrl = await getConversationalAgentSignedUrl(agentId);
+      res.json({ signedUrl });
+    } catch (error: any) {
+      console.error("Failed to get signed URL:", error);
+      res.status(500).json({ error: error.message || "Failed to get signed URL" });
+    }
+  });
+
   // Speech-to-Text endpoint using ElevenLabs (with increased body limit for audio)
   app.post("/api/eva/stt", express.json({ limit: '10mb' }), async (req, res) => {
     try {

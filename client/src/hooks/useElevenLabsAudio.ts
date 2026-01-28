@@ -18,8 +18,21 @@ const DEFAULT_WAKE_WORD_VARIANTS = [
   "ava",
 ];
 
-const SILENCE_THRESHOLD_MS = 2500;
+const SILENCE_THRESHOLD_MS = 4000; // Increased to give user more time to formulate their question
 const RECORDING_INTERVAL_MS = 2000;
+
+// Audio events that should not reset the silence timer or be added to command buffer
+const NOISE_TRANSCRIPTS = [
+  '[typing]', '[clicking]', '[mouse clicking]', '[keyboard clicking]', '[keyboard clacking]',
+  '[silence]', '[pause]', '[background noise]', '[noise]', '[music]', '[música]',
+  '[sound effect]', '[beep]', '[phone notification]', '[door closing]', '[sound of chair]',
+  '[sound of object being moved]', '[clears throat]', '[cough]', '[coughing]'
+];
+
+const isNoiseTranscript = (text: string): boolean => {
+  const lowerText = text.toLowerCase().trim();
+  return NOISE_TRANSCRIPTS.some(noise => lowerText === noise.toLowerCase());
+};
 
 export function useElevenLabsAudio({
   wakeWord = "hey eva",
@@ -117,7 +130,8 @@ export function useElevenLabsAudio({
             const commandPart = text.slice(wakeWordMatch.index + wakeWordMatch.length).trim();
             isActiveRef.current = true;
             setIsActive(true);
-            commandBufferRef.current = commandPart ? [commandPart] : [];
+            // Don't add noise as initial command
+            commandBufferRef.current = (commandPart && !isNoiseTranscript(commandPart)) ? [commandPart] : [];
             lastTranscriptTimeRef.current = Date.now();
             
             silenceCheckIntervalRef.current = setInterval(() => {
@@ -127,8 +141,12 @@ export function useElevenLabsAudio({
               }
             }, 500);
           } else if (isActiveRef.current && text) {
-            lastTranscriptTimeRef.current = Date.now();
-            commandBufferRef.current.push(text);
+            // Only add real speech to command buffer and reset silence timer
+            if (!isNoiseTranscript(text)) {
+              lastTranscriptTimeRef.current = Date.now();
+              commandBufferRef.current.push(text);
+            }
+            // Note: noise transcripts don't reset the silence timer, allowing natural timeout
           }
         }
       }

@@ -1,0 +1,304 @@
+import { useState, useRef, useCallback, useEffect } from "react";
+
+interface UseElevenLabsAgentOptions {
+  onUserTranscript?: (text: string) => void;
+  onAgentResponse?: (text: string) => void;
+  onError?: (error: string) => void;
+  enabled?: boolean;
+}
+
+interface AgentMessage {
+  type: string;
+  transcript?: string;
+  response?: string;
+  audio?: string;
+  conversation_id?: string;
+  agent_id?: string;
+  agent_output_audio_format?: string;
+}
+
+export function useElevenLabsAgent({
+  onUserTranscript,
+  onAgentResponse,
+  onError,
+  enabled = true,
+}: UseElevenLabsAgentOptions = {}) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const isPlayingRef = useRef(false);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+
+  const getSignedUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/elevenlabs/signed-url');
+      if (!response.ok) {
+        throw new Error('Failed to get signed URL');
+      }
+      const data = await response.json();
+      return data.signedUrl;
+    } catch (error) {
+      console.error('[ElevenLabs Agent] Error getting signed URL:', error);
+      onError?.('Failed to connect to voice agent');
+      return null;
+    }
+  }, [onError]);
+
+  const playAudioQueue = useCallback(async () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
+    
+    isPlayingRef.current = true;
+    setIsSpeaking(true);
+
+    while (audioQueueRef.current.length > 0) {
+      const audioData = audioQueueRef.current.shift();
+      if (!audioData || !audioContextRef.current) break;
+
+      try {
+        const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.slice(0));
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        sourceNodeRef.current = source;
+        
+        await new Promise<void>((resolve) => {
+          source.onended = () => resolve();
+          source.start();
+        });
+      } catch (error) {
+        console.error('[ElevenLabs Agent] Audio playback error:', error);
+      }
+    }
+
+    isPlayingRef.current = false;
+    setIsSpeaking(false);
+  }, []);
+
+  const stopAudio = useCallback(() => {
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.stop();
+      } catch (e) {
+        // Already stopped
+      }
+      sourceNodeRef.current = null;
+    }
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    setIsSpeaking(false);
+  }, []);
+
+  const connect = useCallback(async () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const signedUrl = await getSignedUrl();
+    if (!signedUrl) return;
+
+    console.log('[ElevenLabs Agent] Connecting...');
+    
+    const ws = new WebSocket(signedUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('[ElevenLabs Agent] Connected');
+      setIsConnected(true);
+      
+      // Initialize audio context for playback
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message: AgentMessage = JSON.parse(event.data);
+        
+        switch (message.type) {
+          case 'conversation_initiation_metadata':
+            console.log('[ElevenLabs Agent] Conversation initialized:', message.conversation_id);
+            setConversationId(message.conversation_id || null);
+            break;
+
+          case 'user_transcript':
+            console.log('[ElevenLabs Agent] User said:', message.transcript);
+            if (message.transcript) {
+              onUserTranscript?.(message.transcript);
+            }
+            break;
+
+          case 'agent_response':
+            console.log('[ElevenLabs Agent] Agent response:', message.response);
+            if (message.response) {
+              onAgentResponse?.(message.response);
+            }
+            break;
+
+          case 'audio':
+            if (message.audio) {
+              // Decode base64 audio and queue for playback
+              const binaryString = atob(message.audio);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              audioQueueRef.current.push(bytes.buffer);
+              playAudioQueue();
+            }
+            break;
+
+          case 'interruption':
+            console.log('[ElevenLabs Agent] User interrupted');
+            stopAudio();
+            break;
+
+          case 'ping':
+            // Respond to keep-alive pings
+            ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+        }
+      } catch (error) {
+        console.error('[ElevenLabs Agent] Message parse error:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[ElevenLabs Agent] WebSocket error:', error);
+      onError?.('Voice agent connection error');
+    };
+
+    ws.onclose = () => {
+      console.log('[ElevenLabs Agent] Disconnected');
+      setIsConnected(false);
+      setConversationId(null);
+    };
+  }, [getSignedUrl, onUserTranscript, onAgentResponse, onError, playAudioQueue, stopAudio]);
+
+  const disconnect = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    stopAudio();
+    setIsConnected(false);
+    setConversationId(null);
+  }, [stopAudio]);
+
+  const startListening = useCallback(async () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      await connect();
+    }
+
+    if (isListening) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
+
+      mediaStreamRef.current = stream;
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      }
+
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+      
+      processor.onaudioprocess = (e) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        
+        const inputData = e.inputBuffer.getChannelData(0);
+        
+        // Convert float32 to int16 PCM
+        const pcmData = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        
+        // Convert to base64
+        const bytes = new Uint8Array(pcmData.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64Audio = btoa(binary);
+        
+        // Send to ElevenLabs
+        wsRef.current.send(JSON.stringify({
+          type: 'user_audio_chunk',
+          audio: base64Audio,
+        }));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContextRef.current.destination);
+      processorRef.current = processor;
+
+      setIsListening(true);
+      console.log('[ElevenLabs Agent] Started listening');
+    } catch (error) {
+      console.error('[ElevenLabs Agent] Microphone error:', error);
+      onError?.('Failed to access microphone');
+    }
+  }, [connect, isListening, onError]);
+
+  const stopListening = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    setIsListening(false);
+    console.log('[ElevenLabs Agent] Stopped listening');
+  }, []);
+
+  const sendTextMessage = useCallback((text: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('[ElevenLabs Agent] Not connected');
+      return;
+    }
+
+    wsRef.current.send(JSON.stringify({
+      type: 'user_message',
+      message: text,
+    }));
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnect();
+      stopListening();
+    };
+  }, [disconnect, stopListening]);
+
+  return {
+    isConnected,
+    isListening,
+    isSpeaking,
+    conversationId,
+    connect,
+    disconnect,
+    startListening,
+    stopListening,
+    stopAudio,
+    sendTextMessage,
+  };
+}

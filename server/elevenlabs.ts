@@ -175,3 +175,31 @@ export async function speechToText(
 
   return response.json();
 }
+
+export async function getConversationalAgentSignedUrl(agentId: string): Promise<string> {
+  if (!ELEVENLABS_API_KEY) {
+    throw new Error('ELEVENLABS_API_KEY is not configured');
+  }
+
+  if (!agentId) {
+    throw new Error('Agent ID is required');
+  }
+
+  const response = await fetch(
+    `${ELEVENLABS_API_URL}/convai/conversation/get_signed_url?agent_id=${agentId}`,
+    {
+      method: 'GET',
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to get signed URL: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.signed_url;
+}
