@@ -58,11 +58,27 @@ export function useElevenLabsAgent({
     setIsSpeaking(true);
 
     while (audioQueueRef.current.length > 0) {
-      const audioData = audioQueueRef.current.shift();
-      if (!audioData || !audioContextRef.current) break;
+      const pcmData = audioQueueRef.current.shift();
+      if (!pcmData || !audioContextRef.current) break;
 
       try {
-        const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.slice(0));
+        // Convert PCM 16-bit little-endian to Float32 for Web Audio API
+        const int16Array = new Int16Array(pcmData);
+        const float32Array = new Float32Array(int16Array.length);
+        
+        for (let i = 0; i < int16Array.length; i++) {
+          // Convert int16 (-32768 to 32767) to float (-1.0 to 1.0)
+          float32Array[i] = int16Array[i] / 32768;
+        }
+        
+        // Create AudioBuffer from Float32 PCM data
+        const audioBuffer = audioContextRef.current.createBuffer(
+          1, // mono
+          float32Array.length,
+          16000 // sample rate from ElevenLabs
+        );
+        audioBuffer.getChannelData(0).set(float32Array);
+        
         const source = audioContextRef.current.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioContextRef.current.destination);
@@ -120,26 +136,21 @@ export function useElevenLabsAgent({
       try {
         const message = JSON.parse(event.data);
         
-        // Debug: log all raw messages to understand the API format
-        console.log('[ElevenLabs Agent] Raw message:', JSON.stringify(message));
-        
         // Handle different message types from ElevenLabs Conversational AI
+        // API uses nested event objects like: {type: "agent_response", agent_response_event: {...}}
         const msgType = message.type;
         
         switch (msgType) {
           case 'conversation_initiation_metadata':
-            // May have conversation_id at root or in a nested object
-            const convId = message.conversation_id || message.conversation?.id;
+            // Extract conversation_id from nested event object
+            const convId = message.conversation_initiation_metadata_event?.conversation_id;
             console.log('[ElevenLabs Agent] Conversation initialized:', convId);
             setConversationId(convId || null);
             break;
 
           case 'user_transcript':
-            // Transcript might be in different fields
-            const userText = message.user_transcription_event?.user_transcript 
-              || message.user_transcript 
-              || message.transcript 
-              || message.text;
+            // Extract user transcript from nested event object
+            const userText = message.user_transcription_event?.user_transcript;
             console.log('[ElevenLabs Agent] User said:', userText);
             if (userText) {
               onUserTranscript?.(userText);
@@ -147,11 +158,8 @@ export function useElevenLabsAgent({
             break;
 
           case 'agent_response':
-            // Response might be in different fields
-            const agentText = message.agent_response_event?.agent_response 
-              || message.agent_response 
-              || message.response 
-              || message.text;
+            // Extract agent response from nested event object
+            const agentText = message.agent_response_event?.agent_response;
             console.log('[ElevenLabs Agent] Agent response:', agentText);
             if (agentText) {
               onAgentResponse?.(agentText);
@@ -159,12 +167,10 @@ export function useElevenLabsAgent({
             break;
 
           case 'audio':
-            // Audio chunk for playback
-            const audioData = message.audio_event?.audio 
-              || message.audio 
-              || message.audio_chunk;
+            // Extract audio from nested event object - uses audio_base_64
+            const audioData = message.audio_event?.audio_base_64;
             if (audioData) {
-              // Decode base64 audio and queue for playback
+              // Decode base64 PCM audio and queue for playback
               const binaryString = atob(audioData);
               const bytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
@@ -181,8 +187,13 @@ export function useElevenLabsAgent({
             break;
 
           case 'ping':
-            // Respond to keep-alive pings
-            ws.send(JSON.stringify({ type: 'pong' }));
+            // Respond to keep-alive pings with matching event_id
+            const eventId = message.ping_event?.event_id;
+            console.log('[ElevenLabs Agent] Received ping, responding with pong');
+            ws.send(JSON.stringify({ 
+              type: 'pong', 
+              event_id: eventId 
+            }));
             break;
 
           case 'error':
@@ -192,7 +203,7 @@ export function useElevenLabsAgent({
 
           default:
             // Log unhandled message types for debugging
-            console.log('[ElevenLabs Agent] Unhandled message type:', msgType);
+            console.log('[ElevenLabs Agent] Unhandled message type:', msgType, message);
         }
       } catch (error) {
         console.error('[ElevenLabs Agent] Message parse error:', error);
