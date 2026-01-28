@@ -668,53 +668,56 @@ export function EVAMeetingAssistant({
     <div className={cn("flex flex-col h-full bg-background border-l", className)}>
       {/* Header */}
       <div className="p-3 border-b bg-gradient-to-r from-purple-600/10 to-blue-600/10">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
               <Bot className="w-4 h-4 text-white" />
             </div>
-            <div>
+            <div className="flex flex-col gap-1">
               <h3 className="font-semibold text-sm">EVA Meeting Assistant</h3>
               <p className="text-xs text-muted-foreground">Hey EVA - ask me anything</p>
+              {/* Voice status badges on third line */}
+              <div className="flex items-center gap-1 flex-wrap">
+                {/* Wake word status - ElevenLabs STT */}
+                {!useConversationalAgent && isListening && (
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      "text-xs px-2 transition-colors",
+                      wakeWordTriggered 
+                        ? "bg-green-500/20 text-green-500 border-green-500" 
+                        : isProcessing
+                        ? "bg-amber-500/10 text-amber-500"
+                        : "bg-purple-500/10 text-purple-500"
+                    )}
+                  >
+                    <Radio className={cn("w-3 h-3 mr-1", (wakeWordTriggered || isProcessing) && "animate-pulse")} />
+                    {wakeWordTriggered ? "Listening..." : isProcessing ? "Processing..." : "Say 'Hey EVA'"}
+                  </Badge>
+                )}
+                {/* Conversational Agent Status Badge */}
+                {useConversationalAgent && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs font-normal",
+                      isAgentListening
+                        ? isAgentSpeaking
+                          ? "bg-purple-500/10 text-purple-500"
+                          : "bg-green-500/10 text-green-500"
+                        : isAgentConnected
+                        ? "bg-amber-500/10 text-amber-500"
+                        : "bg-gray-500/10 text-gray-500"
+                    )}
+                  >
+                    <Phone className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
+                    {isAgentSpeaking ? "EVA Speaking..." : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Wake word status - ElevenLabs STT */}
-            {isListening && (
-              <Badge 
-                variant="outline" 
-                className={cn(
-                  "text-xs px-2 transition-colors",
-                  wakeWordTriggered 
-                    ? "bg-green-500/20 text-green-500 border-green-500" 
-                    : isProcessing
-                    ? "bg-amber-500/10 text-amber-500"
-                    : "bg-purple-500/10 text-purple-500"
-                )}
-              >
-                <Radio className={cn("w-3 h-3 mr-1", (wakeWordTriggered || isProcessing) && "animate-pulse")} />
-                {wakeWordTriggered ? "Listening..." : isProcessing ? "Processing..." : "Say 'Hey EVA'"}
-              </Badge>
-            )}
-            {/* Conversational Agent Status Badge */}
-            {useConversationalAgent && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-xs font-normal",
-                  isAgentListening
-                    ? isAgentSpeaking
-                      ? "bg-purple-500/10 text-purple-500"
-                      : "bg-green-500/10 text-green-500"
-                    : isAgentConnected
-                    ? "bg-amber-500/10 text-amber-500"
-                    : "bg-gray-500/10 text-gray-500"
-                )}
-              >
-                <Phone className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
-                {isAgentSpeaking ? "EVA Speaking..." : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
-              </Badge>
-            )}
             {/* Voice Agent Toggle - Call EVA */}
             <Button
               variant="ghost"
