@@ -61,8 +61,12 @@ export function EVAMeetingAssistant({
   const [newNoteContent, setNewNoteContent] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pushToTalkMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const pushToTalkChunksRef = useRef<Blob[]>([]);
+  const pushToTalkStartingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
@@ -332,6 +336,107 @@ export function EVAMeetingAssistant({
     }
     setIsPlaying(false);
   };
+
+  // Push-to-talk: Start recording when button is pressed
+  const startPushToTalk = useCallback(async () => {
+    // Guard against re-entry (prevent multiple concurrent recordings)
+    if (isPushToTalkActive || pushToTalkStartingRef.current || 
+        (pushToTalkMediaRecorderRef.current && pushToTalkMediaRecorderRef.current.state === 'recording')) {
+      return;
+    }
+    
+    pushToTalkStartingRef.current = true;
+    
+    try {
+      // Stop wake word listening temporarily to avoid conflicts
+      if (wakeWordEnabled && isListening) {
+        stopListening();
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      
+      pushToTalkChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          pushToTalkChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Create audio blob and send for transcription
+        const audioBlob = new Blob(pushToTalkChunksRef.current, { type: 'audio/webm' });
+        
+        if (audioBlob.size > 0) {
+          // Convert to base64 and send for transcription
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = (reader.result as string).split(',')[1];
+            
+            try {
+              const response = await fetch('/api/eva/stt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio: base64Audio, mimeType: 'audio/webm' }),
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.text && data.text.trim()) {
+                  // Send the transcribed text to EVA
+                  const userMessage: Message = {
+                    id: Date.now().toString(),
+                    role: "user",
+                    content: data.text,
+                    timestamp: new Date(),
+                  };
+                  setMessages(prev => [...prev, userMessage]);
+                  setIsTyping(true);
+                  askEvaMutationRef.current?.(data.text);
+                }
+              }
+            } catch (error) {
+              console.error("Transcription failed:", error);
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        }
+        
+        // Resume wake word listening if it was enabled
+        if (wakeWordEnabled) {
+          startListening();
+        }
+      };
+      
+      pushToTalkMediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setIsPushToTalkActive(true);
+      pushToTalkStartingRef.current = false;
+    } catch (error) {
+      console.error("Failed to start push-to-talk:", error);
+      pushToTalkStartingRef.current = false;
+      // Resume wake word listening if it was enabled
+      if (wakeWordEnabled) {
+        startListening();
+      }
+    }
+  }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening]);
+
+  // Push-to-talk: Stop recording when button is released
+  const stopPushToTalk = useCallback(() => {
+    // Clear starting ref to prevent race conditions
+    pushToTalkStartingRef.current = false;
+    
+    if (pushToTalkMediaRecorderRef.current && pushToTalkMediaRecorderRef.current.state === 'recording') {
+      pushToTalkMediaRecorderRef.current.stop();
+      pushToTalkMediaRecorderRef.current = null;
+    }
+    setIsPushToTalkActive(false);
+  }, []);
 
   // Handle sending message to EVA
   const handleSend = () => {
@@ -624,25 +729,52 @@ export function EVAMeetingAssistant({
             </div>
           </ScrollArea>
 
-          {/* Input - text only, no microphone button */}
+          {/* Input with push-to-talk button */}
           <div className="p-3 border-t">
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {/* Push-to-talk button */}
+              <Button
+                variant={isPushToTalkActive ? "default" : "outline"}
+                size="icon"
+                className={cn(
+                  "flex-shrink-0 transition-all duration-200 touch-none",
+                  isPushToTalkActive && "bg-red-500 hover:bg-red-600 animate-pulse"
+                )}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  startPushToTalk();
+                }}
+                onPointerUp={stopPushToTalk}
+                onPointerLeave={stopPushToTalk}
+                onPointerCancel={stopPushToTalk}
+                disabled={isTyping}
+                data-testid="button-push-to-talk"
+                title="Hold to speak to EVA"
+              >
+                <Mic className={cn("w-4 h-4", isPushToTalkActive && "text-white")} />
+              </Button>
               <Input
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask EVA..."
+                placeholder={isPushToTalkActive ? "Listening..." : "Ask EVA..."}
                 className="flex-1"
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                disabled={isPushToTalkActive}
                 data-testid="input-ask-eva"
               />
               <Button 
                 onClick={handleSend} 
-                disabled={!inputValue.trim() || isTyping}
+                disabled={!inputValue.trim() || isTyping || isPushToTalkActive}
                 data-testid="button-send-eva"
               >
                 <Send className="w-4 h-4" />
               </Button>
             </div>
+            {isPushToTalkActive && (
+              <p className="text-xs text-center text-muted-foreground mt-2 animate-pulse">
+                Hold the mic button and speak...
+              </p>
+            )}
           </div>
         </TabsContent>
 
