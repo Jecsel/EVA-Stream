@@ -1820,11 +1820,43 @@ export async function registerRoutes(
         answer: c.answer || undefined,
       }));
 
-      // Generate the decision-based SOP
+      // Fetch conversation context from Meeting Assistant (chat messages and notes)
+      let conversationContext: { role: string; content: string; speaker?: string }[] = [];
+      
+      if (session.meetingId) {
+        // Get chat messages from Meeting Assistant
+        const chatMessages = await storage.getChatMessagesByMeeting(session.meetingId);
+        
+        // Get meeting notes
+        const notes = await storage.getMeetingNotes(session.meetingId);
+        
+        // Combine chat messages (conversations) 
+        const chatContext = chatMessages.map((msg: { role: string; content: string }) => ({
+          role: msg.role,
+          content: msg.content,
+          speaker: msg.role === 'user' ? 'User' : 'EVA Assistant',
+        }));
+        
+        // Add notes as context (these contain key points discussed)
+        const notesContext = notes.map((note: { content: string }) => ({
+          role: 'note',
+          content: note.content,
+          speaker: 'Meeting Notes',
+        }));
+        
+        conversationContext = [...chatContext, ...notesContext];
+        
+        if (conversationContext.length > 0) {
+          console.log(`Including ${chatContext.length} chat messages and ${notesContext.length} notes as conversation context for SOP generation`);
+        }
+      }
+
+      // Generate the decision-based SOP with conversation context
       const sopData = await generateDecisionBasedSOP(
         obsData,
         clarData,
-        session.title || "Untitled SOP"
+        session.title || "Untitled SOP",
+        conversationContext
       );
 
       // Create the SOP in the database

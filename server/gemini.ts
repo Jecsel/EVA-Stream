@@ -335,7 +335,8 @@ export interface DecisionBasedSOP {
 export async function generateDecisionBasedSOP(
   observations: { type: string; content: string; app?: string; action?: string }[],
   clarifications: { question: string; answer?: string }[],
-  title: string
+  title: string,
+  conversationContext?: { role: string; content: string; speaker?: string }[]
 ): Promise<DecisionBasedSOP> {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -355,16 +356,34 @@ export async function generateDecisionBasedSOP(
       .filter(c => !c.answer)
       .map(c => c.question);
 
-    const prompt = `Generate a structured, decision-based SOP from these observations and clarifications.
+    // Format conversation context from Meeting Assistant
+    const conversationText = conversationContext && conversationContext.length > 0
+      ? conversationContext.map(c => {
+          const speaker = c.speaker || (c.role === 'user' ? 'User' : 'AI');
+          return `${speaker}: ${c.content}`;
+        }).join("\n")
+      : '';
+
+    const prompt = `Generate a structured, decision-based SOP by combining SCREEN OBSERVATIONS (what was done visually) with MEETING CONVERSATION (why it was done and explanations).
 
 SOP Title: ${title}
 
-Observations:
-${observationsText}
+=== SCREEN OBSERVATIONS (Visual Actions) ===
+${observationsText || 'No screen observations captured'}
 
-${clarificationsText ? `Clarifications:\n${clarificationsText}` : ''}
+${conversationText ? `=== MEETING CONVERSATION (Context & Explanations) ===
+${conversationText}` : ''}
+
+${clarificationsText ? `=== CLARIFICATIONS ===
+${clarificationsText}` : ''}
 
 ${unansweredQuestions.length > 0 ? `Unanswered questions (note as assumptions):\n${unansweredQuestions.join("\n")}` : ''}
+
+IMPORTANT: 
+- Combine insights from BOTH screen observations AND conversation context
+- Use screen observations for the "HOW" (specific steps, clicks, actions)
+- Use conversation context for the "WHY" (reasoning, decisions, purpose)
+- Include verbal explanations and reasoning from the conversation in step details
 
 Generate a structured SOP in JSON format:
 {
