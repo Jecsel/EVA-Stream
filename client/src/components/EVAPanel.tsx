@@ -1,20 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Monitor, Brain, MessageSquare, FileText, Eye, Play, Pause, Check, ChevronRight, Loader2, RefreshCw, AlertCircle, HelpCircle, FileCheck, Paperclip, X, File } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Brain, Eye, Play, Pause, Loader2, Edit3, Save, X, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { motion } from "framer-motion";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import type { ChatMessage, ObservationSession, Sop } from "@shared/schema";
-import { SOPViewer } from "./SOPViewer";
+import type { ChatMessage } from "@shared/schema";
 
 interface Message {
   id: string;
@@ -35,30 +27,10 @@ interface EVAPanelProps {
   onStartObservation?: () => void;
   onStopObservation?: () => void;
   className?: string;
+  sopContent?: string;
+  onSopContentChange?: (content: string) => void;
+  isSopUpdating?: boolean;
 }
-
-type Phase = "observe" | "structure" | "instruct";
-
-const PHASE_CONFIG = {
-  observe: {
-    icon: Eye,
-    label: "Observing",
-    description: "Capturing actions, intent, and decisions",
-    color: "bg-blue-500",
-  },
-  structure: {
-    icon: FileText,
-    label: "Structuring",
-    description: "Building SOP sections and headings",
-    color: "bg-amber-500",
-  },
-  instruct: {
-    icon: FileCheck,
-    label: "Instructing",
-    description: "Generating step-by-step instructions",
-    color: "bg-green-500",
-  },
-};
 
 export function EVAPanel({
   meetingId,
@@ -71,272 +43,55 @@ export function EVAPanel({
   onStartObservation,
   onStopObservation,
   className,
+  sopContent = "",
+  onSopContentChange,
+  isSopUpdating = false,
 }: EVAPanelProps) {
-  const [activeTab, setActiveTab] = useState<"observe">("observe");
-  const [inputValue, setInputValue] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(sopContent);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
 
-  const [activeSession, setActiveSession] = useState<ObservationSession | null>(null);
-  const [pendingAnswer, setPendingAnswer] = useState<{ id: string; answer: string } | null>(null);
-  const [generatedSop, setGeneratedSop] = useState<Sop | null>(null);
-  const [isGeneratingSop, setIsGeneratingSop] = useState(false);
-  const [showSopViewer, setShowSopViewer] = useState(false);
-  const [sopError, setSopError] = useState<string | null>(null);
-
+  // Sync edited content when sopContent changes externally (live updates from EVA)
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    if (!isEditing) {
+      setEditedContent(sopContent);
     }
-  }, [messages]);
+  }, [sopContent, isEditing]);
 
-  const handleSend = async () => {
-    if (!inputValue.trim() && !attachedFile) return;
-    
-    let messageContent = inputValue;
-    
-    if (attachedFile) {
-      setIsProcessingFile(true);
-      try {
-        const fileContent = await readFileAsText(attachedFile);
-        const fileInfo = `[Attached Document: ${attachedFile.name}]\n\n${fileContent}`;
-        messageContent = inputValue ? `${inputValue}\n\n${fileInfo}` : `Please analyze this document:\n\n${fileInfo}`;
-      } catch (error) {
-        console.error('Failed to read file:', error);
-        messageContent = inputValue || "Please analyze the attached document.";
-      }
-      setIsProcessingFile(false);
-      setAttachedFile(null);
-    }
-    
-    onSendMessage(messageContent);
-    setInputValue("");
-    setIsTyping(true);
-    setTimeout(() => setIsTyping(false), 2000);
-  };
-
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const allowedTypes = ['text/plain', 'text/markdown', 'text/csv', 'application/json'];
-      const allowedExtensions = ['.txt', '.md', '.csv', '.json'];
-      const maxSize = 1 * 1024 * 1024; // 1MB for text files
-      
-      const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-      const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
-      
-      if (!isValidType) {
-        alert('Unsupported file type. Please use .txt, .md, .csv, or .json files.');
-        return;
-      }
-      
-      if (file.size > maxSize) {
-        alert('File is too large. Maximum size is 1MB for text files.');
-        return;
-      }
-      
-      setAttachedFile(file);
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const removeAttachment = () => {
-    setAttachedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const evaNotesMessages = chatMessages.filter(m => m.role === "ai" && m.content?.includes("##"));
-  const latestNotes = evaNotesMessages[evaNotesMessages.length - 1];
-
-  const parseNotes = (content: string) => {
-    const sections: { title: string; items: string[] }[] = [];
-    let currentSection: { title: string; items: string[] } | null = null;
-
-    const lines = content.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('## ') || line.startsWith('### ')) {
-        if (currentSection) {
-          sections.push(currentSection);
-        }
-        currentSection = { title: line.replace(/^#+\s*/, ''), items: [] };
-      } else if (line.startsWith('- ') && currentSection) {
-        currentSection.items.push(line.substring(2));
-      } else if (line.trim() && currentSection && !line.startsWith('#')) {
-        currentSection.items.push(line.trim());
-      }
-    }
-    if (currentSection) {
-      sections.push(currentSection);
-    }
-    return sections;
-  };
-
-  const { data: sessions = [] } = useQuery({
-    queryKey: ["observation-sessions", meetingId],
-    queryFn: () => api.listObservationSessions(meetingId),
-  });
-
-  const { data: observations = [] } = useQuery({
-    queryKey: ["observations", activeSession?.id],
-    queryFn: () => activeSession ? api.getObservations(activeSession.id) : Promise.resolve([]),
-    enabled: !!activeSession?.id,
-    refetchInterval: 3000,
-  });
-
-  const { data: clarifications = [] } = useQuery({
-    queryKey: ["clarifications", activeSession?.id],
-    queryFn: () => activeSession ? api.getClarifications(activeSession.id) : Promise.resolve([]),
-    enabled: !!activeSession?.id,
-    refetchInterval: 5000,
-  });
-
-  const pendingClarifications = clarifications.filter(c => c.status === "pending");
-
-  const createSessionMutation = useMutation({
-    mutationFn: (title: string) => api.createObservationSession({
-      meetingId,
-      title,
-      phase: "observe",
-      status: "active",
-    }),
-    onSuccess: (session) => {
-      setActiveSession(session);
-      queryClient.invalidateQueries({ queryKey: ["observation-sessions", meetingId] });
-    },
-  });
-
-  const updateSessionMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<ObservationSession> }) =>
-      api.updateObservationSession(id, data),
-    onSuccess: (session) => {
-      setActiveSession(session);
-      queryClient.invalidateQueries({ queryKey: ["observation-sessions", meetingId] });
-    },
-  });
-
-  const answerClarificationMutation = useMutation({
-    mutationFn: ({ id, answer }: { id: string; answer: string }) =>
-      api.answerClarification(id, answer),
-    onSuccess: () => {
-      setPendingAnswer(null);
-      queryClient.invalidateQueries({ queryKey: ["clarifications", activeSession?.id] });
-    },
-  });
-
-  const generateSopMutation = useMutation({
-    mutationFn: (sessionId: string) => api.generateSopFromSession(sessionId),
-    onSuccess: (sop) => {
-      setGeneratedSop(sop);
-      setIsGeneratingSop(false);
-      setShowSopViewer(true);
-      setSopError(null);
-      queryClient.invalidateQueries({ queryKey: ["sops"] });
-    },
-    onError: (error: Error) => {
-      setIsGeneratingSop(false);
-      setSopError(error.message || "Failed to generate SOP. Please try again.");
-    },
-  });
-
+  // Auto-scroll to bottom when content updates
   useEffect(() => {
-    const active = sessions.find(s => s.status === "active");
-    if (active && !activeSession) {
-      setActiveSession(active);
+    if (scrollRef.current && !isEditing) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [sessions, activeSession]);
+  }, [sopContent, isEditing]);
 
-  const startObservation = useCallback(() => {
-    const timestamp = new Date().toLocaleTimeString();
-    createSessionMutation.mutate(`Session ${timestamp}`);
-    if (onStartObservation) {
-      onStartObservation();
+  const handleStartEditing = () => {
+    setEditedContent(sopContent);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (onSopContentChange) {
+      onSopContentChange(editedContent);
     }
-  }, [createSessionMutation, onStartObservation]);
+    setIsEditing(false);
+  };
 
-  const pauseObservation = useCallback(() => {
-    if (activeSession) {
-      updateSessionMutation.mutate({
-        id: activeSession.id,
-        data: { status: "paused" },
-      });
-    }
-  }, [activeSession, updateSessionMutation]);
-
-  const resumeObservation = useCallback(() => {
-    if (activeSession) {
-      updateSessionMutation.mutate({
-        id: activeSession.id,
-        data: { status: "active" },
-      });
-    }
-  }, [activeSession, updateSessionMutation]);
-
-  const advancePhase = useCallback(() => {
-    if (!activeSession) return;
-    const phases: Phase[] = ["observe", "structure", "instruct"];
-    const currentIndex = phases.indexOf(activeSession.phase as Phase);
-    if (currentIndex < phases.length - 1) {
-      const nextPhase = phases[currentIndex + 1];
-      updateSessionMutation.mutate({
-        id: activeSession.id,
-        data: { phase: nextPhase },
-      });
-
-      if (nextPhase === "instruct") {
-        setIsGeneratingSop(true);
-        generateSopMutation.mutate(activeSession.id);
-      }
-    }
-  }, [activeSession, updateSessionMutation, generateSopMutation]);
-
-  const currentPhase = (activeSession?.phase || "observe") as Phase;
-  const phaseConfig = PHASE_CONFIG[currentPhase];
-
-  const getObservationIcon = (type: string) => {
-    switch (type) {
-      case "tool_used": return "🛠️";
-      case "intent": return "🎯";
-      case "decision": return "⚖️";
-      case "action": return "👆";
-      case "exception": return "⚠️";
-      case "verbal_note": return "💬";
-      default: return "📝";
-    }
+  const handleCancelEdit = () => {
+    setEditedContent(sopContent);
+    setIsEditing(false);
   };
 
   return (
     <div className={cn("flex flex-col h-full bg-card border-l border-border", className)}>
+      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border bg-card/50 backdrop-blur-sm">
         <div className="flex items-center gap-2">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Brain className="w-5 h-5 text-primary" />
+          <div className="p-2 bg-blue-500/10 rounded-lg">
+            <Eye className="w-5 h-5 text-blue-500" />
           </div>
           <div>
-            <h2 className="font-semibold text-foreground">EVA Assistant</h2>
+            <h2 className="font-semibold text-foreground">SOP Agent</h2>
             <div className="flex items-center gap-1.5">
               <span className={cn(
                 "w-2 h-2 rounded-full",
@@ -350,233 +105,127 @@ export function EVAPanel({
             </div>
           </div>
         </div>
+        
+        {/* Observation controls */}
+        <div className="flex items-center gap-2">
+          {isSopUpdating && (
+            <div className="flex items-center gap-1.5 text-primary">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-xs">Updating...</span>
+            </div>
+          )}
+          {!isObserving ? (
+            <Button 
+              size="sm" 
+              onClick={onStartObservation}
+              data-testid="button-start-observing"
+            >
+              <Play className="w-4 h-4 mr-1.5" />
+              Start Observing
+            </Button>
+          ) : (
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={onStopObservation}
+              data-testid="button-stop-observing"
+            >
+              <Pause className="w-4 h-4 mr-1.5" />
+              Stop
+            </Button>
+          )}
+        </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 h-10 p-0">
-          <TabsTrigger value="observe" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent" data-testid="tab-observe">
-            <Eye className="w-4 h-4 mr-1.5" />
-            Observe
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="observe" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
-          <div className="p-3 border-b border-border">
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
-              {(["observe", "structure", "instruct"] as Phase[]).map((phase, index) => {
-                const config = PHASE_CONFIG[phase];
-                const Icon = config.icon;
-                const isActive = currentPhase === phase;
-                const isPast = (["observe", "structure", "instruct"] as Phase[]).indexOf(currentPhase) > index;
-
-                return (
-                  <div key={phase} className="flex items-center">
-                    <div className={cn(
-                      "flex items-center gap-1.5 px-2 py-1 rounded-full transition-all",
-                      isActive && "bg-primary text-primary-foreground",
-                      isPast && "bg-green-500/20 text-green-500",
-                      !isActive && !isPast && "text-muted-foreground"
-                    )}>
-                      {isPast ? (
-                        <Check className="w-3 h-3" />
-                      ) : (
-                        <Icon className="w-3 h-3" />
-                      )}
-                      <span className="text-xs font-medium hidden sm:inline">{config.label}</span>
-                    </div>
-                    {index < 2 && (
-                      <ChevronRight className="w-3 h-3 text-muted-foreground mx-0.5" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              {phaseConfig.description}
-            </p>
+      {/* Live SOP Content */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* SOP Header with Edit controls */}
+        <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Live SOP Document</span>
           </div>
-
-          {!activeSession ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-              <Eye className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="font-medium mb-2">Ready to Observe</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Start recording to capture how work is done
-              </p>
-              <Button onClick={startObservation} data-testid="button-start-observation">
-                <Play className="w-4 h-4 mr-2" />
-                Start Recording
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleCancelEdit}
+                  data-testid="button-cancel-edit"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Cancel
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveEdit}
+                  data-testid="button-save-edit"
+                >
+                  <Save className="w-4 h-4 mr-1" />
+                  Save
+                </Button>
+              </>
+            ) : (
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={handleStartEditing}
+                data-testid="button-edit-sop"
+              >
+                <Edit3 className="w-4 h-4 mr-1" />
+                Edit
               </Button>
+            )}
+          </div>
+        </div>
+
+        {/* SOP Content Area */}
+        {isEditing ? (
+          <div className="flex-1 p-4 overflow-hidden">
+            <Textarea
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              className="w-full h-full resize-none font-mono text-sm"
+              placeholder="# SOP Title&#10;&#10;## Overview&#10;Describe the process...&#10;&#10;## Steps&#10;1. First step&#10;2. Second step"
+              data-testid="textarea-sop-edit"
+            />
+          </div>
+        ) : (
+          <ScrollArea className="flex-1" ref={scrollRef}>
+            <div className="p-4">
+              {sopContent ? (
+                <div className="prose prose-sm prose-invert max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {sopContent}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm font-medium mb-1">SOP will appear here</p>
+                  <p className="text-xs">
+                    {isObserving 
+                      ? "EVA is observing your screen and will update the SOP based on what you show..."
+                      : "Click 'Start Observing' to share your screen and generate an SOP"
+                    }
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="p-3 border-b border-border flex items-center justify-between gap-2">
-                {activeSession.status === "active" ? (
-                  <Button variant="outline" size="sm" onClick={pauseObservation} data-testid="button-pause-observation">
-                    <Pause className="w-4 h-4 mr-2" />
-                    Pause
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={resumeObservation} data-testid="button-resume-observation">
-                    <Play className="w-4 h-4 mr-2" />
-                    Resume
-                  </Button>
-                )}
-                {currentPhase !== "instruct" && (
-                  <Button size="sm" onClick={advancePhase} disabled={isGeneratingSop} data-testid="button-advance-phase">
-                    {currentPhase === "observe" ? "Structure" : "Generate SOP"}
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                )}
-                {currentPhase === "instruct" && generatedSop && (
-                  <Button size="sm" onClick={() => setShowSopViewer(!showSopViewer)} data-testid="button-view-sop">
-                    <FileCheck className="w-4 h-4 mr-2" />
-                    {showSopViewer ? "Hide SOP" : "View SOP"}
-                  </Button>
-                )}
-              </div>
+          </ScrollArea>
+        )}
+      </div>
 
-              {isGeneratingSop && (
-                <div className="p-4 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">Generating SOP...</p>
-                    <p className="text-xs text-muted-foreground">EVA is analyzing observations</p>
-                  </div>
-                </div>
-              )}
-
-              {sopError && !isGeneratingSop && (
-                <div className="p-4 bg-red-500/10 border-b border-red-500/30 flex items-center gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-red-500">SOP Generation Failed</p>
-                    <p className="text-xs text-muted-foreground">{sopError}</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSopError(null);
-                      if (activeSession) {
-                        setIsGeneratingSop(true);
-                        generateSopMutation.mutate(activeSession.id);
-                      }
-                    }}
-                    data-testid="button-retry-sop"
-                  >
-                    Retry
-                  </Button>
-                </div>
-              )}
-
-              {showSopViewer && generatedSop && (
-                <div className="flex-1 overflow-auto border-b border-border">
-                  <SOPViewer
-                    sop={generatedSop}
-                    onClose={() => setShowSopViewer(false)}
-                  />
-                </div>
-              )}
-
-              {pendingClarifications.length > 0 && (
-                <div className="p-3 bg-amber-500/10 border-b border-amber-500/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <HelpCircle className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm font-medium text-amber-500">
-                      EVA needs clarification ({pendingClarifications.length})
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {pendingClarifications.slice(0, 2).map((clarification) => (
-                      <Card key={clarification.id} className="bg-background/50">
-                        <CardContent className="p-3">
-                          <p className="text-sm mb-2">{clarification.question}</p>
-                          {pendingAnswer?.id === clarification.id ? (
-                            <div className="flex gap-2">
-                              <Input
-                                placeholder="Your answer..."
-                                value={pendingAnswer.answer}
-                                onChange={(e) => setPendingAnswer({ id: clarification.id, answer: e.target.value })}
-                                className="text-sm h-8"
-                                data-testid={`input-clarification-${clarification.id}`}
-                              />
-                              <Button
-                                size="sm"
-                                onClick={() => answerClarificationMutation.mutate(pendingAnswer)}
-                                disabled={!pendingAnswer.answer.trim()}
-                                data-testid={`button-submit-clarification-${clarification.id}`}
-                              >
-                                Answer
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setPendingAnswer({ id: clarification.id, answer: "" })}
-                              data-testid={`button-answer-clarification-${clarification.id}`}
-                            >
-                              Answer
-                            </Button>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <ScrollArea className="flex-1">
-                <div className="p-3 space-y-2">
-                  {observations.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">Observations will appear here as EVA captures actions</p>
-                    </div>
-                  ) : (
-                    observations.map((obs) => (
-                      <div
-                        key={obs.id}
-                        className={cn(
-                          "p-3 rounded-lg border bg-background/50",
-                          obs.isRepeated && "border-amber-500/50"
-                        )}
-                        data-testid={`observation-${obs.id}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-lg">{getObservationIcon(obs.type)}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Badge variant="outline" className="text-xs">
-                                {obs.type.replace("_", " ")}
-                              </Badge>
-                              {obs.app && (
-                                <span className="text-xs text-muted-foreground">{obs.app}</span>
-                              )}
-                              {obs.isRepeated && (
-                                <Badge className="bg-amber-500/20 text-amber-500 text-xs">
-                                  Repeated
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm">{obs.content}</p>
-                            {obs.action && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Action: {obs.action}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </>
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* Live updates indicator */}
+      {isObserving && !isEditing && (
+        <div className="px-4 py-2 border-t border-border bg-blue-500/5 flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+          <span className="text-xs text-blue-400">
+            Live updates enabled - SOP updates as EVA observes your screen
+          </span>
+        </div>
+      )}
     </div>
   );
 }

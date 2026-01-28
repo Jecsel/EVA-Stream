@@ -38,7 +38,7 @@ export default function MeetingRoom() {
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
   const [isMeetingAssistantEnabled, setIsMeetingAssistantEnabled] = useState(true);
-  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
+  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
@@ -167,9 +167,9 @@ export default function MeetingRoom() {
           // ignore parse errors
         }
       } else {
-        // New meeting: ensure Meeting Assistant is enabled by default
+        // New meeting: ensure both Meeting Assistant and SOP Agent are enabled by default
         setIsMeetingAssistantEnabled(true);
-        setIsScreenObserverEnabled(false);
+        setIsScreenObserverEnabled(true);
       }
     }
   }, [meeting?.id]);
@@ -675,6 +675,9 @@ export default function MeetingRoom() {
                     stopObserving();
                     stopScreenCapture();
                   }}
+                  sopContent={sopContent}
+                  onSopContentChange={setSopContent}
+                  isSopUpdating={isSopUpdating}
                   className="h-[calc(100%-120px)]"
                 />
               ) : null}
