@@ -42,6 +42,7 @@ interface EVAMeetingAssistantProps {
   meetingTitle?: string;
   meetingStatus?: string;
   className?: string;
+  onRequestScreenObserver?: () => void;
 }
 
 export function EVAMeetingAssistant({
@@ -49,6 +50,7 @@ export function EVAMeetingAssistant({
   meetingTitle,
   meetingStatus,
   className,
+  onRequestScreenObserver,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -72,6 +74,18 @@ export function EVAMeetingAssistant({
   const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
 
+  // Check if user is asking about screen sharing (for voice commands)
+  const checkScreenShareRequest = useCallback((text: string): boolean => {
+    const lowerText = text.toLowerCase();
+    const screenSharePatterns = [
+      'share screen', 'screen share', 'share my screen', 'share the screen',
+      'screen sharing', 'trigger.screen_share', 'start screen', 'observe screen',
+      'screen observer', 'show my screen', 'share what i see', 'watch my screen',
+      'see my screen', 'view my screen', 'look at my screen'
+    ];
+    return screenSharePatterns.some(pattern => lowerText.includes(pattern));
+  }, []);
+
   // Handle voice command result
   const handleVoiceSpeechResult = useCallback((text: string) => {
     if (text.trim()) {
@@ -82,10 +96,28 @@ export function EVAMeetingAssistant({
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, userMessage]);
+      
+      // Check if this is a screen share request
+      if (checkScreenShareRequest(text)) {
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "ai",
+          content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        
+        // Trigger the screen observer panel
+        if (onRequestScreenObserver) {
+          onRequestScreenObserver();
+        }
+        return;
+      }
+      
       setIsTyping(true);
       askEvaMutationRef.current?.(text);
     }
-  }, []);
+  }, [checkScreenShareRequest, onRequestScreenObserver]);
 
   // Track wakeup call state to prevent rapid repeated triggers
   const wakeupInFlightRef = useRef(false);
@@ -412,8 +444,30 @@ export function EVAMeetingAssistant({
                     timestamp: new Date(),
                   };
                   setMessages(prev => [...prev, userMessage]);
-                  setIsTyping(true);
-                  askEvaMutationRef.current?.(data.text);
+                  
+                  // Check if this is a screen share request (same as voice/text handlers)
+                  const lowerText = data.text.toLowerCase();
+                  const screenSharePatterns = [
+                    'share screen', 'screen share', 'share my screen', 'share the screen',
+                    'screen sharing', 'trigger.screen_share', 'start screen', 'observe screen',
+                    'screen observer', 'show my screen', 'share what i see', 'watch my screen',
+                    'see my screen', 'view my screen', 'look at my screen'
+                  ];
+                  const isScreenShareReq = screenSharePatterns.some(pattern => lowerText.includes(pattern));
+                  
+                  if (isScreenShareReq && onRequestScreenObserver) {
+                    const aiMessage: Message = {
+                      id: (Date.now() + 1).toString(),
+                      role: "ai",
+                      content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+                      timestamp: new Date(),
+                    };
+                    setMessages(prev => [...prev, aiMessage]);
+                    onRequestScreenObserver();
+                  } else {
+                    setIsTyping(true);
+                    askEvaMutationRef.current?.(data.text);
+                  }
                 }
               }
             } catch (error) {
@@ -443,7 +497,7 @@ export function EVAMeetingAssistant({
         startListening();
       }
     }
-  }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening]);
+  }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening, onRequestScreenObserver]);
 
   // Handle sending message to EVA
   const handleSend = () => {
@@ -456,6 +510,26 @@ export function EVAMeetingAssistant({
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMessage]);
+    
+    // Check if this is a screen share request
+    if (checkScreenShareRequest(inputValue)) {
+      // Add a helpful response and trigger screen observer
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "ai",
+        content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setInputValue("");
+      
+      // Trigger the screen observer panel
+      if (onRequestScreenObserver) {
+        onRequestScreenObserver();
+      }
+      return;
+    }
+    
     setInputValue("");
     setIsTyping(true);
     askEvaMutation.mutate(inputValue);

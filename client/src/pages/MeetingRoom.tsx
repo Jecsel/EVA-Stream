@@ -652,6 +652,10 @@ export default function MeetingRoom() {
                   meetingTitle={meeting.title}
                   meetingStatus={meeting.status}
                   className="h-[calc(100%-120px)]"
+                  onRequestScreenObserver={() => {
+                    // Switch to Screen Observer tab
+                    setEvaPanelMode("observe");
+                  }}
                 />
               ) : isScreenObserverEnabled ? (
                 <EVAPanel 
