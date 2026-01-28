@@ -44,6 +44,7 @@ interface EVAMeetingAssistantProps {
   meetingStatus?: string;
   className?: string;
   onRequestScreenObserver?: () => void;
+  currentSopContent?: string;
 }
 
 export function EVAMeetingAssistant({
@@ -52,6 +53,7 @@ export function EVAMeetingAssistant({
   meetingStatus,
   className,
   onRequestScreenObserver,
+  currentSopContent,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -342,7 +344,11 @@ export function EVAMeetingAssistant({
       const res = await fetch("/api/eva/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingId, question }),
+        body: JSON.stringify({ 
+          meetingId, 
+          question,
+          sopContent: currentSopContent,
+        }),
       });
       if (!res.ok) {
         throw new Error("Failed to get response from EVA");

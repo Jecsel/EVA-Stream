@@ -667,6 +667,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                     // Switch to Screen Observer tab
                     setEvaPanelMode("observe");
                   }}
+                  currentSopContent={sopContent}
                 />
               ) : isScreenObserverEnabled ? (
                 <EVAPanel 

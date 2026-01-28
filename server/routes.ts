@@ -2335,7 +2335,7 @@ Format the response as JSON with these fields:
   // Ask EVA - AI chat endpoint
   app.post("/api/eva/ask", async (req, res) => {
     try {
-      const { meetingId, question, context } = req.body;
+      const { meetingId, question, context, sopContent } = req.body;
       if (!question) {
         res.status(400).json({ error: "Question is required" });
         return;
@@ -2394,6 +2394,14 @@ Format the response as JSON with these fields:
 
       if (context) {
         fullContext += `Additional Context: ${context}\n`;
+      }
+
+      // Include current SOP document if available
+      if (sopContent && sopContent.trim() && !sopContent.includes("Waiting for screen observations")) {
+        fullContext += "\n=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n";
+        fullContext += sopContent;
+        fullContext += "\n=== END SOP DOCUMENT ===\n\n";
+        fullContext += "Note: The user may ask questions about this SOP document. You have full access to its content.\n";
       }
 
       // Use Gemini to generate response
