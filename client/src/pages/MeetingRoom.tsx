@@ -451,6 +451,46 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     });
   };
 
+  // Handle Jitsi transcription and save to database
+  const handleTranscriptionReceived = useCallback(async (text: string, participant: string, isFinal: boolean) => {
+    if (!meeting?.id || !text.trim()) return;
+    
+    const transcriptEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: text.trim(),
+      speaker: participant || "Unknown",
+      timestamp: new Date(),
+      isFinal,
+    };
+    
+    // Update local state for LiveTranscriptPanel display
+    setTranscripts(prev => {
+      // If not final, update existing interim transcript for this speaker
+      if (!isFinal) {
+        const existingIndex = prev.findIndex(t => !t.isFinal && t.speaker === participant);
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = transcriptEntry;
+          return updated;
+        }
+      }
+      return [...prev.filter(t => t.isFinal || t.speaker !== participant), transcriptEntry];
+    });
+    
+    // Save final transcripts to database
+    if (isFinal && text.trim().length > 2) {
+      try {
+        await api.createTranscriptSegment(meeting.id, {
+          text: text.trim(),
+          speaker: participant || "Unknown",
+          isFinal: true,
+        });
+      } catch (error) {
+        console.error("Failed to save transcript segment:", error);
+      }
+    }
+  }, [meeting?.id]);
+
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
 
@@ -588,6 +628,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
+               onTranscriptionReceived={handleTranscriptionReceived}
                className="bg-zinc-900"
                jwt={jaasToken?.token}
                appId={jaasToken?.appId}

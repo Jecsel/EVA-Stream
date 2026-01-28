@@ -22,6 +22,7 @@ import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useElevenLabsAudio } from "@/hooks/useElevenLabsAudio";
 import { useElevenLabsAgent } from "@/hooks/useElevenLabsAgent";
+import { api } from "@/lib/api";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
 interface AgendaItem {
@@ -243,7 +244,7 @@ export function EVAMeetingAssistant({
     stopAudio: stopAgentAudio,
     sendContextUpdate: sendAgentContextUpdate,
   } = useElevenLabsAgent({
-    onUserTranscript: (text) => {
+    onUserTranscript: async (text) => {
       console.log("[EVA Agent] User said:", text);
       const userMessage: EvaMessage = {
         id: Date.now().toString(),
@@ -253,6 +254,19 @@ export function EVAMeetingAssistant({
       };
       setMessages(prev => [...prev, userMessage]);
       
+      // Save voice message to database for transcript
+      if (meetingId && text.trim().length > 2) {
+        try {
+          await api.createChatMessage(meetingId, {
+            role: "user",
+            content: text,
+            context: "Voice (ElevenLabs)",
+          });
+        } catch (error) {
+          console.error("Failed to save voice message:", error);
+        }
+      }
+      
       // Check if this is a screen share request
       if (checkScreenShareRequest(text)) {
         if (onRequestScreenObserver) {
@@ -260,7 +274,7 @@ export function EVAMeetingAssistant({
         }
       }
     },
-    onAgentResponse: (text) => {
+    onAgentResponse: async (text) => {
       console.log("[EVA Agent] Response:", text);
       const aiMessage: EvaMessage = {
         id: Date.now().toString(),
@@ -269,6 +283,19 @@ export function EVAMeetingAssistant({
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, aiMessage]);
+      
+      // Save AI response to database for transcript
+      if (meetingId && text.trim().length > 2) {
+        try {
+          await api.createChatMessage(meetingId, {
+            role: "ai",
+            content: text,
+            context: "Voice (ElevenLabs)",
+          });
+        } catch (error) {
+          console.error("Failed to save AI response:", error);
+        }
+      }
     },
     onError: (error) => {
       console.error("[EVA Agent] Error:", error);
