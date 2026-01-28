@@ -118,32 +118,54 @@ export function useElevenLabsAgent({
 
     ws.onmessage = (event) => {
       try {
-        const message: AgentMessage = JSON.parse(event.data);
+        const message = JSON.parse(event.data);
         
-        switch (message.type) {
+        // Debug: log all raw messages to understand the API format
+        console.log('[ElevenLabs Agent] Raw message:', JSON.stringify(message));
+        
+        // Handle different message types from ElevenLabs Conversational AI
+        const msgType = message.type;
+        
+        switch (msgType) {
           case 'conversation_initiation_metadata':
-            console.log('[ElevenLabs Agent] Conversation initialized:', message.conversation_id);
-            setConversationId(message.conversation_id || null);
+            // May have conversation_id at root or in a nested object
+            const convId = message.conversation_id || message.conversation?.id;
+            console.log('[ElevenLabs Agent] Conversation initialized:', convId);
+            setConversationId(convId || null);
             break;
 
           case 'user_transcript':
-            console.log('[ElevenLabs Agent] User said:', message.transcript);
-            if (message.transcript) {
-              onUserTranscript?.(message.transcript);
+            // Transcript might be in different fields
+            const userText = message.user_transcription_event?.user_transcript 
+              || message.user_transcript 
+              || message.transcript 
+              || message.text;
+            console.log('[ElevenLabs Agent] User said:', userText);
+            if (userText) {
+              onUserTranscript?.(userText);
             }
             break;
 
           case 'agent_response':
-            console.log('[ElevenLabs Agent] Agent response:', message.response);
-            if (message.response) {
-              onAgentResponse?.(message.response);
+            // Response might be in different fields
+            const agentText = message.agent_response_event?.agent_response 
+              || message.agent_response 
+              || message.response 
+              || message.text;
+            console.log('[ElevenLabs Agent] Agent response:', agentText);
+            if (agentText) {
+              onAgentResponse?.(agentText);
             }
             break;
 
           case 'audio':
-            if (message.audio) {
+            // Audio chunk for playback
+            const audioData = message.audio_event?.audio 
+              || message.audio 
+              || message.audio_chunk;
+            if (audioData) {
               // Decode base64 audio and queue for playback
-              const binaryString = atob(message.audio);
+              const binaryString = atob(audioData);
               const bytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
@@ -162,6 +184,15 @@ export function useElevenLabsAgent({
             // Respond to keep-alive pings
             ws.send(JSON.stringify({ type: 'pong' }));
             break;
+
+          case 'error':
+            console.error('[ElevenLabs Agent] Server error:', message.error || message.message);
+            onError?.(message.error || message.message || 'Unknown error');
+            break;
+
+          default:
+            // Log unhandled message types for debugging
+            console.log('[ElevenLabs Agent] Unhandled message type:', msgType);
         }
       } catch (error) {
         console.error('[ElevenLabs Agent] Message parse error:', error);
