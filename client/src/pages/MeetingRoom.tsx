@@ -339,16 +339,59 @@ export default function MeetingRoom() {
   const handleJitsiApiReady = (api: any) => {
     setJitsiApi(api);
     
+    // Helper to mark user as joined and enable transcription (idempotent)
+    const markJoined = () => {
+      setHasJoinedMeeting((prev) => {
+        if (!prev) {
+          console.log("Setting hasJoinedMeeting=true");
+          setTimeout(() => {
+            setIsJitsiTranscribing(true);
+            setTranscriptStatus("transcribing");
+            console.log("Auto-enabled Jitsi transcription for wake word detection");
+          }, 3500);
+        }
+        return true;
+      });
+    };
+
+    // Check if already in conference (can happen if event fired before listener was added)
+    // Use multiple detection methods for reliability
+    const checkJoinedState = () => {
+      try {
+        // Method 1: Check if we have a user ID (indicates we're in the conference)
+        const myUserId = api.getMyUserId?.();
+        if (myUserId) {
+          console.log("Detected already joined via getMyUserId:", myUserId);
+          markJoined();
+          return true;
+        }
+        
+        // Method 2: Check participants list for local user
+        const participants = api.getParticipantsInfo?.();
+        if (participants && participants.length > 0) {
+          const hasLocal = participants.some((p: any) => p.local);
+          if (hasLocal) {
+            console.log("Detected already joined via local participant");
+            markJoined();
+            return true;
+          }
+        }
+      } catch (e) {
+        console.log("Could not check join state:", e);
+      }
+      return false;
+    };
+
+    // Check immediately
+    checkJoinedState();
+    
+    // Also re-check after a short delay in case participant registration is delayed
+    setTimeout(() => checkJoinedState(), 1500);
+    setTimeout(() => checkJoinedState(), 3000);
+    
     api.addEventListeners({
       videoConferenceJoined: async () => {
-        setHasJoinedMeeting(true);
-        // Auto-enable transcription state when joining - captions auto-enable via JitsiMeeting component
-        // This makes "Hey EVA" wake word detection work immediately without manual toggle
-        setTimeout(() => {
-          setIsJitsiTranscribing(true);
-          setTranscriptStatus("transcribing");
-          console.log("Auto-enabled Jitsi transcription for wake word detection");
-        }, 3500); // Slightly after captions auto-enable (3000ms in JitsiMeeting)
+        markJoined();
       },
       screenSharingStatusChanged: async (payload: { on: boolean }) => {
         setIsScreenSharing(payload.on);
