@@ -25,8 +25,11 @@ wss.on("connection", (ws: WebSocket, req) => {
       
       const response = await processLiveInput(meetingId, message);
       
-      // Only send non-trivial responses
-      if (response.content && response.content !== "[Observing meeting]") {
+      // Always send SOP updates/status, only filter trivial observation messages
+      const shouldSend = response.type === "sop_update" || 
+                         response.type === "sop_status" ||
+                         (response.content && response.content !== "[Observing meeting]" && response.content !== "observing");
+      if (shouldSend) {
         ws.send(JSON.stringify(response));
       }
     } catch (error) {
