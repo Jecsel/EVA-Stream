@@ -112,7 +112,11 @@ export function useElevenLabsAgent({
   }, []);
 
   const connect = useCallback(async () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Prevent duplicate connections - check for OPEN or CONNECTING states
+    if (wsRef.current?.readyState === WebSocket.OPEN || 
+        wsRef.current?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
 
     const signedUrl = await getSignedUrl();
     if (!signedUrl) return;
@@ -277,10 +281,9 @@ export function useElevenLabsAgent({
         }
         const base64Audio = btoa(binary);
         
-        // Send to ElevenLabs
+        // Send to ElevenLabs - use user_audio field as expected by the API
         wsRef.current.send(JSON.stringify({
-          type: 'user_audio_chunk',
-          audio: base64Audio,
+          user_audio_chunk: base64Audio,
         }));
       };
 
