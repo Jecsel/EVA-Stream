@@ -268,7 +268,7 @@ export default function Dashboard() {
                 <div className="lg:col-span-2">
                     <div className="flex items-center justify-between mb-6">
                         <div>
-                            <h2 className="text-xl font-semibold text-foreground">Past Recordings</h2>
+                            <h2 className="text-xl font-semibold text-foreground">Past Meetings</h2>
                             <p className="text-sm text-muted-foreground">Access your AI-analyzed meeting history</p>
                         </div>
                         <div className="flex items-center gap-2">
