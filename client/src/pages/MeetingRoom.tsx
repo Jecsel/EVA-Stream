@@ -141,18 +141,18 @@ export default function MeetingRoom() {
   }, [isMeetingAssistantEnabled, isScreenObserverEnabled, evaPanelMode]);
 
   useEffect(() => {
-    if (roomId) {
-      const key = `agent-toggles-${roomId}`;
+    if (meeting?.id) {
+      const key = `agent-toggles-${meeting.id}`;
       sessionStorage.setItem(key, JSON.stringify({
         meetingAssistant: isMeetingAssistantEnabled,
         screenObserver: isScreenObserverEnabled
       }));
     }
-  }, [roomId, isMeetingAssistantEnabled, isScreenObserverEnabled]);
+  }, [meeting?.id, isMeetingAssistantEnabled, isScreenObserverEnabled]);
 
   useEffect(() => {
-    if (roomId) {
-      const key = `agent-toggles-${roomId}`;
+    if (meeting?.id) {
+      const key = `agent-toggles-${meeting.id}`;
       const saved = sessionStorage.getItem(key);
       if (saved) {
         try {
@@ -166,9 +166,13 @@ export default function MeetingRoom() {
         } catch (e) {
           // ignore parse errors
         }
+      } else {
+        // New meeting: ensure Meeting Assistant is enabled by default
+        setIsMeetingAssistantEnabled(true);
+        setIsScreenObserverEnabled(false);
       }
     }
-  }, [roomId]);
+  }, [meeting?.id]);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
