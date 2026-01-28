@@ -8,9 +8,10 @@ interface SOPFlowchartProps {
   sopContent: string;
   meetingId?: string;
   className?: string;
+  liveFlowchartCode?: string;
 }
 
-export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartProps) {
+export function SOPFlowchart({ sopContent, meetingId, className, liveFlowchartCode }: SOPFlowchartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [svgContent, setSvgContent] = useState<string>('');
@@ -115,8 +116,19 @@ export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartP
     }
   }, [renderMermaidChart, meetingId]);
 
+  // Handle live flowchart code from real-time SOP updates
+  useEffect(() => {
+    if (liveFlowchartCode && liveFlowchartCode.trim().length > 0) {
+      renderMermaidChart(liveFlowchartCode);
+      setLastProcessedContent(sopContent);
+    }
+  }, [liveFlowchartCode, renderMermaidChart, sopContent]);
+
   useEffect(() => {
     if (!containerRef.current) return;
+    
+    // Skip API call if we have live flowchart code
+    if (liveFlowchartCode && liveFlowchartCode.trim().length > 0) return;
     
     if (sopContent === lastProcessedContent) return;
     
@@ -133,7 +145,7 @@ export function SOPFlowchart({ sopContent, meetingId, className }: SOPFlowchartP
         clearTimeout(debounceTimer.current);
       }
     };
-  }, [sopContent, lastProcessedContent, generateFlowchartFromAPI]);
+  }, [sopContent, lastProcessedContent, generateFlowchartFromAPI, liveFlowchartCode]);
 
   const handleManualRefresh = () => {
     setLastProcessedContent('');

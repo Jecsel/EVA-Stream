@@ -63,6 +63,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const [isSopUpdating, setIsSopUpdating] = useState(false);
   const [sopObservationCount, setSopObservationCount] = useState(0);
   const [sopVersion, setSopVersion] = useState(0);
+  const [liveFlowchartCode, setLiveFlowchartCode] = useState<string | undefined>(undefined);
 
   const hasEndedMeetingRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
@@ -271,12 +272,13 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     }
   }, [meeting?.id, queryClient]);
 
-  const handleSopUpdate = useCallback((content: string, observationCount?: number, version?: number) => {
+  const handleSopUpdate = useCallback((content: string, observationCount?: number, version?: number, flowchartCode?: string) => {
     // Replace entire SOP content with new generated content
     setSopContent(content);
     setIsSopUpdating(false);
     if (observationCount !== undefined) setSopObservationCount(observationCount);
     if (version !== undefined) setSopVersion(version);
+    if (flowchartCode) setLiveFlowchartCode(flowchartCode);
   }, []);
 
   const handleSopStatus = useCallback((observationCount: number, version: number) => {
@@ -765,6 +767,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   sopContent={sopContent}
                   meetingId={meeting?.id}
                   className="h-full"
+                  liveFlowchartCode={liveFlowchartCode}
               />
             </div>
           )}

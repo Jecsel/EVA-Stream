@@ -1,6 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { WebSocket as WS } from "ws";
 import { storage } from "./storage";
+import { generateMermaidFlowchart } from "./gemini";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
@@ -244,6 +245,7 @@ export interface GeminiLiveResponse {
   speaker?: string;
   observationCount?: number;
   sopVersion?: number;
+  flowchartCode?: string; // Mermaid flowchart code generated from SOP
 }
 
 export async function processLiveInput(
@@ -460,12 +462,25 @@ If nothing actionable is visible (just video call faces), respond exactly: "[Obs
           session.sopVersion++;
           console.log(`[EVA SOP] Generated SOP v${session.sopVersion}`);
           
-          // Return the SOP update with metadata
+          // Generate flowchart from the SOP content
+          let flowchartCode: string | undefined;
+          try {
+            console.log(`[EVA SOP] Generating flowchart from SOP...`);
+            flowchartCode = await generateMermaidFlowchart(result.sop);
+            if (flowchartCode) {
+              console.log(`[EVA SOP] Generated flowchart (${flowchartCode.length} chars)`);
+            }
+          } catch (flowchartError) {
+            console.error(`[EVA SOP] Flowchart generation failed:`, flowchartError);
+          }
+          
+          // Return the SOP update with metadata and flowchart
           return {
             type: "sop_update",
             content: result.sop,
             observationCount: session.observations.length,
             sopVersion: session.sopVersion,
+            flowchartCode: flowchartCode,
           };
         }
       }

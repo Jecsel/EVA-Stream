@@ -6,12 +6,13 @@ interface EvaLiveMessage {
   audioData?: string;
   observationCount?: number;
   sopVersion?: number;
+  flowchartCode?: string;
 }
 
 interface UseEvaLiveOptions {
   meetingId: string;
   onMessage?: (message: EvaLiveMessage) => void;
-  onSopUpdate?: (content: string, observationCount?: number, sopVersion?: number) => void;
+  onSopUpdate?: (content: string, observationCount?: number, sopVersion?: number, flowchartCode?: string) => void;
   onSopStatus?: (observationCount: number, sopVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
 }
@@ -54,7 +55,7 @@ export function useEvaLive({
         const message: EvaLiveMessage = JSON.parse(event.data);
         
         if (message.type === "sop_update") {
-          onSopUpdate?.(message.content, message.observationCount, message.sopVersion);
+          onSopUpdate?.(message.content, message.observationCount, message.sopVersion, message.flowchartCode);
         } else if (message.type === "sop_status") {
           onSopStatus?.(message.observationCount || 0, message.sopVersion || 0);
         }
