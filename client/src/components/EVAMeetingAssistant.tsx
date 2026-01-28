@@ -3,7 +3,7 @@ import {
   Send, Bot, User, Volume2, VolumeX, Mic, MicOff,
   Plus, Trash2, Check, X, FileText, List, Files, 
   MessageSquare, ClipboardList, Loader2, Play, Square,
-  Upload, File as FileIcon, ChevronDown, Radio
+  Upload, File as FileIcon, ChevronDown, Radio, Phone, PhoneOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useElevenLabsAudio } from "@/hooks/useElevenLabsAudio";
+import { useElevenLabsAgent } from "@/hooks/useElevenLabsAgent";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
 interface AgendaItem {
@@ -64,6 +65,7 @@ export function EVAMeetingAssistant({
   const [isUploading, setIsUploading] = useState(false);
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
+  const [useConversationalAgent, setUseConversationalAgent] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const pushToTalkMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -183,12 +185,12 @@ export function EVAMeetingAssistant({
     }
   }, []);
 
-  // ElevenLabs-based audio transcription and wake word detection
+  // ElevenLabs-based audio transcription and wake word detection (legacy mode)
   const {
-    isListening,
+    isListening: isLegacyListening,
     isProcessing,
-    startListening,
-    stopListening,
+    startListening: startLegacyListening,
+    stopListening: stopLegacyListening,
   } = useElevenLabsAudio({
     wakeWord: "hey eva",
     onWakeWordDetected: () => {
@@ -202,8 +204,57 @@ export function EVAMeetingAssistant({
       }
     },
     onCommand: handleVoiceSpeechResult,
-    enabled: wakeWordEnabled,
+    enabled: wakeWordEnabled && !useConversationalAgent,
   });
+
+  // ElevenLabs Conversational AI Agent (new mode - handles listening + responding)
+  const {
+    isConnected: isAgentConnected,
+    isListening: isAgentListening,
+    isSpeaking: isAgentSpeaking,
+    connect: connectAgent,
+    disconnect: disconnectAgent,
+    startListening: startAgentListening,
+    stopListening: stopAgentListening,
+    stopAudio: stopAgentAudio,
+  } = useElevenLabsAgent({
+    onUserTranscript: (text) => {
+      console.log("[EVA Agent] User said:", text);
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: text,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      
+      // Check if this is a screen share request
+      if (checkScreenShareRequest(text)) {
+        if (onRequestScreenObserver) {
+          onRequestScreenObserver();
+        }
+      }
+    },
+    onAgentResponse: (text) => {
+      console.log("[EVA Agent] Response:", text);
+      const aiMessage: Message = {
+        id: Date.now().toString(),
+        role: "ai",
+        content: text,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    },
+    onError: (error) => {
+      console.error("[EVA Agent] Error:", error);
+    },
+    enabled: useConversationalAgent,
+  });
+
+  // Unified listening state
+  const isListening = useConversationalAgent ? isAgentListening : isLegacyListening;
+  const startListening = useConversationalAgent ? startAgentListening : startLegacyListening;
+  const stopListening = useConversationalAgent ? stopAgentListening : stopLegacyListening;
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
@@ -645,25 +696,88 @@ export function EVAMeetingAssistant({
                 {wakeWordTriggered ? "Listening..." : isProcessing ? "Processing..." : "Say 'Hey EVA'"}
               </Badge>
             )}
-            {/* Wake word toggle */}
+            {/* Conversational Agent Status Badge */}
+            {useConversationalAgent && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs font-normal",
+                  isAgentListening
+                    ? isAgentSpeaking
+                      ? "bg-purple-500/10 text-purple-500"
+                      : "bg-green-500/10 text-green-500"
+                    : isAgentConnected
+                    ? "bg-amber-500/10 text-amber-500"
+                    : "bg-gray-500/10 text-gray-500"
+                )}
+              >
+                <Phone className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
+                {isAgentSpeaking ? "EVA Speaking..." : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
+              </Badge>
+            )}
+            {/* Voice Agent Toggle - Call EVA */}
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => {
-                if (wakeWordEnabled) {
-                  stopListening();
-                  setWakeWordEnabled(false);
+              onClick={async () => {
+                if (useConversationalAgent) {
+                  if (isAgentListening) {
+                    stopAgentListening();
+                    disconnectAgent();
+                  } else {
+                    await connectAgent();
+                    await startAgentListening();
+                  }
                 } else {
-                  setWakeWordEnabled(true);
-                  startListening();
+                  if (wakeWordEnabled) {
+                    stopListening();
+                    setWakeWordEnabled(false);
+                  } else {
+                    setWakeWordEnabled(true);
+                    startListening();
+                  }
                 }
               }}
-              className={cn("h-8 w-8", wakeWordEnabled && isListening && "text-green-500")}
-              data-testid="button-toggle-wakeword"
-              title={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
+              className={cn(
+                "h-8 w-8",
+                useConversationalAgent 
+                  ? isAgentConnected && isAgentListening 
+                    ? "text-green-500 animate-pulse" 
+                    : isAgentConnected 
+                      ? "text-green-400"
+                      : ""
+                  : wakeWordEnabled && isListening && "text-green-500"
+              )}
+              data-testid="button-toggle-voice-agent"
+              title={
+                useConversationalAgent 
+                  ? isAgentListening 
+                    ? "End conversation with EVA" 
+                    : "Start conversation with EVA"
+                  : wakeWordEnabled 
+                    ? "Disable wake word" 
+                    : "Enable wake word"
+              }
             >
-              {wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              {useConversationalAgent ? (
+                isAgentConnected && isAgentListening ? <PhoneOff className="w-4 h-4" /> : <Phone className="w-4 h-4" />
+              ) : (
+                wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />
+              )}
             </Button>
+            {/* Speaking indicator */}
+            {isAgentSpeaking && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={stopAgentAudio}
+                className="h-8 w-8 text-purple-500 animate-pulse"
+                data-testid="button-stop-agent-audio"
+                title="Stop EVA speaking"
+              >
+                <Volume2 className="w-4 h-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -726,7 +840,9 @@ export function EVAMeetingAssistant({
                     Hi! I'm EVA, your meeting assistant.
                   </p>
                   <p className="text-xs text-muted-foreground mb-4">
-                    Just say "Hey EVA" followed by your question - I'm always listening!
+                    {useConversationalAgent 
+                      ? "Click the phone button above to start a voice conversation with me!"
+                      : "Just say \"Hey EVA\" followed by your question - I'm always listening!"}
                   </p>
                   <div className="space-y-2">
                     {[
