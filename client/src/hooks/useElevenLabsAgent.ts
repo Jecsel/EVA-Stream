@@ -142,6 +142,23 @@ export function useElevenLabsAgent({
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       }
+      
+      // Send conversation_initiation_client_data with dynamic variables and prompt override
+      // This is the correct way to pass context to ElevenLabs Conversational AI
+      const initMessage: any = {
+        type: 'conversation_initiation_client_data'
+      };
+      
+      // Pass SOP content via dynamic_variables for use in agent prompt templates
+      // The ElevenLabs agent prompt should reference {{sop_content}} to access this
+      if (dynamicContextRef.current && dynamicContextRef.current.trim()) {
+        initMessage.dynamic_variables = {
+          sop_content: dynamicContextRef.current
+        };
+        console.log('[ElevenLabs Agent] Sent context update to agent with SOP content');
+      }
+      
+      ws.send(JSON.stringify(initMessage));
     };
 
     ws.onmessage = (event) => {
@@ -158,16 +175,7 @@ export function useElevenLabsAgent({
             const convId = message.conversation_initiation_metadata_event?.conversation_id;
             console.log('[ElevenLabs Agent] Conversation initialized:', convId);
             setConversationId(convId || null);
-            
-            // Send dynamic context (SOP content) to the agent if available
-            if (dynamicContextRef.current && dynamicContextRef.current.trim()) {
-              const contextMessage = {
-                type: 'context_update',
-                context: dynamicContextRef.current
-              };
-              ws.send(JSON.stringify(contextMessage));
-              console.log('[ElevenLabs Agent] Sent dynamic context to agent');
-            }
+            // Dynamic context already sent via conversation_initiation_client_data on connection
             break;
 
           case 'user_transcript':
@@ -345,17 +353,13 @@ export function useElevenLabsAgent({
   }, []);
 
   // Send context update to the agent (for dynamic SOP content updates)
+  // Note: ElevenLabs doesn't support runtime context updates via WebSocket
+  // Context must be set at conversation initialization via dynamic_variables
+  // This function updates the ref for future reconnections
   const sendContextUpdate = useCallback((context: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('[ElevenLabs Agent] Not connected, cannot send context update');
-      return;
-    }
-
     if (context && context.trim()) {
-      wsRef.current.send(JSON.stringify({
-        type: 'context_update',
-        context: context,
-      }));
+      dynamicContextRef.current = context;
+      console.log('[ElevenLabs Agent] Context updated for next connection');
       console.log('[ElevenLabs Agent] Sent context update to agent');
     }
   }, []);
