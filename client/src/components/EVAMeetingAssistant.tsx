@@ -67,6 +67,7 @@ export function EVAMeetingAssistant({
   const pushToTalkMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const pushToTalkChunksRef = useRef<Blob[]>([]);
   const pushToTalkStartingRef = useRef(false);
+  const pushToTalkStreamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
@@ -337,10 +338,22 @@ export function EVAMeetingAssistant({
     setIsPlaying(false);
   };
 
-  // Push-to-talk: Start recording when button is pressed
-  const startPushToTalk = useCallback(async () => {
+  // Push-to-talk: Toggle recording on/off with a single click
+  const togglePushToTalk = useCallback(async () => {
+    // If already recording, stop it
+    if (isPushToTalkActive) {
+      // Clear starting ref to prevent race conditions
+      pushToTalkStartingRef.current = false;
+      
+      if (pushToTalkMediaRecorderRef.current && pushToTalkMediaRecorderRef.current.state === 'recording') {
+        pushToTalkMediaRecorderRef.current.stop();
+      }
+      setIsPushToTalkActive(false);
+      return;
+    }
+    
     // Guard against re-entry (prevent multiple concurrent recordings)
-    if (isPushToTalkActive || pushToTalkStartingRef.current || 
+    if (pushToTalkStartingRef.current || 
         (pushToTalkMediaRecorderRef.current && pushToTalkMediaRecorderRef.current.state === 'recording')) {
       return;
     }
@@ -354,6 +367,7 @@ export function EVAMeetingAssistant({
       }
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      pushToTalkStreamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       
       pushToTalkChunksRef.current = [];
@@ -366,7 +380,10 @@ export function EVAMeetingAssistant({
       
       mediaRecorder.onstop = async () => {
         // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
+        if (pushToTalkStreamRef.current) {
+          pushToTalkStreamRef.current.getTracks().forEach(track => track.stop());
+          pushToTalkStreamRef.current = null;
+        }
         
         // Create audio blob and send for transcription
         const audioBlob = new Blob(pushToTalkChunksRef.current, { type: 'audio/webm' });
@@ -386,7 +403,7 @@ export function EVAMeetingAssistant({
               
               if (response.ok) {
                 const data = await response.json();
-                if (data.text && data.text.trim()) {
+                if (data.text && data.text.trim() && data.text !== '[music]') {
                   // Send the transcribed text to EVA
                   const userMessage: Message = {
                     id: Date.now().toString(),
@@ -410,6 +427,8 @@ export function EVAMeetingAssistant({
         if (wakeWordEnabled) {
           startListening();
         }
+        
+        pushToTalkMediaRecorderRef.current = null;
       };
       
       pushToTalkMediaRecorderRef.current = mediaRecorder;
@@ -425,18 +444,6 @@ export function EVAMeetingAssistant({
       }
     }
   }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening]);
-
-  // Push-to-talk: Stop recording when button is released
-  const stopPushToTalk = useCallback(() => {
-    // Clear starting ref to prevent race conditions
-    pushToTalkStartingRef.current = false;
-    
-    if (pushToTalkMediaRecorderRef.current && pushToTalkMediaRecorderRef.current.state === 'recording') {
-      pushToTalkMediaRecorderRef.current.stop();
-      pushToTalkMediaRecorderRef.current = null;
-    }
-    setIsPushToTalkActive(false);
-  }, []);
 
   // Handle sending message to EVA
   const handleSend = () => {
@@ -732,24 +739,18 @@ export function EVAMeetingAssistant({
           {/* Input with push-to-talk button */}
           <div className="p-3 border-t">
             <div className="flex gap-2 items-center">
-              {/* Push-to-talk button */}
+              {/* Push-to-talk button - click to start, click again to stop */}
               <Button
                 variant={isPushToTalkActive ? "default" : "outline"}
                 size="icon"
                 className={cn(
-                  "flex-shrink-0 transition-all duration-200 touch-none",
+                  "flex-shrink-0 transition-all duration-200",
                   isPushToTalkActive && "bg-red-500 hover:bg-red-600 animate-pulse"
                 )}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  startPushToTalk();
-                }}
-                onPointerUp={stopPushToTalk}
-                onPointerLeave={stopPushToTalk}
-                onPointerCancel={stopPushToTalk}
+                onClick={togglePushToTalk}
                 disabled={isTyping}
                 data-testid="button-push-to-talk"
-                title="Hold to speak to EVA"
+                title={isPushToTalkActive ? "Click to stop recording" : "Click to start speaking to EVA"}
               >
                 <Mic className={cn("w-4 h-4", isPushToTalkActive && "text-white")} />
               </Button>
@@ -772,7 +773,7 @@ export function EVAMeetingAssistant({
             </div>
             {isPushToTalkActive && (
               <p className="text-xs text-center text-muted-foreground mt-2 animate-pulse">
-                Hold the mic button and speak...
+                Recording... Click the mic button again when done.
               </p>
             )}
           </div>
