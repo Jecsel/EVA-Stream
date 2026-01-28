@@ -31,7 +31,7 @@ interface AgendaItem {
   order: number;
 }
 
-interface Message {
+export interface EvaMessage {
   id: string;
   role: "user" | "ai";
   content: string;
@@ -45,6 +45,8 @@ interface EVAMeetingAssistantProps {
   className?: string;
   onRequestScreenObserver?: () => void;
   currentSopContent?: string;
+  messages: EvaMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<EvaMessage[]>>;
 }
 
 export function EVAMeetingAssistant({
@@ -54,10 +56,11 @@ export function EVAMeetingAssistant({
   className,
   onRequestScreenObserver,
   currentSopContent,
+  messages,
+  setMessages,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
@@ -78,22 +81,41 @@ export function EVAMeetingAssistant({
   const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
 
-  // Check if user is asking about screen sharing (for voice commands)
+  // Check if user is asking to START screen sharing (for voice commands)
+  // Only trigger for explicit requests to share/start, NOT for questions about SOP content
   const checkScreenShareRequest = useCallback((text: string): boolean => {
     const lowerText = text.toLowerCase();
+    
+    // These are explicit requests to START screen sharing
     const screenSharePatterns = [
       'share screen', 'screen share', 'share my screen', 'share the screen',
       'screen sharing', 'trigger.screen_share', 'start screen', 'observe screen',
-      'screen observer', 'show my screen', 'share what i see', 'watch my screen',
-      'see my screen', 'view my screen', 'look at my screen'
+      'show my screen', 'share what i see', 'watch my screen',
+      'see my screen', 'view my screen', 'look at my screen',
+      'start observing', 'begin observing', 'start the observer',
+      'open screen observer', 'switch to screen observer', 'go to screen observer'
     ];
+    
+    // Exclude if user is asking ABOUT the SOP (questions, not requests to share)
+    const sopQuestionPatterns = [
+      'what is the sop', 'what\'s the sop', 'about the sop', 'sop content',
+      'sop says', 'sop document', 'access the sop', 'read the sop',
+      'in the sop', 'from the sop', 'sop generated', 'current sop',
+      'sop right now', 'check the sop', 'show me the sop'
+    ];
+    
+    // If it's a question about SOP content, don't switch tabs
+    if (sopQuestionPatterns.some(pattern => lowerText.includes(pattern))) {
+      return false;
+    }
+    
     return screenSharePatterns.some(pattern => lowerText.includes(pattern));
   }, []);
 
   // Handle voice command result
   const handleVoiceSpeechResult = useCallback((text: string) => {
     if (text.trim()) {
-      const userMessage: Message = {
+      const userMessage: EvaMessage = {
         id: Date.now().toString(),
         role: "user",
         content: text,
@@ -103,7 +125,7 @@ export function EVAMeetingAssistant({
       
       // Check if this is a screen share request
       if (checkScreenShareRequest(text)) {
-        const aiMessage: Message = {
+        const aiMessage: EvaMessage = {
           id: (Date.now() + 1).toString(),
           role: "ai",
           content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
@@ -222,7 +244,7 @@ export function EVAMeetingAssistant({
   } = useElevenLabsAgent({
     onUserTranscript: (text) => {
       console.log("[EVA Agent] User said:", text);
-      const userMessage: Message = {
+      const userMessage: EvaMessage = {
         id: Date.now().toString(),
         role: "user",
         content: text,
@@ -239,7 +261,7 @@ export function EVAMeetingAssistant({
     },
     onAgentResponse: (text) => {
       console.log("[EVA Agent] Response:", text);
-      const aiMessage: Message = {
+      const aiMessage: EvaMessage = {
         id: Date.now().toString(),
         role: "ai",
         content: text,
@@ -356,7 +378,7 @@ export function EVAMeetingAssistant({
       return res.json();
     },
     onSuccess: async (data) => {
-      const aiMessage: Message = {
+      const aiMessage: EvaMessage = {
         id: Date.now().toString(),
         role: "ai",
         content: data.response || "I couldn't generate a response. Please try again.",
@@ -372,7 +394,7 @@ export function EVAMeetingAssistant({
     },
     onError: (error) => {
       console.error("EVA error:", error);
-      const errorMessage: Message = {
+      const errorMessage: EvaMessage = {
         id: Date.now().toString(),
         role: "ai",
         content: "Sorry, I encountered an error. Please try again.",
@@ -494,7 +516,7 @@ export function EVAMeetingAssistant({
                 const data = await response.json();
                 if (data.text && data.text.trim() && data.text !== '[music]') {
                   // Send the transcribed text to EVA
-                  const userMessage: Message = {
+                  const userMessage: EvaMessage = {
                     id: Date.now().toString(),
                     role: "user",
                     content: data.text,
@@ -502,18 +524,11 @@ export function EVAMeetingAssistant({
                   };
                   setMessages(prev => [...prev, userMessage]);
                   
-                  // Check if this is a screen share request (same as voice/text handlers)
-                  const lowerText = data.text.toLowerCase();
-                  const screenSharePatterns = [
-                    'share screen', 'screen share', 'share my screen', 'share the screen',
-                    'screen sharing', 'trigger.screen_share', 'start screen', 'observe screen',
-                    'screen observer', 'show my screen', 'share what i see', 'watch my screen',
-                    'see my screen', 'view my screen', 'look at my screen'
-                  ];
-                  const isScreenShareReq = screenSharePatterns.some(pattern => lowerText.includes(pattern));
+                  // Check if this is an explicit screen share request (not just asking about SOP)
+                  const isScreenShareReq = checkScreenShareRequest(data.text);
                   
                   if (isScreenShareReq && onRequestScreenObserver) {
-                    const aiMessage: Message = {
+                    const aiMessage: EvaMessage = {
                       id: (Date.now() + 1).toString(),
                       role: "ai",
                       content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
@@ -560,7 +575,7 @@ export function EVAMeetingAssistant({
   const handleSend = () => {
     if (!inputValue.trim()) return;
 
-    const userMessage: Message = {
+    const userMessage: EvaMessage = {
       id: Date.now().toString(),
       role: "user",
       content: inputValue,
@@ -571,7 +586,7 @@ export function EVAMeetingAssistant({
     // Check if this is a screen share request
     if (checkScreenShareRequest(inputValue)) {
       // Add a helpful response and trigger screen observer
-      const aiMessage: Message = {
+      const aiMessage: EvaMessage = {
         id: (Date.now() + 1).toString(),
         role: "ai",
         content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",

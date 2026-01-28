@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { EVAPanel } from "@/components/EVAPanel";
-import { EVAMeetingAssistant } from "@/components/EVAMeetingAssistant";
+import { EVAMeetingAssistant, type EvaMessage } from "@/components/EVAMeetingAssistant";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
@@ -50,6 +50,7 @@ export default function MeetingRoom() {
   const [isJitsiTranscribing, setIsJitsiTranscribing] = useState(false);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
+  const [evaMessages, setEvaMessages] = useState<EvaMessage[]>([]);
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
   const meetingStartTime = useRef(Date.now());
@@ -668,6 +669,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                     setEvaPanelMode("observe");
                   }}
                   currentSopContent={sopContent}
+                  messages={evaMessages}
+                  setMessages={setEvaMessages}
                 />
               ) : isScreenObserverEnabled ? (
                 <EVAPanel 
