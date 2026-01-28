@@ -19,6 +19,12 @@ When you observe something important:
 
 Format SOP updates with "## SOP Update:" prefix when documenting new procedures.`;
 
+interface ScreenObservation {
+  timestamp: number;
+  description: string;
+  type: "ui" | "code" | "document" | "diagram" | "presentation" | "other";
+}
+
 interface LiveSession {
   isActive: boolean;
   sessionId: string;
@@ -29,6 +35,12 @@ interface LiveSession {
   lastImageHash?: string;
   framesSinceResponse?: number;
   lastForceCheck?: number;
+  // SOP generation state
+  observations: ScreenObservation[];
+  currentSop: string;
+  lastSopGeneration?: number;
+  lastSopObservationIndex: number; // Index of last observation used for SOP
+  sopVersion: number;
 }
 
 const activeSessions = new Map<string, LiveSession>();
@@ -83,6 +95,113 @@ const MIN_RESPONSE_INTERVAL_UNCHANGED = 30000; // 30 seconds if screen looks the
 const MIN_RESPONSE_INTERVAL_CHANGED = 5000; // 5 seconds if screen changed significantly
 const FORCE_CHECK_INTERVAL = 60000; // Force a check every 60 seconds even if nothing seems changed
 const FRAMES_BEFORE_RECHECK = 6; // After 6 frames (~60s at 10s interval), force a re-analysis
+const SOP_GENERATION_INTERVAL = 30000; // Generate/update SOP every 30 seconds
+const MIN_OBSERVATIONS_FOR_SOP = 2; // Minimum observations before generating SOP
+
+// Helper to create a new session with all required fields
+function createSession(meetingId: string): LiveSession {
+  return {
+    isActive: true,
+    sessionId: meetingId,
+    lastActivity: Date.now(),
+    observations: [],
+    currentSop: "",
+    lastSopObservationIndex: 0,
+    sopVersion: 0,
+  };
+}
+
+// Detect observation type from screen analysis
+function detectObservationType(description: string): ScreenObservation["type"] {
+  const lower = description.toLowerCase();
+  if (lower.includes("code") || lower.includes("function") || lower.includes("syntax") || lower.includes("programming")) {
+    return "code";
+  }
+  if (lower.includes("diagram") || lower.includes("flowchart") || lower.includes("chart") || lower.includes("graph")) {
+    return "diagram";
+  }
+  if (lower.includes("slide") || lower.includes("presentation") || lower.includes("powerpoint")) {
+    return "presentation";
+  }
+  if (lower.includes("document") || lower.includes("text") || lower.includes("article") || lower.includes("report")) {
+    return "document";
+  }
+  if (lower.includes("ui") || lower.includes("interface") || lower.includes("button") || lower.includes("form") || lower.includes("screen") || lower.includes("dashboard")) {
+    return "ui";
+  }
+  return "other";
+}
+
+// Validate if observation contains actionable content (has ACTION: with a verb)
+function isValidObservation(description: string): boolean {
+  const lower = description.toLowerCase();
+  
+  // Must contain ACTION: with some content
+  const actionMatch = description.match(/ACTION:\s*(.+?)(?=\n|SYSTEM:|DETAILS:|$)/i);
+  if (!actionMatch || actionMatch[1].trim().length < 5) {
+    return false;
+  }
+  
+  // Check for action verbs
+  const actionVerbs = ['click', 'select', 'enter', 'type', 'configure', 'set', 'choose', 'open', 'navigate', 'scroll', 'submit', 'save', 'create', 'add', 'edit', 'delete', 'view', 'expand', 'collapse'];
+  const hasActionVerb = actionVerbs.some(verb => lower.includes(verb));
+  
+  return hasActionVerb;
+}
+
+// Generate SOP from accumulated observations (only new ones since last generation)
+async function generateSOP(session: LiveSession): Promise<{ sop: string; newIndex: number } | null> {
+  // Get only new observations since last SOP generation
+  const newObservations = session.observations.slice(session.lastSopObservationIndex);
+  
+  if (newObservations.length < MIN_OBSERVATIONS_FOR_SOP) {
+    return null;
+  }
+
+  const newObservationsSummary = newObservations
+    .map((obs, i) => `${i + 1}. [${obs.type.toUpperCase()}] ${obs.description}`)
+    .join("\n");
+
+  const prompt = `You are an SOP (Standard Operating Procedure) documentation expert. Based on observed screen actions from a meeting, generate or update a structured SOP document.
+
+NEW OBSERVATIONS (actions captured from screen):
+${newObservationsSummary}
+
+${session.currentSop ? `EXISTING SOP (integrate new steps into this):\n${session.currentSop}\n\n` : ""}
+
+Generate a professional SOP document with:
+1. **Title** - A clear, descriptive title for the procedure
+2. **Objective** - What this procedure achieves
+3. **Prerequisites** - Any requirements before starting
+4. **Steps** - Numbered procedural steps with clear actions (e.g., "Click X", "Select Y", "Enter Z")
+5. **Tools/Systems** - Software, tools, or systems used
+6. **Notes** - Important tips or warnings
+
+RULES:
+- Focus on ACTIONS: what buttons to click, what to select, what to enter
+- Each step should be a specific, actionable instruction
+- If updating existing SOP, merge new steps in the correct sequence
+- Remove redundant or duplicate steps
+- Keep it practical and usable by someone following along
+
+Format output in clean Markdown.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const sopText = response.text || null;
+    if (sopText) {
+      return { sop: sopText, newIndex: session.observations.length };
+    }
+    return null;
+  } catch (error) {
+    console.error("[EVA SOP] Generation failed:", error);
+    return null;
+  }
+}
 
 export interface GeminiLiveMessage {
   type: "audio" | "video" | "text" | "control" | "audio_transcribe";
@@ -93,11 +212,13 @@ export interface GeminiLiveMessage {
 }
 
 export interface GeminiLiveResponse {
-  type: "text" | "audio" | "sop_update" | "error" | "status" | "transcript";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "error" | "status" | "transcript";
   content: string;
   audioData?: string; // base64 audio
   isFinal?: boolean;
   speaker?: string;
+  observationCount?: number;
+  sopVersion?: number;
 }
 
 export async function processLiveInput(
@@ -115,11 +236,7 @@ export async function processLiveInput(
     // Handle control messages
     if (message.type === "control") {
       if (message.command === "start") {
-        activeSessions.set(meetingId, {
-          isActive: true,
-          sessionId: meetingId,
-          lastActivity: Date.now(),
-        });
+        activeSessions.set(meetingId, createSession(meetingId));
         return {
           type: "status",
           content: "EVA is now observing the meeting",
@@ -137,12 +254,9 @@ export async function processLiveInput(
         if (session) {
           session.isTranscribing = true;
         } else {
-          activeSessions.set(meetingId, {
-            isActive: true,
-            sessionId: meetingId,
-            lastActivity: Date.now(),
-            isTranscribing: true,
-          });
+          const newSession = createSession(meetingId);
+          newSession.isTranscribing = true;
+          activeSessions.set(meetingId, newSession);
         }
         return {
           type: "status",
@@ -178,11 +292,7 @@ export async function processLiveInput(
       // Get or create session
       let session = activeSessions.get(meetingId);
       if (!session) {
-        session = {
-          isActive: true,
-          sessionId: meetingId,
-          lastActivity: Date.now(),
-        };
+        session = createSession(meetingId);
         activeSessions.set(meetingId, session);
       }
       
@@ -241,17 +351,21 @@ export async function processLiveInput(
             mimeType: message.mimeType || "image/jpeg",
           },
         },
-        `You are EVA, the AI meeting assistant. Analyze this screen capture from a video meeting.
-         
-If you see:
-- Code: Briefly describe what the code does and any issues you notice
-- Documents: Summarize key points
-- Diagrams/Charts: Describe what they show
-- Presentations: Extract main points
-- UI/Design: Comment on the layout and usability
+        `You are EVA, an AI assistant that documents procedures and workflows. Analyze this screen capture and extract PROCEDURAL information.
 
-Keep your response under 100 words. Only respond if you see something NEW and meaningful.
-If nothing has changed or it's just a video call interface, respond with exactly: "[Observing]"${lastResponseContext}`,
+Focus on ACTIONS and STEPS being demonstrated:
+- What action is being performed? (clicking, configuring, entering data, selecting options)
+- What tool/system/application is being used?
+- What is the sequence of steps visible?
+- What inputs, settings, or configurations are shown?
+
+Format your response as:
+ACTION: [what is being done]
+SYSTEM: [tool/app being used]
+DETAILS: [specific settings, values, or configurations visible]
+
+Keep response under 80 words. Focus on WHAT is being done, not how it looks.
+If nothing actionable is visible (just video call faces), respond exactly: "[Observing]"${lastResponseContext}`,
       ];
 
       const response = await ai.models.generateContent({
@@ -289,23 +403,54 @@ If nothing has changed or it's just a video call interface, respond with exactly
       session.framesSinceResponse = 0; // Reset frame counter
       session.lastForceCheck = now; // Reset force check timer
       
-      // Check for SOP update markers
-      let sopUpdate: string | undefined;
-      const sopMatch = text.match(/## SOP Update:([\s\S]*?)(?=\n## |$)/);
-      if (sopMatch) {
-        sopUpdate = sopMatch[1].trim();
-      }
-
-      if (sopUpdate) {
-        return {
-          type: "sop_update",
-          content: text.replace(/## SOP Update:[\s\S]*?(?=\n## |$)/, "").trim(),
+      // Only store valid procedural observations for SOP generation
+      const isValid = isValidObservation(text);
+      
+      if (isValid) {
+        const observation: ScreenObservation = {
+          timestamp: now,
+          description: text,
+          type: detectObservationType(text),
         };
+        session.observations.push(observation);
+        console.log(`[EVA SOP] Added valid observation #${session.observations.length}: ${observation.type}`);
+      } else {
+        console.log(`[EVA SOP] Skipped non-procedural observation (no valid ACTION found)`);
       }
-
+      
+      // Check if we should generate/update SOP
+      const timeSinceLastSop = session.lastSopGeneration ? now - session.lastSopGeneration : Infinity;
+      const newObservationCount = session.observations.length - session.lastSopObservationIndex;
+      const shouldGenerateSop = newObservationCount >= MIN_OBSERVATIONS_FOR_SOP && 
+                                 timeSinceLastSop >= SOP_GENERATION_INTERVAL;
+      
+      if (shouldGenerateSop) {
+        console.log(`[EVA SOP] Generating SOP from ${newObservationCount} new observations (total: ${session.observations.length})...`);
+        const result = await generateSOP(session);
+        
+        if (result) {
+          session.currentSop = result.sop;
+          session.lastSopObservationIndex = result.newIndex;
+          session.lastSopGeneration = now;
+          session.sopVersion++;
+          console.log(`[EVA SOP] Generated SOP v${session.sopVersion}`);
+          
+          // Return the SOP update with metadata
+          return {
+            type: "sop_update",
+            content: result.sop,
+            observationCount: session.observations.length,
+            sopVersion: session.sopVersion,
+          };
+        }
+      }
+      
+      // Return status with observation count for progress indication
       return {
-        type: "text",
+        type: "sop_status",
         content: text,
+        observationCount: session.observations.length,
+        sopVersion: session.sopVersion,
       };
     }
 

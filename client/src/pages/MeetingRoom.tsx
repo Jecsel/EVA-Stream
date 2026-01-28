@@ -53,18 +53,15 @@ export default function MeetingRoom() {
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
   const meetingStartTime = useRef(Date.now());
-  const [sopContent, setSopContent] = useState(`# Project Kickoff SOP
+  const [sopContent, setSopContent] = useState(`# Live SOP Document
 
-## 1. Meeting Objective
-- Define core goals for Q3
-- Assign roles and responsibilities
+*Waiting for screen observations...*
 
-## 2. Attendees
-- Project Manager
-- Design Lead
-- Lead Developer
+Start sharing your screen and EVA will automatically generate an SOP based on what it observes.
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
+  const [sopObservationCount, setSopObservationCount] = useState(0);
+  const [sopVersion, setSopVersion] = useState(0);
 
   const hasEndedMeetingRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
@@ -273,8 +270,17 @@ export default function MeetingRoom() {
     }
   }, [meeting?.id, queryClient]);
 
-  const handleSopUpdate = useCallback((content: string) => {
-    setSopContent(prev => prev + "\n" + content);
+  const handleSopUpdate = useCallback((content: string, observationCount?: number, version?: number) => {
+    // Replace entire SOP content with new generated content
+    setSopContent(content);
+    setIsSopUpdating(false);
+    if (observationCount !== undefined) setSopObservationCount(observationCount);
+    if (version !== undefined) setSopVersion(version);
+  }, []);
+
+  const handleSopStatus = useCallback((observationCount: number, version: number) => {
+    setSopObservationCount(observationCount);
+    setSopVersion(version);
   }, []);
 
   const {
@@ -289,6 +295,7 @@ export default function MeetingRoom() {
     meetingId: meeting?.id || "",
     onMessage: handleEvaMessage,
     onSopUpdate: handleSopUpdate,
+    onSopStatus: handleSopStatus,
     onStatusChange: setEvaStatus,
   });
 

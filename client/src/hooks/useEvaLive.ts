@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 interface EvaLiveMessage {
-  type: "text" | "audio" | "sop_update" | "error" | "status";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "error" | "status";
   content: string;
   audioData?: string;
+  observationCount?: number;
+  sopVersion?: number;
 }
 
 interface UseEvaLiveOptions {
   meetingId: string;
   onMessage?: (message: EvaLiveMessage) => void;
-  onSopUpdate?: (content: string) => void;
+  onSopUpdate?: (content: string, observationCount?: number, sopVersion?: number) => void;
+  onSopStatus?: (observationCount: number, sopVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
 }
 
@@ -17,6 +20,7 @@ export function useEvaLive({
   meetingId,
   onMessage,
   onSopUpdate,
+  onSopStatus,
   onStatusChange,
 }: UseEvaLiveOptions) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -50,7 +54,9 @@ export function useEvaLive({
         const message: EvaLiveMessage = JSON.parse(event.data);
         
         if (message.type === "sop_update") {
-          onSopUpdate?.(message.content);
+          onSopUpdate?.(message.content, message.observationCount, message.sopVersion);
+        } else if (message.type === "sop_status") {
+          onSopStatus?.(message.observationCount || 0, message.sopVersion || 0);
         }
         
         onMessage?.(message);
@@ -75,7 +81,7 @@ export function useEvaLive({
     ws.onerror = (error) => {
       console.error("EVA WebSocket error:", error);
     };
-  }, [meetingId, onMessage, onSopUpdate, onStatusChange]);
+  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onStatusChange]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
