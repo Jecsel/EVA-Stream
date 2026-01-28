@@ -5,6 +5,7 @@ interface UseElevenLabsAgentOptions {
   onAgentResponse?: (text: string) => void;
   onError?: (error: string) => void;
   enabled?: boolean;
+  dynamicContext?: string;
 }
 
 interface AgentMessage {
@@ -22,6 +23,7 @@ export function useElevenLabsAgent({
   onAgentResponse,
   onError,
   enabled = true,
+  dynamicContext,
 }: UseElevenLabsAgentOptions = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -35,6 +37,12 @@ export function useElevenLabsAgent({
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const dynamicContextRef = useRef<string | undefined>(dynamicContext);
+  
+  // Keep ref in sync with prop
+  useEffect(() => {
+    dynamicContextRef.current = dynamicContext;
+  }, [dynamicContext]);
 
   const getSignedUrl = useCallback(async (): Promise<string | null> => {
     try {
@@ -150,6 +158,16 @@ export function useElevenLabsAgent({
             const convId = message.conversation_initiation_metadata_event?.conversation_id;
             console.log('[ElevenLabs Agent] Conversation initialized:', convId);
             setConversationId(convId || null);
+            
+            // Send dynamic context (SOP content) to the agent if available
+            if (dynamicContextRef.current && dynamicContextRef.current.trim()) {
+              const contextMessage = {
+                type: 'context_update',
+                context: dynamicContextRef.current
+              };
+              ws.send(JSON.stringify(contextMessage));
+              console.log('[ElevenLabs Agent] Sent dynamic context to agent');
+            }
             break;
 
           case 'user_transcript':
@@ -326,6 +344,22 @@ export function useElevenLabsAgent({
     }));
   }, []);
 
+  // Send context update to the agent (for dynamic SOP content updates)
+  const sendContextUpdate = useCallback((context: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('[ElevenLabs Agent] Not connected, cannot send context update');
+      return;
+    }
+
+    if (context && context.trim()) {
+      wsRef.current.send(JSON.stringify({
+        type: 'context_update',
+        context: context,
+      }));
+      console.log('[ElevenLabs Agent] Sent context update to agent');
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -345,5 +379,6 @@ export function useElevenLabsAgent({
     stopListening,
     stopAudio,
     sendTextMessage,
+    sendContextUpdate,
   };
 }

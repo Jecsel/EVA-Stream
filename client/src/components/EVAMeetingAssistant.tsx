@@ -241,6 +241,7 @@ export function EVAMeetingAssistant({
     startListening: startAgentListening,
     stopListening: stopAgentListening,
     stopAudio: stopAgentAudio,
+    sendContextUpdate: sendAgentContextUpdate,
   } = useElevenLabsAgent({
     onUserTranscript: (text) => {
       console.log("[EVA Agent] User said:", text);
@@ -273,12 +274,24 @@ export function EVAMeetingAssistant({
       console.error("[EVA Agent] Error:", error);
     },
     enabled: useConversationalAgent,
+    // Pass SOP content as dynamic context for the voice agent
+    dynamicContext: currentSopContent && !currentSopContent.includes("Waiting for screen observations") 
+      ? `=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n${currentSopContent}\n=== END SOP DOCUMENT ===\n\nYou have access to this SOP document. When users ask about the SOP, refer to this content.`
+      : undefined,
   });
 
   // Unified listening state
   const isListening = useConversationalAgent ? isAgentListening : isLegacyListening;
   const startListening = useConversationalAgent ? startAgentListening : startLegacyListening;
   const stopListening = useConversationalAgent ? stopAgentListening : stopLegacyListening;
+
+  // Update agent context when SOP content changes (during active conversation)
+  useEffect(() => {
+    if (useConversationalAgent && isAgentConnected && currentSopContent && !currentSopContent.includes("Waiting for screen observations")) {
+      const contextMessage = `=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n${currentSopContent}\n=== END SOP DOCUMENT ===\n\nYou have access to this SOP document. When users ask about the SOP, refer to this content.`;
+      sendAgentContextUpdate(contextMessage);
+    }
+  }, [currentSopContent, isAgentConnected, sendAgentContextUpdate, useConversationalAgent]);
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
