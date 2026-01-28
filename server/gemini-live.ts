@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { WebSocket as WS } from "ws";
+import { storage } from "./storage";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
@@ -149,6 +150,29 @@ function isValidObservation(description: string): boolean {
   return hasActionVerb;
 }
 
+// Default SOP prompt template (fallback if database prompt not found)
+const DEFAULT_SOP_PROMPT = `You are an expert SOP documentation specialist. Generate comprehensive, structured SOPs based on observed screen actions.
+
+## OUTPUT FORMAT
+
+Generate the SOP document using this structure:
+
+### Standard Operating Procedure: [Descriptive Title]
+
+**1. Objective**
+Provide a clear statement of what this procedure accomplishes.
+
+**2. Prerequisites**
+List what is needed before starting.
+
+**3. Tools/Systems**
+List all platforms, applications, or tools used.
+
+**4. Procedure Steps**
+Document each step with numbered sub-steps (4.1, 4.2, etc.)
+
+Use clear, imperative language and include specific UI elements.`;
+
 // Generate SOP from accumulated observations (only new ones since last generation)
 async function generateSOP(session: LiveSession): Promise<{ sop: string; newIndex: number } | null> {
   // Get only new observations since last SOP generation
@@ -162,29 +186,30 @@ async function generateSOP(session: LiveSession): Promise<{ sop: string; newInde
     .map((obs, i) => `${i + 1}. [${obs.type.toUpperCase()}] ${obs.description}`)
     .join("\n");
 
-  const prompt = `You are an SOP (Standard Operating Procedure) documentation expert. Based on observed screen actions from a meeting, generate or update a structured SOP document.
+  // Fetch SOP prompt template from database
+  let sopPromptTemplate = DEFAULT_SOP_PROMPT;
+  try {
+    const dbPrompt = await storage.getActivePromptByType("sop");
+    if (dbPrompt?.content) {
+      sopPromptTemplate = dbPrompt.content;
+      console.log("[EVA SOP] Using prompt template from database");
+    } else {
+      console.log("[EVA SOP] No database prompt found, using default template");
+    }
+  } catch (error) {
+    console.error("[EVA SOP] Failed to fetch prompt from database, using default:", error);
+  }
 
-NEW OBSERVATIONS (actions captured from screen):
+  const prompt = `${sopPromptTemplate}
+
+---
+
+## OBSERVATIONS FROM SCREEN (actions captured during meeting):
 ${newObservationsSummary}
 
-${session.currentSop ? `EXISTING SOP (integrate new steps into this):\n${session.currentSop}\n\n` : ""}
+${session.currentSop ? `## EXISTING SOP (integrate new steps into this document):\n${session.currentSop}\n\n` : ""}
 
-Generate a professional SOP document with:
-1. **Title** - A clear, descriptive title for the procedure
-2. **Objective** - What this procedure achieves
-3. **Prerequisites** - Any requirements before starting
-4. **Steps** - Numbered procedural steps with clear actions (e.g., "Click X", "Select Y", "Enter Z")
-5. **Tools/Systems** - Software, tools, or systems used
-6. **Notes** - Important tips or warnings
-
-RULES:
-- Focus on ACTIONS: what buttons to click, what to select, what to enter
-- Each step should be a specific, actionable instruction
-- If updating existing SOP, merge new steps in the correct sequence
-- Remove redundant or duplicate steps
-- Keep it practical and usable by someone following along
-
-Format output in clean Markdown.`;
+Generate the complete SOP document now based on these observations. If updating an existing SOP, merge the new observations into the appropriate sections.`;
 
   try {
     const response = await ai.models.generateContent({
