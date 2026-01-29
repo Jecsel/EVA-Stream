@@ -444,3 +444,23 @@ export const insertEvaSettingsSchema = createInsertSchema(evaSettings).omit({
 
 export type InsertEvaSettings = z.infer<typeof insertEvaSettingsSchema>;
 export type EvaSettings = typeof evaSettings.$inferSelect;
+
+// API Keys table (for external API access)
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  key: text("key").notNull().unique(),
+  keyPrefix: text("key_prefix").notNull(), // First 8 chars for display (e.g., "sk-xxxx...")
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+  lastUsedAt: true,
+});
+
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
