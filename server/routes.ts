@@ -104,8 +104,8 @@ export async function registerRoutes(
     }
   });
 
-  // API Key Management
-  app.get("/api/api-keys", async (req, res) => {
+  // API Key Management (admin routes)
+  app.get("/api/admin/api-keys", async (req, res) => {
     try {
       const keys = await storage.listApiKeys();
       // Don't expose the full key, only the prefix
@@ -123,7 +123,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/api-keys", async (req, res) => {
+  app.post("/api/admin/api-keys", async (req, res) => {
     try {
       const { name } = req.body;
       if (!name || typeof name !== "string") {
@@ -157,7 +157,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/api-keys/:id", async (req, res) => {
+  app.delete("/api/admin/api-keys/:id", async (req, res) => {
     try {
       const success = await storage.revokeApiKey(req.params.id);
       if (!success) {

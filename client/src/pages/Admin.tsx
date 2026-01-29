@@ -97,6 +97,16 @@ interface PromptVersion {
   createdAt: string;
 }
 
+interface ApiKey {
+  id: string;
+  name: string;
+  key?: string; // Only available on creation
+  keyPrefix: string;
+  isActive: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
 interface Agent {
   id: string;
   name: string;
@@ -206,6 +216,10 @@ export default function Admin() {
   const [generatedMeetingLink, setGeneratedMeetingLink] = useState<string | null>(null);
   const [generatedMeetingId, setGeneratedMeetingId] = useState<string | null>(null);
 
+  // API Key state
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKey | null>(null);
+
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users", searchQuery],
     queryFn: () => fetchUsers(searchQuery || undefined),
@@ -233,6 +247,16 @@ export default function Admin() {
   const { data: allPrompts = [] } = useQuery({
     queryKey: ["all-prompts-for-agents"],
     queryFn: () => fetchPrompts(),
+  });
+
+  const { data: apiKeys = [], isLoading: apiKeysLoading } = useQuery<ApiKey[]>({
+    queryKey: ["api-keys"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/api-keys");
+      if (!res.ok) throw new Error("Failed to fetch API keys");
+      return res.json();
+    },
+    enabled: activeTab === "api-test",
   });
 
   const createUserMutation = useMutation({
@@ -452,9 +476,16 @@ export default function Admin() {
   // API Test mutation for creating instant meetings
   const createTestMeetingMutation = useMutation({
     mutationFn: async (title: string) => {
+      // Get the first active API key to use for the test
+      const activeKey = apiKeys.find(k => k.isActive);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeKey && newlyCreatedKey?.key) {
+        headers["X-API-Key"] = newlyCreatedKey.key;
+      }
+      
       const res = await fetch("/api/external/create-meeting", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ title }),
       });
       if (!res.ok) {
@@ -467,6 +498,45 @@ export default function Admin() {
       setGeneratedMeetingLink(data.link);
       setGeneratedMeetingId(data.meeting.id);
       toast({ title: "Meeting created successfully", description: "Click the link to join the meeting with SOP generation enabled." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createApiKeyMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch("/api/admin/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to create API key");
+      }
+      return res.json();
+    },
+    onSuccess: (data: ApiKey) => {
+      setNewlyCreatedKey(data);
+      setNewKeyName("");
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast({ title: "API key created", description: "Copy your key now - it won't be shown again!" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const revokeApiKeyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/api-keys/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to revoke API key");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast({ title: "API key revoked" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1178,14 +1248,143 @@ export default function Admin() {
 
         {activeTab === "api-test" && (
           <div className="space-y-6">
-            <div className="max-w-2xl">
-              <h2 className="text-xl font-semibold mb-2">Instant Meeting API Test</h2>
+            <div className="max-w-3xl">
+              <h2 className="text-xl font-semibold mb-2">API Keys & Testing</h2>
               <p className="text-muted-foreground mb-6">
-                Test the external API that creates instant meetings with SOP generation enabled. 
-                External systems can use this API to programmatically create meeting links.
+                Manage API keys for external systems to create instant meetings with SOP generation enabled.
               </p>
 
-              <div className="bg-card border rounded-lg p-6 space-y-6">
+              {/* API Keys Section */}
+              <div className="bg-card border rounded-lg p-6 space-y-6 mb-6">
+                <h3 className="font-medium text-lg">API Keys</h3>
+                
+                {/* Create new key */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Input
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="Key name (e.g., Production, Integration)"
+                    className="flex-1"
+                    data-testid="input-new-key-name"
+                  />
+                  <Button
+                    onClick={() => createApiKeyMutation.mutate(newKeyName)}
+                    disabled={!newKeyName.trim() || createApiKeyMutation.isPending}
+                    data-testid="button-create-api-key"
+                  >
+                    {createApiKeyMutation.isPending ? "Creating..." : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Generate Key
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Newly created key warning */}
+                {newlyCreatedKey && (
+                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg space-y-3">
+                    <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                      <Zap className="w-5 h-5" />
+                      <span className="font-medium">New API Key Created - Copy Now!</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      This is the only time you'll see the full key. Store it securely.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        value={newlyCreatedKey.key || ""} 
+                        readOnly 
+                        className="font-mono text-sm"
+                        data-testid="input-new-api-key"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          navigator.clipboard.writeText(newlyCreatedKey.key || "");
+                          toast({ title: "Copied!", description: "API key copied to clipboard" });
+                        }}
+                        data-testid="button-copy-new-api-key"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setNewlyCreatedKey(null)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
+
+                {/* API Keys list */}
+                {apiKeysLoading ? (
+                  <div className="text-center py-4 text-muted-foreground">Loading...</div>
+                ) : apiKeys.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    No API keys yet. Create one to get started.
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Key</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Last Used</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {apiKeys.map((apiKey) => (
+                          <TableRow key={apiKey.id} data-testid={`row-api-key-${apiKey.id}`}>
+                            <TableCell className="font-medium">{apiKey.name}</TableCell>
+                            <TableCell className="font-mono text-sm text-muted-foreground">
+                              {apiKey.keyPrefix}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={apiKey.isActive ? "default" : "secondary"}>
+                                {apiKey.isActive ? "Active" : "Revoked"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {apiKey.lastUsedAt ? new Date(apiKey.lastUsedAt).toLocaleDateString() : "Never"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {new Date(apiKey.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {apiKey.isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => revokeApiKeyMutation.mutate(apiKey.id)}
+                                  disabled={revokeApiKeyMutation.isPending}
+                                  className="text-destructive hover:text-destructive"
+                                  data-testid={`button-revoke-api-key-${apiKey.id}`}
+                                >
+                                  <X className="w-4 h-4 mr-1" />
+                                  Revoke
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Test Meeting Section */}
+              <div className="bg-card border rounded-lg p-6 space-y-6 mb-6">
+                <h3 className="font-medium text-lg">Test API</h3>
+                
                 <div className="space-y-2">
                   <Label htmlFor="meeting-title">Meeting Title</Label>
                   <Input
@@ -1199,7 +1398,7 @@ export default function Admin() {
 
                 <Button 
                   onClick={() => createTestMeetingMutation.mutate(testMeetingTitle)}
-                  disabled={createTestMeetingMutation.isPending}
+                  disabled={createTestMeetingMutation.isPending || apiKeys.filter(k => k.isActive).length === 0}
                   className="w-full sm:w-auto"
                   data-testid="button-create-test-meeting"
                 >
@@ -1213,8 +1412,14 @@ export default function Admin() {
                   )}
                 </Button>
 
+                {apiKeys.filter(k => k.isActive).length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Create an API key above to test the external API.
+                  </p>
+                )}
+
                 {generatedMeetingLink && (
-                  <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-4">
+                  <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-4">
                     <div className="flex items-center gap-2 text-primary">
                       <Link2 className="w-5 h-5" />
                       <span className="font-medium">Meeting Created Successfully!</span>
@@ -1257,32 +1462,53 @@ export default function Admin() {
                     </p>
                   </div>
                 )}
+              </div>
 
-                <div className="border-t pt-6 mt-6">
-                  <h3 className="font-medium mb-3">API Documentation</h3>
-                  <div className="bg-muted rounded-lg p-4 space-y-3">
-                    <div>
-                      <span className="text-sm font-mono bg-background px-2 py-1 rounded">POST /api/external/create-meeting</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      <p className="mb-2">Request body (optional):</p>
-                      <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
+              {/* API Documentation */}
+              <div className="bg-card border rounded-lg p-6 space-y-6">
+                <h3 className="font-medium text-lg">API Documentation</h3>
+                <div className="bg-muted rounded-lg p-4 space-y-4">
+                  <div>
+                    <span className="text-sm font-mono bg-background px-2 py-1 rounded">POST /api/external/create-meeting</span>
+                  </div>
+                  
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2 font-medium">curl example:</p>
+                    <pre className="bg-background p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+{`curl -X POST \\
+  "${window.location.origin}/api/external/create-meeting" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_API_KEY" \\
+  -d '{"title": "SOP Draft Session"}'`}
+                    </pre>
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2">Request headers:</p>
+                    <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
+{`Content-Type: application/json
+X-API-Key: YOUR_API_KEY`}
+                    </pre>
+                  </div>
+                  
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2">Request body (optional):</p>
+                    <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
 {`{
   "title": "Meeting Title",
   "scheduledDate": "2026-01-30T14:00:00.000Z"
 }`}
-                      </pre>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      <p className="mb-2">Response:</p>
-                      <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
+                    </pre>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2">Response:</p>
+                    <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
 {`{
   "success": true,
   "meeting": { "id", "title", "roomId", "status", ... },
   "link": "https://your-domain/meeting/abc-defg-hij"
 }`}
-                      </pre>
-                    </div>
+                    </pre>
                   </div>
                 </div>
               </div>
