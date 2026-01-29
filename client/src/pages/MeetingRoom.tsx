@@ -46,14 +46,20 @@ export default function MeetingRoom() {
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
   
-  // Handle voice agent type change and auto-toggle corresponding generator
+  // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
   const handleVoiceAgentTypeChange = useCallback((type: ElevenLabsAgentType) => {
     setVoiceAgentType(type);
-    // Auto-enable the corresponding generator when switching to specialized agents
+    // 1:1 relationship: enable the matching generator, disable the other
     if (type === 'sop') {
       setIsScreenObserverEnabled(true);
+      setIsCROEnabled(false);
     } else if (type === 'cro_interview') {
       setIsCROEnabled(true);
+      setIsScreenObserverEnabled(false);
+    } else {
+      // EVA agent - turn off both specialized generators
+      setIsScreenObserverEnabled(false);
+      setIsCROEnabled(false);
     }
   }, []);
   const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
