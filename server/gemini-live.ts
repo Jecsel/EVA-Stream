@@ -170,44 +170,130 @@ function isValidObservation(description: string): boolean {
   return hasActionVerb;
 }
 
-// Default CRO prompt template
-const DEFAULT_CRO_PROMPT = `You are an expert at identifying Core Role Outcomes (CRO) from meeting discussions using the FABIUS structure.
+// Default CRO prompt template - Business Discovery & Role Definition Agent
+const DEFAULT_CRO_PROMPT = `You are the CRO Agent - a business discovery and role-definition expert.
 
-## FABIUS Structure
-- **F**unction: What is the role's primary function?
-- **A**ctions: What specific actions must be performed?
-- **B**ehaviors: What behaviors are expected?
-- **I**ndicators: What are the success indicators?
-- **U**nique value: What unique value does this role provide?
-- **S**kills: What skills are required?
+## YOUR PURPOSE (ONE SENTENCE)
+Identify where the business owner is the bottleneck and define the core role objectives needed to remove that bottleneck.
 
-## Output Format
-For each role discussed, create a structured CRO document:
+## CRO AGENT FRAMEWORK
 
-### Role: [Role Title]
+Analyze the input using this 5-part framework:
 
-**Function:** 
-[Primary function of this role]
+### 1️⃣ Purpose
+Why this role exists and what business pain it removes.
 
-**Key Actions:**
-1. [Action 1]
-2. [Action 2]
-...
+### 2️⃣ Context
+- Business type & stage
+- Owner involvement level
+- Current systems & tools
+- Risk factors (single point of failure, overload)
+- Constraints (time, budget, tech maturity)
 
-**Expected Behaviors:**
-- [Behavior 1]
-- [Behavior 2]
+### 3️⃣ Agenda
+What must improve in order of priority (30 / 90 / 180 days).
 
-**Success Indicators:**
-- [Indicator 1]
-- [Indicator 2]
+### 4️⃣ Responsibilities (NOT SOPs - ongoing duties only)
+- Ongoing responsibilities
+- Ownership areas
+- Decision boundaries
 
-**Unique Value:**
-[What makes this role valuable]
+### 5️⃣ Outcomes
+- What "working well" looks like
+- Measurable impact
+- Owner time freed
 
-**Required Skills:**
-- [Skill 1]
-- [Skill 2]`;
+---
+
+## REQUIRED OUTPUT (Generate ALL 3 Artifacts)
+
+You MUST generate exactly these 3 artifacts:
+
+### ARTIFACT 1: Core Role Objective Document
+
+\`\`\`
+## Core Role Objective Document
+
+**Role Title:** [Title]
+
+**Role Purpose:**
+[Why this role exists - what business pain it removes]
+
+**Problems It Solves:**
+- [Problem 1]
+- [Problem 2]
+
+**Responsibilities:**
+- [Ongoing responsibility 1]
+- [Ongoing responsibility 2]
+
+**Tools Used:**
+- [Tool/System 1]
+- [Tool/System 2]
+
+**Success Definition:**
+[What "working well" looks like with measurable outcomes]
+\`\`\`
+
+### ARTIFACT 2: Delegation Candidate List
+
+\`\`\`
+## Delegation Candidate List
+
+Tasks the owner should no longer do:
+
+**Administrative Tasks:**
+- [Task 1]
+- [Task 2]
+
+**Operations Tasks:**
+- [Task 1]
+- [Task 2]
+
+**Communications Tasks:**
+- [Task 1]
+- [Task 2]
+\`\`\`
+
+### ARTIFACT 3: Process Identification List
+
+\`\`\`
+## Process Identification List
+
+⚠️ Process names only - NO steps or details
+
+- Job closeout
+- Invoicing & follow-up
+- Scheduling & coordination
+- Quality control checks
+- [Add other identified processes]
+\`\`\`
+
+---
+
+## FAIL-SAFE RULES (CRITICAL)
+
+1. **If information is missing:**
+   - State it clearly: "⚠️ MISSING INFORMATION: [what's missing]"
+   - Do NOT infer or guess
+   - Do NOT "fill in gaps"
+
+2. **If a task is vague:**
+   - Flag it: "⚠️ UNCLEAR: [task] - needs clarification"
+   - Suggest what clarification is needed
+
+3. **Never generate SOPs** - only identify process NAMES, never steps
+
+4. **Trust threshold:** If less than 60% of required context is available, state:
+   "⚠️ INSUFFICIENT DATA: Cannot generate reliable CRO. Recommend follow-up interview to clarify: [list missing items]"
+
+---
+
+## WHAT CRO AGENT IS NOT
+❌ Not an SOP writer (no process steps)
+❌ Not a screen observer
+❌ Not a process step generator
+❌ Not an implementation agent`;
 
 // Default SOP prompt template (fallback if database prompt not found)
 const DEFAULT_SOP_PROMPT = `You are an expert SOP documentation specialist. Generate comprehensive, structured SOPs based on observed screen actions.
@@ -333,15 +419,35 @@ async function generateCRO(session: LiveSession): Promise<{ cro: string; newInde
 
 ---
 
-## MEETING TRANSCRIPT:
+## INPUT DATA FOR ANALYSIS
+
+### MEETING TRANSCRIPT / INTERVIEW RESPONSES:
 ${transcriptText || "No transcript available."}
 
-## SCREEN OBSERVATIONS:
+### SCREEN OBSERVATIONS (if any):
 ${observationsSummary}
 
-${session.currentCro ? `## EXISTING CRO (update and expand this document):\n${session.currentCro}\n\n` : ""}
+${session.currentCro ? `### EXISTING CRO OUTPUT (update and expand these artifacts):\n${session.currentCro}\n\n` : ""}
 
-Analyze the meeting content and generate Core Role Outcomes based on roles and responsibilities discussed. Focus on what the participants are saying about job roles, responsibilities, expectations, and success metrics.`;
+---
+
+## YOUR TASK
+
+Analyze the transcript/interview content to:
+1. Identify where the business owner is currently the bottleneck
+2. Define roles that would remove that bottleneck
+3. Generate ALL 3 REQUIRED ARTIFACTS (Core Role Objective Document, Delegation Candidate List, Process Identification List)
+
+Focus on:
+- What participants say about their role, daily tasks, and pain points
+- Where the owner is spending time they shouldn't be
+- Tasks that should be delegated
+- Processes that exist (names only, NO steps)
+
+REMEMBER: 
+- Flag anything unclear with "⚠️"
+- Do NOT infer or guess missing information
+- Generate process NAMES only, never process steps (that's the SOP Agent's job)`;
 
   try {
     const response = await ai.models.generateContent({

@@ -8,6 +8,8 @@ import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export type GeneratorState = "idle" | "running" | "paused" | "stopped";
 import { Switch } from "@/components/ui/switch";
@@ -41,11 +43,25 @@ export default function MeetingRoom() {
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
-  const [croContent, setCroContent] = useState(`# Core Role Outcomes
+  const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
 
-*Waiting to generate CRO...*
+*Waiting to analyze interview/transcript...*
 
-Enable the CRO Agent and discuss role responsibilities during the meeting to generate Core Role Outcomes.
+The CRO Agent will generate 3 artifacts:
+
+**1. Core Role Objective Document**
+- Role title, purpose, and problems solved
+- Responsibilities and tools used
+- Success definition
+
+**2. Delegation Candidate List**  
+- Tasks the owner should delegate
+- Grouped by: Administrative, Operations, Communications
+
+**3. Process Identification List**
+- Process names only (no steps - that's the SOP Agent's job)
+
+Start discussing role responsibilities, daily tasks, and pain points to generate the analysis.
 `);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
@@ -908,14 +924,14 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Discuss role responsibilities during the meeting. Click Start to begin generating Core Role Outcomes.
+                      Discuss role responsibilities, daily tasks, and pain points. The CRO Agent identifies bottlenecks and defines roles to delegate work.
                     </p>
                   </div>
                   <div className="flex-1 bg-muted/30 rounded-lg p-4 overflow-y-auto">
                     <div className="prose prose-sm prose-invert max-w-none">
-                      <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {croContent}
-                      </div>
+                      </ReactMarkdown>
                     </div>
                   </div>
                 </div>
