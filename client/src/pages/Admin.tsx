@@ -24,6 +24,10 @@ import {
   Brain,
   LogOut,
   User,
+  Zap,
+  Link2,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -58,7 +62,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "users" | "prompts" | "agents";
+type Tab = "users" | "prompts" | "agents" | "api-test";
 
 interface User {
   id: string;
@@ -196,6 +200,11 @@ export default function Admin() {
   const [userForm, setUserForm] = useState({ username: "", email: "", password: "", role: "user", status: "active" });
   const [promptForm, setPromptForm] = useState({ name: "", type: "chat", content: "", description: "", isActive: true });
   const [agentForm, setAgentForm] = useState({ name: "", type: "sop", description: "", capabilities: "", icon: "Bot", status: "active", promptId: "" });
+
+  // API Test state
+  const [testMeetingTitle, setTestMeetingTitle] = useState("Test SOP Meeting");
+  const [generatedMeetingLink, setGeneratedMeetingLink] = useState<string | null>(null);
+  const [generatedMeetingId, setGeneratedMeetingId] = useState<string | null>(null);
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users", searchQuery],
@@ -440,6 +449,30 @@ export default function Admin() {
     },
   });
 
+  // API Test mutation for creating instant meetings
+  const createTestMeetingMutation = useMutation({
+    mutationFn: async (title: string) => {
+      const res = await fetch("/api/external/create-meeting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to create meeting");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setGeneratedMeetingLink(data.link);
+      setGeneratedMeetingId(data.meeting.id);
+      toast({ title: "Meeting created successfully", description: "Click the link to join the meeting with SOP generation enabled." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetUserForm = () => {
     setUserForm({ username: "", email: "", password: "", role: "user", status: "active" });
   };
@@ -631,6 +664,18 @@ export default function Admin() {
           >
             <Users className="w-4 h-4" />
             Users
+          </button>
+          <button
+            onClick={() => setActiveTab("api-test")}
+            className={`pb-4 px-2 flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === "api-test"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-api-test"
+          >
+            <Zap className="w-4 h-4" />
+            API Test
           </button>
         </div>
 
@@ -1128,6 +1173,120 @@ export default function Admin() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {activeTab === "api-test" && (
+          <div className="space-y-6">
+            <div className="max-w-2xl">
+              <h2 className="text-xl font-semibold mb-2">Instant Meeting API Test</h2>
+              <p className="text-muted-foreground mb-6">
+                Test the external API that creates instant meetings with SOP generation enabled. 
+                External systems can use this API to programmatically create meeting links.
+              </p>
+
+              <div className="bg-card border rounded-lg p-6 space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="meeting-title">Meeting Title</Label>
+                  <Input
+                    id="meeting-title"
+                    value={testMeetingTitle}
+                    onChange={(e) => setTestMeetingTitle(e.target.value)}
+                    placeholder="Enter meeting title..."
+                    data-testid="input-test-meeting-title"
+                  />
+                </div>
+
+                <Button 
+                  onClick={() => createTestMeetingMutation.mutate(testMeetingTitle)}
+                  disabled={createTestMeetingMutation.isPending}
+                  className="w-full sm:w-auto"
+                  data-testid="button-create-test-meeting"
+                >
+                  {createTestMeetingMutation.isPending ? (
+                    <>Creating...</>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 mr-2" />
+                      Create Instant Meeting
+                    </>
+                  )}
+                </Button>
+
+                {generatedMeetingLink && (
+                  <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-4">
+                    <div className="flex items-center gap-2 text-primary">
+                      <Link2 className="w-5 h-5" />
+                      <span className="font-medium">Meeting Created Successfully!</span>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Meeting Link</Label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          value={generatedMeetingLink} 
+                          readOnly 
+                          className="font-mono text-sm"
+                          data-testid="input-generated-meeting-link"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText(generatedMeetingLink);
+                            toast({ title: "Copied!", description: "Meeting link copied to clipboard" });
+                          }}
+                          data-testid="button-copy-meeting-link"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => window.open(generatedMeetingLink, "_blank")}
+                          data-testid="button-open-meeting-link"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-muted-foreground">
+                      This meeting has the SOP Generator automatically enabled. Share this link with participants 
+                      to start a video call with AI-powered SOP generation.
+                    </p>
+                  </div>
+                )}
+
+                <div className="border-t pt-6 mt-6">
+                  <h3 className="font-medium mb-3">API Documentation</h3>
+                  <div className="bg-muted rounded-lg p-4 space-y-3">
+                    <div>
+                      <span className="text-sm font-mono bg-background px-2 py-1 rounded">POST /api/external/create-meeting</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <p className="mb-2">Request body (optional):</p>
+                      <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
+{`{
+  "title": "Meeting Title",
+  "scheduledDate": "2026-01-30T14:00:00.000Z"
+}`}
+                      </pre>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <p className="mb-2">Response:</p>
+                      <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
+{`{
+  "success": true,
+  "meeting": { "id", "title", "roomId", "status", ... },
+  "link": "https://your-domain/meeting/abc-defg-hij"
+}`}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
