@@ -361,14 +361,8 @@ Analyze the meeting content and generate Core Role Outcomes based on roles and r
 }
 
 // Process transcript entries and extract observations
+// Note: Transcript is already added to buffer before calling this function
 async function processTranscriptForObservations(session: LiveSession, transcript: string, speaker: string): Promise<ScreenObservation | null> {
-  // Add to transcript buffer
-  session.transcriptBuffer.push({
-    timestamp: Date.now(),
-    speaker,
-    text: transcript,
-  });
-  
   // Keep buffer to last 50 entries to avoid memory issues
   if (session.transcriptBuffer.length > 50) {
     session.transcriptBuffer = session.transcriptBuffer.slice(-50);
@@ -685,6 +679,14 @@ If nothing actionable is visible (just video call faces), respond exactly: "[Obs
         session = createSession(meetingId);
         activeSessions.set(meetingId, session);
       }
+      
+      // Add to transcript buffer (this is crucial for SOP/CRO generation!)
+      session.transcriptBuffer.push({
+        text: transcriptText,
+        speaker: speaker,
+        timestamp: now
+      });
+      console.log(`[EVA] Transcript buffer now has ${session.transcriptBuffer.length} entries`);
       
       // Process transcript for observations
       const observation = await processTranscriptForObservations(session, transcriptText, speaker);
