@@ -1,0 +1,122 @@
+[
+  {
+    "id": "Q01",
+    "text": "What is your role in the business and what does a typical day look like?",
+    "intent": "Understand owner workload and responsibilities",
+    "signals": ["Owner tasks", "Daily responsibilities"],
+    "follow_up_if": "Answer is broad or vague",
+    "follow_up": "Can you list the main tasks you personally handle in a normal day?"
+  },
+  {
+    "id": "Q02",
+    "text": "How much of your time is spent on the tools versus off the tools?",
+    "intent": "Understand time allocation",
+    "signals": ["On-the-tools time", "Admin vs field work"],
+    "follow_up_if": "Time split is unclear",
+    "follow_up": "Would you say it is mostly on the tools or mostly admin?"
+  },
+  {
+    "id": "Q03",
+    "text": "What work are you personally doing that should not require you?",
+    "intent": "Identify delegation candidates",
+    "signals": ["Delegatable tasks"],
+    "follow_up_if": "Answer says 'everything'",
+    "follow_up": "Can you name two or three examples?"
+  },
+  {
+    "id": "Q04",
+    "text": "If one key person was unavailable for two weeks, what would struggle or stop?",
+    "intent": "Identify single point of failure risk",
+    "signals": ["Business continuity risk"],
+    "follow_up_if": "Answer is unclear",
+    "follow_up": "Which specific areas would stop first?"
+  },
+  {
+    "id": "Q05",
+    "text": "What is the single biggest challenge in the business right now?",
+    "intent": "Identify primary pain point",
+    "signals": ["Primary challenge"],
+    "follow_up_if": "Multiple issues mentioned",
+    "follow_up": "Which one causes the most problems day to day?"
+  },
+  {
+    "id": "Q06",
+    "text": "When things get busy, what is the first part of the business to suffer?",
+    "intent": "Identify stress failure points",
+    "signals": ["Process breakdown areas"],
+    "follow_up_if": "Answer is general",
+    "follow_up": "Can you give a recent example?"
+  },
+  {
+    "id": "Q07",
+    "text": "What problems keep repeating even after you think they’ve been fixed?",
+    "intent": "Identify systemic issues",
+    "signals": ["Recurring problems"],
+    "follow_up_if": "Answer is vague",
+    "follow_up": "What usually causes them to come back?"
+  },
+  {
+    "id": "Q08",
+    "text": "How do customers typically contact you?",
+    "intent": "Understand communication channels",
+    "signals": ["Inbound channels"],
+    "follow_up_if": "Multiple channels listed",
+    "follow_up": "Which channel requires the most attention?"
+  },
+  {
+    "id": "Q09",
+    "text": "Roughly how much time do you spend each week on email and phone calls?",
+    "intent": "Assess communication workload",
+    "signals": ["Admin time load"],
+    "follow_up_if": "Answer is unclear",
+    "follow_up": "Would you say it is more or less than five hours a week?"
+  },
+  {
+    "id": "Q10",
+    "text": "What software tools are currently used in the business?",
+    "intent": "Understand system landscape",
+    "signals": ["Existing tools"],
+    "follow_up_if": "Tools listed without usage clarity",
+    "follow_up": "Which of these do you personally use most?"
+  },
+  {
+    "id": "Q11",
+    "text": "If only one area was improved in the next 30 days, which would make the biggest difference?",
+    "intent": "Identify immediate priority",
+    "signals": ["30-day focus area"],
+    "follow_up_if": "Multiple areas mentioned",
+    "follow_up": "Which one would have the fastest impact?"
+  },
+  {
+    "id": "Q12",
+    "text": "Looking 12 to 18 months ahead, what would working well look like for the business?",
+    "intent": "Define business vision",
+    "signals": ["Future state business"],
+    "follow_up_if": "Answer is abstract",
+    "follow_up": "What would be different compared to today?"
+  },
+  {
+    "id": "Q13",
+    "text": "Which areas of support would make the biggest difference right now?",
+    "intent": "Identify role focus areas",
+    "signals": ["Support priorities"],
+    "follow_up_if": "Several areas marked important",
+    "follow_up": "Which one should be addressed first?"
+  },
+  {
+    "id": "Q14",
+    "text": "What impact is this challenge having on your business or personal life?",
+    "intent": "Assess urgency and emotional load",
+    "signals": ["Owner stress impact"],
+    "follow_up_if": "Answer is brief",
+    "follow_up": "How is this affecting your time or energy?"
+  },
+  {
+    "id": "Q15",
+    "text": "Looking ahead, what would working well look like for you personally?",
+    "intent": "Define personal success criteria",
+    "signals": ["Owner personal goals"],
+    "follow_up_if": "Answer is unclear",
+    "follow_up": "What would you be able to do more of?"
+  }
+]
