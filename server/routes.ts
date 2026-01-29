@@ -66,12 +66,18 @@ export async function registerRoutes(
       const roomId = generateRoomId();
       const title = validated.title || `Meeting ${roomId}`;
       
-      // Create the meeting
+      // Get the SOP Generator agent to auto-enable for external meetings
+      const allAgents = await storage.listAgents();
+      const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
+      const selectedAgentIds = sopAgent ? [sopAgent.id] : null;
+      
+      // Create the meeting with SOP Generator enabled
       const meeting = await storage.createMeeting({
         title,
         roomId,
         status: validated.scheduledDate ? "scheduled" : "live",
         scheduledDate: validated.scheduledDate ? new Date(validated.scheduledDate) : new Date(),
+        selectedAgents: selectedAgentIds,
       });
       
       // Build the full meeting link
