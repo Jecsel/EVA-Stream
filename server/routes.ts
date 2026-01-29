@@ -220,13 +220,13 @@ export async function registerRoutes(
   app.get("/api/meetings/room/:roomId", async (req, res) => {
     try {
       let meeting = await storage.getMeetingByRoomId(req.params.roomId);
+      const userId = req.query.userId as string | undefined;
       
       // Auto-create meeting if it doesn't exist (for ad-hoc meetings)
       if (!meeting) {
         // Auto-select all agents when creating a new meeting
         const allAgents = await storage.listAgents();
         const allAgentIds = allAgents.map(agent => agent.id);
-        const userId = req.query.userId as string | undefined;
         
         meeting = await storage.createMeeting({
           title: `Meeting ${req.params.roomId}`,
@@ -236,6 +236,9 @@ export async function registerRoutes(
           selectedAgents: allAgentIds.length > 0 ? allAgentIds : null,
           createdBy: userId || null,
         });
+      } else if (!meeting.createdBy && userId) {
+        // Atomically claim moderator role for API-created meetings (first authenticated user)
+        meeting = await storage.updateMeeting(meeting.id, { createdBy: userId }) || meeting;
       }
       
       res.json(meeting);

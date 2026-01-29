@@ -147,7 +147,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   });
 
   // Check if current user is the meeting moderator (creator)
-  const isModerator = meeting?.createdBy === user?.uid;
+  // Server automatically claims moderator for first authenticated user on API-created meetings
+  const isModerator = user?.uid && meeting?.createdBy === user.uid;
 
   // Initialize selectedAgents and generator states from meeting data when it loads
   // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
