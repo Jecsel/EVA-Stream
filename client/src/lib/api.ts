@@ -26,8 +26,11 @@ export const api = {
     return response.json();
   },
 
-  async getMeetingByRoomId(roomId: string): Promise<Meeting> {
-    const response = await fetch(`${API_BASE}/meetings/room/${roomId}`);
+  async getMeetingByRoomId(roomId: string, userId?: string): Promise<Meeting> {
+    const url = userId 
+      ? `${API_BASE}/meetings/room/${roomId}?userId=${encodeURIComponent(userId)}`
+      : `${API_BASE}/meetings/room/${roomId}`;
+    const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch meeting by room ID");
     return response.json();
   },

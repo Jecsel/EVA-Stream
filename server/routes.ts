@@ -226,6 +226,7 @@ export async function registerRoutes(
         // Auto-select all agents when creating a new meeting
         const allAgents = await storage.listAgents();
         const allAgentIds = allAgents.map(agent => agent.id);
+        const userId = req.query.userId as string | undefined;
         
         meeting = await storage.createMeeting({
           title: `Meeting ${req.params.roomId}`,
@@ -233,6 +234,7 @@ export async function registerRoutes(
           status: "live",
           scheduledDate: new Date(),
           selectedAgents: allAgentIds.length > 0 ? allAgentIds : null,
+          createdBy: userId || null,
         });
       }
       
@@ -836,6 +838,7 @@ export async function registerRoutes(
         eventType: validated.eventType,
         isAllDay: validated.isAllDay,
         recurrence: validated.recurrence,
+        createdBy: validated.userId || null,
       });
 
       let calendarEvent = null;

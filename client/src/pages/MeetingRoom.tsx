@@ -8,6 +8,7 @@ import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
+import { useAuth } from "@/contexts/AuthContext";
 import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -39,6 +40,7 @@ export default function MeetingRoom() {
   const [, setLocation] = useLocation();
   const roomId = params?.id || "demo-room";
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
@@ -135,14 +137,17 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, []);
 
   const { data: meeting } = useQuery({
-    queryKey: ["meeting", roomId],
-    queryFn: () => api.getMeetingByRoomId(roomId),
+    queryKey: ["meeting", roomId, user?.uid],
+    queryFn: () => api.getMeetingByRoomId(roomId, user?.uid),
   });
 
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
   });
+
+  // Check if current user is the meeting moderator (creator)
+  const isModerator = meeting?.createdBy === user?.uid;
 
   // Initialize selectedAgents and generator states from meeting data when it loads
   // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
@@ -717,7 +722,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           </div>
           
           <div className="flex items-center gap-2">
-             {meeting?.id && (
+             {meeting?.id && isModerator && (
                <AgentSelector
                  meetingId={meeting.id}
                  roomId={roomId}
@@ -729,7 +734,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  onCROChange={setIsCROEnabled}
                />
              )}
-             {hasJoinedMeeting && evaConnected && (
+             {hasJoinedMeeting && evaConnected && isModerator && (
                <Button
                  size="sm"
                  variant={isObserving ? "destructive" : "default"}
@@ -753,7 +758,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  )}
                </Button>
              )}
-             {hasJoinedMeeting && (
+             {hasJoinedMeeting && isModerator && (
                <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                  evaConnected ? 'border-green-500/50' : 'border-border'
                }`}>
@@ -787,7 +792,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              />
           </div>
 
-          {meeting?.id && hasJoinedMeeting && (
+          {meeting?.id && hasJoinedMeeting && isModerator && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
