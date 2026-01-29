@@ -707,3 +707,85 @@ ${transcriptText.slice(0, 30000)}`;
   }
 }
 
+// Generate CRO (Core Role Objective) document from chat messages
+// This is used as a fallback when real-time CRO generation didn't happen during the meeting
+export async function generateCROFromChatMessages(
+  chatMessages: Array<{ role: string; content: string }>,
+  meetingTitle: string
+): Promise<string | null> {
+  if (!process.env.GEMINI_API_KEY || chatMessages.length < 3) {
+    console.log("[CRO Generation] Insufficient data or no API key");
+    return null;
+  }
+
+  // Format chat messages as interview transcript
+  const transcriptText = chatMessages
+    .map(m => `${m.role === 'user' ? 'Business Owner' : 'CRO Agent'}: ${m.content}`)
+    .join("\n");
+
+  if (transcriptText.length < 100) {
+    console.log("[CRO Generation] Transcript too short");
+    return null;
+  }
+
+  const prompt = `You are a CRO Agent - a business discovery and role-definition expert.
+
+## YOUR PURPOSE
+Identify where the business owner is the bottleneck and define the core role objectives needed to remove that bottleneck.
+
+## REQUIRED OUTPUT
+Generate 3 ARTIFACTS in Markdown format:
+
+### 1. Core Role Objective Document
+- Role title
+- One-sentence purpose
+- Problem it solves
+- Key responsibilities (3-5 bullet points)
+- Tools/systems used
+- Success criteria
+
+### 2. Delegation Candidate List
+Tasks the owner should delegate, grouped by:
+- Administrative tasks
+- Operational tasks
+- Communication tasks
+
+### 3. Process Identification List
+Process NAMES only (no steps - that's the SOP Agent's job):
+- List each process that was mentioned or implied
+- Mark anything unclear with "⚠️"
+
+---
+
+## INPUT DATA
+
+Meeting: ${meetingTitle}
+
+### Interview Transcript:
+${transcriptText}
+
+---
+
+## YOUR TASK
+Analyze this CRO interview transcript and generate all 3 artifacts.
+Focus on what the interviewee said about their role, pain points, and bottlenecks.
+Do NOT infer or guess missing information - flag anything unclear with "⚠️".`;
+
+  try {
+    console.log("[CRO Generation] Generating from chat messages...");
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const croText = response.text;
+    if (croText && croText.length > 100) {
+      console.log(`[CRO Generation] Successfully generated ${croText.length} chars`);
+      return croText;
+    }
+    return null;
+  } catch (error) {
+    console.error("[CRO Generation] Failed:", error);
+    return null;
+  }
+}

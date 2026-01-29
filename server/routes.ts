@@ -501,7 +501,7 @@ export async function registerRoutes(
   app.post("/api/meetings/:meetingId/end", async (req, res) => {
     try {
       const meetingId = req.params.meetingId;
-      const { sopContent, duration } = req.body;
+      const { sopContent, croContent, duration } = req.body;
 
       // Get meeting
       const meeting = await storage.getMeeting(meetingId);
@@ -544,19 +544,39 @@ export async function registerRoutes(
         summary = summaryResponse.message;
       }
 
+      // Generate CRO from chat messages if not provided and we have CRO interview data
+      let finalCroContent = croContent || null;
+      if (!finalCroContent && messages.length >= 5) {
+        // Check if messages look like a CRO interview (contains role/business/task questions)
+        const messageText = messages.map(m => m.content.toLowerCase()).join(" ");
+        const isCroInterview = messageText.includes("responsibilities") || 
+                               messageText.includes("bottleneck") || 
+                               messageText.includes("delegate") ||
+                               messageText.includes("cro interview") ||
+                               messageText.includes("core role");
+        
+        if (isCroInterview) {
+          console.log("[Meeting End] Detected CRO interview, generating CRO document...");
+          const { generateCROFromChatMessages } = await import("./gemini");
+          finalCroContent = await generateCROFromChatMessages(messages, meeting.title);
+        }
+      }
+
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      // Create recording
+      // Create recording - use CRO content as sopContent if no SOP was generated
+      // (both are stored in the same field for now)
+      const documentContent = sopContent || finalCroContent || null;
       const recording = await storage.createRecording({
         meetingId,
         title: meeting.title,
         duration: duration || "00:00",
         summary,
-        sopContent: sopContent || null,
+        sopContent: documentContent,
       });
 
-      res.json({ recording, summary });
+      res.json({ recording, summary, croGenerated: !!finalCroContent && !croContent });
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });

@@ -92,6 +92,29 @@ export function EVAMeetingAssistant({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const askEvaMutationRef = useRef<((question: string) => void) | null>(null);
   const queryClient = useQueryClient();
+  
+  // Refs to keep callback values current (avoid stale closures)
+  const sendTranscriptRef = useRef(sendTranscript);
+  const isCroEnabledRef = useRef(isCroEnabled);
+  const isSopEnabledRef = useRef(isSopEnabled);
+  const voiceAgentTypeRef = useRef(voiceAgentType);
+  
+  // Keep refs in sync with props
+  useEffect(() => {
+    sendTranscriptRef.current = sendTranscript;
+  }, [sendTranscript]);
+  
+  useEffect(() => {
+    isCroEnabledRef.current = isCroEnabled;
+  }, [isCroEnabled]);
+  
+  useEffect(() => {
+    isSopEnabledRef.current = isSopEnabled;
+  }, [isSopEnabled]);
+  
+  useEffect(() => {
+    voiceAgentTypeRef.current = voiceAgentType;
+  }, [voiceAgentType]);
 
   // Check if user is asking to START screen sharing (for voice commands)
   // Only trigger for explicit requests to share/start, NOT for questions about SOP content
@@ -279,8 +302,9 @@ export function EVAMeetingAssistant({
       }
       
       // Send transcript to EVA for CRO/SOP generation when using specialized agents
-      if (sendTranscript && text.trim().length > 2) {
-        sendTranscript(text, "User", isSopEnabled, isCroEnabled);
+      if (sendTranscriptRef.current && text.trim().length > 2) {
+        console.log("[EVA Agent] Sending user transcript to EVA WebSocket", { isSop: isSopEnabledRef.current, isCro: isCroEnabledRef.current });
+        sendTranscriptRef.current(text, "User", isSopEnabledRef.current, isCroEnabledRef.current);
       }
       
       // Check if this is a screen share request
@@ -314,10 +338,11 @@ export function EVAMeetingAssistant({
       }
       
       // Send transcript to EVA for CRO/SOP generation when using specialized agents
-      if (sendTranscript && text.trim().length > 2) {
-        const agentLabel = voiceAgentType === 'cro_interview' ? "CRO Agent" : 
-                          voiceAgentType === 'sop' ? "SOP Agent" : "EVA";
-        sendTranscript(text, agentLabel, isSopEnabled, isCroEnabled);
+      if (sendTranscriptRef.current && text.trim().length > 2) {
+        const agentLabel = voiceAgentTypeRef.current === 'cro_interview' ? "CRO Agent" : 
+                          voiceAgentTypeRef.current === 'sop' ? "SOP Agent" : "EVA";
+        console.log("[EVA Agent] Sending agent response to EVA WebSocket", { agentLabel, isSop: isSopEnabledRef.current, isCro: isCroEnabledRef.current });
+        sendTranscriptRef.current(text, agentLabel, isSopEnabledRef.current, isCroEnabledRef.current);
       }
     },
     onError: (error) => {
