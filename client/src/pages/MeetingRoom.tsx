@@ -834,6 +834,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   setMessages={setEvaMessages}
                   voiceAgentType={voiceAgentType}
                   onVoiceAgentTypeChange={handleVoiceAgentTypeChange}
+                  sendTranscript={sendTranscript}
+                  isCroEnabled={isCROEnabled}
+                  isSopEnabled={isScreenObserverEnabled}
                 />
               )}
               

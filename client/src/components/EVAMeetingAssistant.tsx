@@ -50,6 +50,9 @@ interface EVAMeetingAssistantProps {
   setMessages: React.Dispatch<React.SetStateAction<EvaMessage[]>>;
   voiceAgentType?: ElevenLabsAgentType;
   onVoiceAgentTypeChange?: (type: ElevenLabsAgentType) => void;
+  sendTranscript?: (text: string, speaker: string, enableSop: boolean, enableCro: boolean) => void;
+  isCroEnabled?: boolean;
+  isSopEnabled?: boolean;
 }
 
 export function EVAMeetingAssistant({
@@ -63,6 +66,9 @@ export function EVAMeetingAssistant({
   setMessages,
   voiceAgentType = 'eva',
   onVoiceAgentTypeChange,
+  sendTranscript,
+  isCroEnabled = false,
+  isSopEnabled = false,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -272,6 +278,11 @@ export function EVAMeetingAssistant({
         }
       }
       
+      // Send transcript to EVA for CRO/SOP generation when using specialized agents
+      if (sendTranscript && text.trim().length > 2) {
+        sendTranscript(text, "User", isSopEnabled, isCroEnabled);
+      }
+      
       // Check if this is a screen share request
       if (checkScreenShareRequest(text)) {
         if (onRequestScreenObserver) {
@@ -300,6 +311,13 @@ export function EVAMeetingAssistant({
         } catch (error) {
           console.error("Failed to save AI response:", error);
         }
+      }
+      
+      // Send transcript to EVA for CRO/SOP generation when using specialized agents
+      if (sendTranscript && text.trim().length > 2) {
+        const agentLabel = voiceAgentType === 'cro_interview' ? "CRO Agent" : 
+                          voiceAgentType === 'sop' ? "SOP Agent" : "EVA";
+        sendTranscript(text, agentLabel, isSopEnabled, isCroEnabled);
       }
     },
     onError: (error) => {
