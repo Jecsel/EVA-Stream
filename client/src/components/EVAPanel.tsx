@@ -101,13 +101,15 @@ export function EVAPanel({
             <div className="flex items-center gap-1.5">
               <span className={cn(
                 "w-2 h-2 rounded-full",
+                isSopUpdating ? "bg-blue-500 animate-pulse" :
                 generatorState === "running" ? "bg-green-500 animate-pulse" :
                 generatorState === "paused" ? "bg-yellow-500" :
                 generatorState === "stopped" ? "bg-red-500" :
                 "bg-muted-foreground"
               )} />
               <p className="text-xs text-muted-foreground">
-                {generatorState === "running" ? "Recording" :
+                {isSopUpdating ? "Processing..." :
+                 generatorState === "running" ? "Recording" :
                  generatorState === "paused" ? "Paused" :
                  generatorState === "stopped" ? "Stopped" : "Ready"}
               </p>

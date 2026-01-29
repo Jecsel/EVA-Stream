@@ -70,6 +70,7 @@ Enable the CRO Agent and discuss role responsibilities during the meeting to gen
 Start sharing your screen and EVA will automatically generate an SOP based on what it observes.
 `);
   const [isSopUpdating, setIsSopUpdating] = useState(false);
+  const [isCroUpdating, setIsCroUpdating] = useState(false);
   const [sopObservationCount, setSopObservationCount] = useState(0);
   const [sopVersion, setSopVersion] = useState(0);
   const [liveFlowchartCode, setLiveFlowchartCode] = useState<string | undefined>(undefined);
@@ -306,6 +307,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
   const handleCroUpdate = useCallback((content: string, version?: number) => {
     setCroContent(content);
+    setIsCroUpdating(false);
     console.log(`[CRO] Updated to v${version || 1}`);
   }, []);
 
@@ -546,6 +548,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
         
         if (isConnected && (shouldSendToSop || shouldSendToCro)) {
+          if (shouldSendToSop) setIsSopUpdating(true);
+          if (shouldSendToCro) setIsCroUpdating(true);
           sendTranscript(text.trim(), participant || "Unknown", shouldSendToSop, shouldSendToCro);
           console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}`);
         } else {
@@ -827,13 +831,15 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                         <FileText className="w-4 h-4 text-green-500" />
                         <span className="font-medium text-sm text-green-500">CRO Generator</span>
                         <span className={`w-2 h-2 rounded-full ${
+                          isCroUpdating ? "bg-blue-500 animate-pulse" :
                           croGeneratorState === "running" ? "bg-green-500 animate-pulse" :
                           croGeneratorState === "paused" ? "bg-yellow-500" :
                           croGeneratorState === "stopped" ? "bg-red-500" :
                           "bg-muted-foreground"
                         }`} />
                         <span className="text-xs text-muted-foreground">
-                          {croGeneratorState === "running" ? "Recording" :
+                          {isCroUpdating ? "Processing..." :
+                           croGeneratorState === "running" ? "Recording" :
                            croGeneratorState === "paused" ? "Paused" :
                            croGeneratorState === "stopped" ? "Stopped" : "Ready"}
                         </span>
