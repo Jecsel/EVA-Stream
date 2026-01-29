@@ -53,6 +53,8 @@ interface EVAMeetingAssistantProps {
   sendTranscript?: (text: string, speaker: string, enableSop: boolean, enableCro: boolean) => void;
   isCroEnabled?: boolean;
   isSopEnabled?: boolean;
+  autoStartVoice?: boolean;
+  hasJoinedMeeting?: boolean;
 }
 
 export function EVAMeetingAssistant({
@@ -69,6 +71,8 @@ export function EVAMeetingAssistant({
   sendTranscript,
   isCroEnabled = false,
   isSopEnabled = false,
+  autoStartVoice = false,
+  hasJoinedMeeting = false,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -385,6 +389,28 @@ export function EVAMeetingAssistant({
       setTimeout(() => connectAgent(), 500);
     }
   }, [onVoiceAgentTypeChange, isAgentConnected, disconnectAgent, connectAgent]);
+
+  // Auto-start voice agent for API-created meetings with pre-selected agents
+  // Only auto-start after user has joined the meeting to ensure proper permissions
+  const [hasAutoStarted, setHasAutoStarted] = useState(false);
+  useEffect(() => {
+    if (autoStartVoice && hasJoinedMeeting && useConversationalAgent && !isAgentConnected && !hasAutoStarted) {
+      setHasAutoStarted(true);
+      // Delay to ensure Jitsi is fully ready after join
+      const timer = setTimeout(async () => {
+        try {
+          console.log("[EVA] Auto-starting voice agent for API-created meeting");
+          await connectAgent();
+          await startAgentListening();
+        } catch (error) {
+          console.error("[EVA] Failed to auto-start voice agent:", error);
+          // Reset flag to allow retry on next join or manual trigger
+          setHasAutoStarted(false);
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStartVoice, hasJoinedMeeting, useConversationalAgent, isAgentConnected, hasAutoStarted, connectAgent, startAgentListening]);
 
   // Unified listening state
   const isListening = useConversationalAgent ? isAgentListening : isLegacyListening;
