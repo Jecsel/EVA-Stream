@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useElevenLabsAudio } from "@/hooks/useElevenLabsAudio";
-import { useElevenLabsAgent } from "@/hooks/useElevenLabsAgent";
+import { useElevenLabsAgent, type ElevenLabsAgentType } from "@/hooks/useElevenLabsAgent";
 import { api } from "@/lib/api";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
@@ -48,6 +48,8 @@ interface EVAMeetingAssistantProps {
   currentSopContent?: string;
   messages: EvaMessage[];
   setMessages: React.Dispatch<React.SetStateAction<EvaMessage[]>>;
+  voiceAgentType?: ElevenLabsAgentType;
+  onVoiceAgentTypeChange?: (type: ElevenLabsAgentType) => void;
 }
 
 export function EVAMeetingAssistant({
@@ -59,6 +61,8 @@ export function EVAMeetingAssistant({
   currentSopContent,
   messages,
   setMessages,
+  voiceAgentType = 'eva',
+  onVoiceAgentTypeChange,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -72,6 +76,7 @@ export function EVAMeetingAssistant({
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
   const [useConversationalAgent, setUseConversationalAgent] = useState(true);
+  const [selectedVoiceAgent, setSelectedVoiceAgent] = useState<ElevenLabsAgentType>(voiceAgentType);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const pushToTalkMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -301,11 +306,29 @@ export function EVAMeetingAssistant({
       console.error("[EVA Agent] Error:", error);
     },
     enabled: useConversationalAgent,
+    agentType: selectedVoiceAgent,
     // Pass SOP content as dynamic context for the voice agent
     dynamicContext: currentSopContent && !currentSopContent.includes("Waiting for screen observations") 
       ? `=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n${currentSopContent}\n=== END SOP DOCUMENT ===\n\nYou have access to this SOP document. When users ask about the SOP, refer to this content.`
       : undefined,
   });
+  
+  // Sync voice agent type with external prop
+  useEffect(() => {
+    setSelectedVoiceAgent(voiceAgentType);
+  }, [voiceAgentType]);
+  
+  // Notify parent when voice agent changes
+  const handleVoiceAgentChange = useCallback((type: ElevenLabsAgentType) => {
+    setSelectedVoiceAgent(type);
+    onVoiceAgentTypeChange?.(type);
+    // Disconnect and reconnect with new agent type
+    if (isAgentConnected) {
+      disconnectAgent();
+      // Will auto-reconnect with new agent type
+      setTimeout(() => connectAgent(), 500);
+    }
+  }, [onVoiceAgentTypeChange, isAgentConnected, disconnectAgent, connectAgent]);
 
   // Unified listening state
   const isListening = useConversationalAgent ? isAgentListening : isLegacyListening;
@@ -735,8 +758,29 @@ export function EVAMeetingAssistant({
               <Bot className="w-4 h-4 text-white" />
             </div>
             <div className="flex flex-col gap-1">
-              <h3 className="font-semibold text-sm">EVA Meeting Assistant</h3>
-              <p className="text-xs text-muted-foreground">Hey EVA - ask me anything</p>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-sm">
+                  {selectedVoiceAgent === 'eva' ? 'EVA Meeting Assistant' : 
+                   selectedVoiceAgent === 'sop' ? 'SOP Voice Agent' : 
+                   'CRO Interview Agent'}
+                </h3>
+                {/* Voice Agent Type Selector */}
+                <select
+                  value={selectedVoiceAgent}
+                  onChange={(e) => handleVoiceAgentChange(e.target.value as ElevenLabsAgentType)}
+                  className="text-xs bg-transparent border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                  data-testid="select-voice-agent"
+                >
+                  <option value="eva">EVA</option>
+                  <option value="sop">SOP Guide</option>
+                  <option value="cro_interview">CRO Interview</option>
+                </select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selectedVoiceAgent === 'eva' ? 'Hey EVA - ask me anything' :
+                 selectedVoiceAgent === 'sop' ? 'Guides screen sharing & SOP documentation' :
+                 'Business discovery interview for role definition'}
+              </p>
               {/* Voice status badges on third line */}
               <div className="flex items-center gap-1 flex-wrap">
                 {/* Wake word status - ElevenLabs STT */}
@@ -772,7 +816,9 @@ export function EVAMeetingAssistant({
                     )}
                   >
                     <Phone className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
-                    {isAgentSpeaking ? "EVA Speaking..." : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
+                    {isAgentSpeaking 
+                      ? `${selectedVoiceAgent === 'cro_interview' ? 'Interviewing...' : selectedVoiceAgent === 'sop' ? 'Guiding...' : 'Speaking...'}` 
+                      : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
                   </Badge>
                 )}
               </div>

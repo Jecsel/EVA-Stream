@@ -180,6 +180,28 @@ The AI Meeting Assistant powered by 11Labs brings natural voice capabilities to 
 - **Voice Models**: Supports 11Labs' multilingual voice models
 - **Latency**: Optimized for sub-second response times using streaming synthesis
 
+### Multiple Voice Agents
+
+The platform supports 3 specialized 11Labs voice agents:
+
+| Agent Type | Purpose | Environment Variable |
+|------------|---------|---------------------|
+| **EVA Meeting Assistant** | General Q&A, document analysis, meeting help | `ELEVENLABS_AGENT_ID` |
+| **SOP Voice Agent** | Guides screen sharing and process documentation | `ELEVENLABS_SOP_AGENT_ID` |
+| **CRO Interview Agent** | Business discovery interview for role definition | `ELEVENLABS_CRO_INTERVIEW_AGENT_ID` |
+
+Users can switch between agents using the dropdown in the EVA panel header during meetings.
+
+#### CRO Interview Agent
+The CRO Interview Agent conducts structured business discovery interviews using 15 predefined questions. Interview data is stored in:
+- `server/data/cro-interview-questions.json` - Question set with intents and follow-ups
+- `server/data/cro-interview-prompt.txt` - Agent system prompt
+
+API endpoints:
+- `GET /api/elevenlabs/cro-interview-questions` - Get interview questions
+- `GET /api/elevenlabs/cro-interview-prompt` - Get agent prompt
+- `GET /api/elevenlabs/agents` - List available agent types and their status
+
 ### Configuration
 
 #### Environment Variables
@@ -187,6 +209,9 @@ The AI Meeting Assistant powered by 11Labs brings natural voice capabilities to 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ELEVENLABS_API_KEY` | Yes | Your 11Labs API key for voice synthesis |
+| `ELEVENLABS_AGENT_ID` | Yes | EVA Meeting Assistant agent ID from 11Labs |
+| `ELEVENLABS_SOP_AGENT_ID` | No | SOP Voice Agent ID (optional) |
+| `ELEVENLABS_CRO_INTERVIEW_AGENT_ID` | No | CRO Interview Agent ID (optional) |
 | `ELEVENLABS_VOICE_ID` | No | Default voice ID (uses 11Labs default if not set) |
 | `ELEVENLABS_MODEL_ID` | No | Voice model to use (default: `eleven_turbo_v2_5`) |
 
