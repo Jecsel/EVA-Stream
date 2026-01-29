@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from "react";
-import { Loader2, Edit3, Save, X, FileText, Play, Pause, Square } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Loader2, Edit3, Save, X, FileText, Play, Pause, Square, Download, FileDown } from "lucide-react";
+import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -87,6 +88,78 @@ export function EVAPanel({
     setEditedContent(sopContent);
     setIsEditing(false);
   };
+
+  const handleDownloadMD = useCallback(() => {
+    const blob = new Blob([sopContent], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `SOP-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [sopContent]);
+
+  const handleDownloadPDF = useCallback(() => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    const maxWidth = pageWidth - margin * 2;
+    let yPosition = 20;
+    const lineHeight = 7;
+    
+    // Parse markdown and convert to plain text with formatting
+    const lines = sopContent.split('\n');
+    
+    lines.forEach((line) => {
+      // Check if we need a new page
+      if (yPosition > 270) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Handle headers
+      if (line.startsWith('# ')) {
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text(line.replace('# ', ''), margin, yPosition);
+        yPosition += lineHeight + 4;
+      } else if (line.startsWith('## ')) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(line.replace('## ', ''), margin, yPosition);
+        yPosition += lineHeight + 2;
+      } else if (line.startsWith('### ')) {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(line.replace('### ', ''), margin, yPosition);
+        yPosition += lineHeight + 1;
+      } else if (line.startsWith('**') && line.endsWith('**')) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(line.replace(/\*\*/g, ''), margin, yPosition);
+        yPosition += lineHeight;
+      } else if (line.trim() === '') {
+        yPosition += lineHeight / 2;
+      } else {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        // Word wrap long lines
+        const textLines = doc.splitTextToSize(line.replace(/\*\*/g, '').replace(/\*/g, ''), maxWidth);
+        textLines.forEach((textLine: string) => {
+          if (yPosition > 270) {
+            doc.addPage();
+            yPosition = 20;
+          }
+          doc.text(textLine, margin, yPosition);
+          yPosition += lineHeight;
+        });
+      }
+    });
+    
+    doc.save(`SOP-${new Date().toISOString().split('T')[0]}.pdf`);
+  }, [sopContent]);
 
   return (
     <div className={cn("flex flex-col h-full bg-card border-l border-border", className)}>
@@ -202,7 +275,7 @@ export function EVAPanel({
             <FileText className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-medium">Live SOP Document</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {isEditing ? (
               <>
                 <Button 
@@ -224,15 +297,39 @@ export function EVAPanel({
                 </Button>
               </>
             ) : (
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                onClick={handleStartEditing}
-                data-testid="button-edit-sop"
-              >
-                <Edit3 className="w-4 h-4 mr-1" />
-                Edit
-              </Button>
+              <>
+                <Button 
+                  size="sm" 
+                  variant="ghost"
+                  onClick={handleDownloadPDF}
+                  disabled={!sopContent || sopContent.includes('*Waiting')}
+                  data-testid="button-download-pdf"
+                  title="Download as PDF"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1">PDF</span>
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost"
+                  onClick={handleDownloadMD}
+                  disabled={!sopContent || sopContent.includes('*Waiting')}
+                  data-testid="button-download-md"
+                  title="Download as Markdown"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1">MD</span>
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleStartEditing}
+                  data-testid="button-edit-sop"
+                >
+                  <Edit3 className="w-4 h-4 mr-1" />
+                  Edit
+                </Button>
+              </>
             )}
           </div>
         </div>
