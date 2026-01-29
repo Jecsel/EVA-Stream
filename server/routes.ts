@@ -14,27 +14,24 @@ import bcrypt from "bcrypt";
 const SALT_ROUNDS = 10;
 
 // API Key authentication middleware for external API
-function validateApiKey(req: Request, res: Response, next: NextFunction) {
-  const apiKey = process.env.EXTERNAL_API_KEY;
+async function validateApiKey(req: Request, res: Response, next: NextFunction) {
+  // Check X-API-Key header
+  const providedKey = req.headers["x-api-key"] as string;
   
-  // If no API key is configured, allow all requests (development mode)
+  if (!providedKey) {
+    res.status(401).json({ error: "Missing X-API-Key header" });
+    return;
+  }
+  
+  // Check against database API keys
+  const apiKey = await storage.getApiKeyByKey(providedKey);
   if (!apiKey) {
-    next();
-    return;
-  }
-  
-  // Check Authorization header
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Missing or invalid Authorization header. Use 'Bearer <API_KEY>'" });
-    return;
-  }
-  
-  const providedKey = authHeader.substring(7);
-  if (providedKey !== apiKey) {
     res.status(403).json({ error: "Invalid API key" });
     return;
   }
+  
+  // Update last used timestamp
+  await storage.updateApiKeyLastUsed(apiKey.id);
   
   next();
 }
@@ -104,6 +101,72 @@ export async function registerRoutes(
         console.error("External create meeting error:", error);
         res.status(500).json({ error: "Failed to create meeting" });
       }
+    }
+  });
+
+  // API Key Management
+  app.get("/api/api-keys", async (req, res) => {
+    try {
+      const keys = await storage.listApiKeys();
+      // Don't expose the full key, only the prefix
+      const safeKeys = keys.map(k => ({
+        id: k.id,
+        name: k.name,
+        keyPrefix: k.keyPrefix,
+        isActive: k.isActive,
+        lastUsedAt: k.lastUsedAt,
+        createdAt: k.createdAt,
+      }));
+      res.json(safeKeys);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch API keys" });
+    }
+  });
+
+  app.post("/api/api-keys", async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name || typeof name !== "string") {
+        res.status(400).json({ error: "Name is required" });
+        return;
+      }
+
+      // Generate a secure random API key
+      const key = `sk_${uuidv4().replace(/-/g, "")}`;
+      const keyPrefix = key.substring(0, 10) + "...";
+
+      const apiKey = await storage.createApiKey({
+        name,
+        key,
+        keyPrefix,
+        isActive: true,
+      });
+
+      // Return the full key only on creation (user must save it now)
+      res.json({
+        id: apiKey.id,
+        name: apiKey.name,
+        key: apiKey.key, // Full key only on creation
+        keyPrefix: apiKey.keyPrefix,
+        isActive: apiKey.isActive,
+        createdAt: apiKey.createdAt,
+      });
+    } catch (error) {
+      console.error("Failed to create API key:", error);
+      res.status(500).json({ error: "Failed to create API key" });
+    }
+  });
+
+  app.delete("/api/api-keys/:id", async (req, res) => {
+    try {
+      const success = await storage.revokeApiKey(req.params.id);
+      if (!success) {
+        res.status(404).json({ error: "API key not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to revoke API key" });
     }
   });
 
