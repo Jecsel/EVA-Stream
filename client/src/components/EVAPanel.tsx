@@ -88,10 +88,10 @@ export function EVAPanel({
       <div className="flex items-center justify-between p-4 border-b border-border bg-card/50 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-blue-500/10 rounded-lg">
-            <Eye className="w-5 h-5 text-blue-500" />
+            <FileText className="w-5 h-5 text-blue-500" />
           </div>
           <div>
-            <h2 className="font-semibold text-foreground">SOP Agent</h2>
+            <h2 className="font-semibold text-foreground">SOP Generator</h2>
             <div className="flex items-center gap-1.5">
               <span className={cn(
                 "w-2 h-2 rounded-full",

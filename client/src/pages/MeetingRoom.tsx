@@ -676,8 +676,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       }`}
                       data-testid="button-eva-mode-observe"
                     >
-                      <Eye className="w-3 h-3 inline mr-1" />
-                      Screen Observer
+                      <FileText className="w-3 h-3 inline mr-1" />
+                      SOP
                     </button>
                   )}
                   {isCROEnabled && (

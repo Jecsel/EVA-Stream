@@ -157,11 +157,11 @@ export function AgentSelector({
                 >
                   <div className="flex items-center gap-2">
                     <div className={`w-6 h-6 rounded flex items-center justify-center ${isScreenObserverEnabled ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
-                      <Eye className="h-3.5 w-3.5" />
+                      <FileText className="h-3.5 w-3.5" />
                     </div>
                     <div>
-                      <span className="font-medium text-sm">SOP Agent</span>
-                      <p className="text-[10px] text-muted-foreground">Analyzes shared screens</p>
+                      <span className="font-medium text-sm">SOP Generator</span>
+                      <p className="text-[10px] text-muted-foreground">Creates procedures from screens</p>
                     </div>
                   </div>
                   <Switch
@@ -183,8 +183,8 @@ export function AgentSelector({
                       <FileText className="h-3.5 w-3.5" />
                     </div>
                     <div>
-                      <span className="font-medium text-sm">CRO Agent</span>
-                      <p className="text-[10px] text-muted-foreground">Generates role outcomes</p>
+                      <span className="font-medium text-sm">CRO Generator</span>
+                      <p className="text-[10px] text-muted-foreground">Creates role outcomes</p>
                     </div>
                   </div>
                   <Switch
