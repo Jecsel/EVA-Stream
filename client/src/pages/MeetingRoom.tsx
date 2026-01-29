@@ -3,6 +3,7 @@ import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { EVAPanel } from "@/components/EVAPanel";
 import { EVAMeetingAssistant, type EvaMessage } from "@/components/EVAMeetingAssistant";
+import { type ElevenLabsAgentType } from "@/hooks/useElevenLabsAgent";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
@@ -43,6 +44,18 @@ export default function MeetingRoom() {
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
+  const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
+  
+  // Handle voice agent type change and auto-toggle corresponding generator
+  const handleVoiceAgentTypeChange = useCallback((type: ElevenLabsAgentType) => {
+    setVoiceAgentType(type);
+    // Auto-enable the corresponding generator when switching to specialized agents
+    if (type === 'sop') {
+      setIsScreenObserverEnabled(true);
+    } else if (type === 'cro_interview') {
+      setIsCROEnabled(true);
+    }
+  }, []);
   const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
 
 *Waiting to analyze interview/transcript...*
@@ -813,6 +826,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   currentSopContent={sopContent}
                   messages={evaMessages}
                   setMessages={setEvaMessages}
+                  voiceAgentType={voiceAgentType}
+                  onVoiceAgentTypeChange={handleVoiceAgentTypeChange}
                 />
               )}
               
