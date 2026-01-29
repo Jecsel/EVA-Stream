@@ -77,6 +77,10 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   // Per-agent generation states (idle, running, paused, stopped)
   const [sopGeneratorState, setSopGeneratorState] = useState<GeneratorState>("idle");
   const [croGeneratorState, setCroGeneratorState] = useState<GeneratorState>("idle");
+  
+  // Refs to avoid stale closures in callbacks
+  const sopGeneratorStateRef = useRef<GeneratorState>("idle");
+  const croGeneratorStateRef = useRef<GeneratorState>("idle");
 
   const hasEndedMeetingRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
@@ -328,6 +332,17 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     evaConnectedRef.current = evaConnected;
     console.log(`[EVA Ref] evaConnectedRef updated to: ${evaConnected}`);
   }, [evaConnected]);
+  
+  // Keep generator state refs in sync
+  useEffect(() => {
+    sopGeneratorStateRef.current = sopGeneratorState;
+    console.log(`[SOP Generator] State changed to: ${sopGeneratorState}`);
+  }, [sopGeneratorState]);
+  
+  useEffect(() => {
+    croGeneratorStateRef.current = croGeneratorState;
+    console.log(`[CRO Generator] State changed to: ${croGeneratorState}`);
+  }, [croGeneratorState]);
 
   useEffect(() => {
     if (!isScreenObserverEnabled && isObserving) {
@@ -516,16 +531,18 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         });
         
         // Send transcript to EVA for processing (SOP/CRO generation)
-        // Use ref to get latest connection status (callbacks may have stale closures)
+        // Use refs to get latest status (callbacks may have stale closures)
         const isConnected = evaConnectedRef.current;
+        const currentSopState = sopGeneratorStateRef.current;
+        const currentCroState = croGeneratorStateRef.current;
         
         // Check if either generator is in "running" state (active generation)
-        const isSopGeneratorRunning = sopGeneratorState === "running";
-        const isCroGeneratorRunning = croGeneratorState === "running";
+        const isSopGeneratorRunning = currentSopState === "running";
+        const isCroGeneratorRunning = currentCroState === "running";
         const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
         const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
         
-        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${sopGeneratorState}, croState=${croGeneratorState}`);
+        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}`);
         console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
         
         if (isConnected && (shouldSendToSop || shouldSendToCro)) {
@@ -538,7 +555,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.error("Failed to save transcript segment:", error);
       }
     }
-  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled, sopGeneratorState, croGeneratorState]);
+  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
 
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
