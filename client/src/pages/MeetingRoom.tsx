@@ -386,7 +386,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     sendTextMessage,
     sendTranscript,
   } = useEvaLive({
-    meetingId: meeting?.id || "",
+    meetingId: isModerator ? (meeting?.id || "") : "",
     onMessage: handleEvaMessage,
     onSopUpdate: handleSopUpdate,
     onSopStatus: handleSopStatus,
