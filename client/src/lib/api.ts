@@ -103,6 +103,16 @@ export const api = {
     return response.json();
   },
 
+  async generateFlowchart(sopContent: string, meetingId?: string): Promise<{ mermaidCode: string }> {
+    const response = await fetch(`${API_BASE}/generate-flowchart`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sopContent, meetingId }),
+    });
+    if (!response.ok) throw new Error("Failed to generate flowchart");
+    return response.json();
+  },
+
   // Chat Messages
   async createChatMessage(meetingId: string, data: Omit<InsertChatMessage, "meetingId">): Promise<ChatMessage> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/messages`, {
@@ -168,17 +178,6 @@ export const api = {
   async getMeetingTranscriptions(meetingId: string): Promise<MeetingTranscription[]> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/transcriptions`);
     if (!response.ok) throw new Error("Failed to fetch meeting transcriptions");
-    return response.json();
-  },
-
-  // Generate Mermaid flowchart from SOP content
-  async generateFlowchart(sopContent: string, meetingId?: string): Promise<{ mermaidCode: string }> {
-    const response = await fetch(`${API_BASE}/generate-flowchart`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sopContent, meetingId }),
-    });
-    if (!response.ok) throw new Error("Failed to generate flowchart");
     return response.json();
   },
 

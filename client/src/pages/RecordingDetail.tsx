@@ -60,6 +60,16 @@ function parseSummaryHighlights(summary: string) {
   return { keyDecisions, actionItems, topics, hasStructure: keyDecisions.length > 0 || actionItems.length > 0 };
 }
 
+type FlowchartProgressStep = 'idle' | 'preparing' | 'generating' | 'rendering' | 'complete';
+
+const FLOWCHART_PROGRESS: Record<FlowchartProgressStep, { percent: number; label: string }> = {
+  idle: { percent: 0, label: '' },
+  preparing: { percent: 15, label: 'Preparing SOP content...' },
+  generating: { percent: 50, label: 'Generating flowchart structure...' },
+  rendering: { percent: 85, label: 'Rendering diagram...' },
+  complete: { percent: 100, label: 'Complete!' },
+};
+
 export default function RecordingDetail() {
   const [, params] = useRoute("/recording/:id");
   const [, setLocation] = useLocation();
@@ -74,6 +84,7 @@ export default function RecordingDetail() {
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [flowchartProgress, setFlowchartProgress] = useState<FlowchartProgressStep>('idle');
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -146,6 +157,50 @@ export default function RecordingDetail() {
     },
     onError: () => {
       toast.error("Failed to start transcription. Please try again.");
+    },
+  });
+
+  const generateFlowchartMutation = useMutation({
+    mutationFn: async () => {
+      if (!recording?.sopContent) {
+        throw new Error("No SOP content available");
+      }
+      
+      setFlowchartProgress('preparing');
+      
+      setFlowchartProgress('generating');
+      let result;
+      try {
+        result = await api.generateFlowchart(recording.sopContent, meetingId);
+      } catch (error) {
+        throw new Error("AI generation failed");
+      }
+      
+      if (!result?.mermaidCode) {
+        throw new Error("No flowchart code returned");
+      }
+      
+      setFlowchartProgress('rendering');
+      try {
+        await api.updateRecording(recordingId, { flowchartCode: result.mermaidCode });
+      } catch (error) {
+        throw new Error("Failed to save flowchart");
+      }
+      
+      return result.mermaidCode;
+    },
+    onSuccess: () => {
+      setFlowchartProgress('complete');
+      queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+      setRenderedSopContent(null);
+      toast.success("Flowchart generated successfully!");
+      setTimeout(() => setFlowchartProgress('idle'), 2000);
+    },
+    onError: (error: Error) => {
+      setFlowchartProgress('idle');
+      const message = error.message || "Failed to generate flowchart";
+      toast.error(message + ". Please try again.");
+      console.error("Flowchart generation error:", error);
     },
   });
 
@@ -751,12 +806,41 @@ export default function RecordingDetail() {
 
           <TabsContent value="flowchart" className="mt-0" forceMount style={{ display: activeTab === "flowchart" ? "block" : "none" }}>
             <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-muted/30">
+              <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <GitBranch className="w-4 h-4 text-primary" />
                   Process Flowchart
                 </h2>
+                {recording?.sopContent && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => generateFlowchartMutation.mutate()}
+                    disabled={generateFlowchartMutation.isPending || flowchartProgress !== 'idle'}
+                    className="gap-2"
+                    data-testid="btn-regenerate-flowchart"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {flowchartProgress !== 'idle' ? 'Generating...' : recording?.flowchartCode ? 'Regenerate' : 'Generate Flowchart'}
+                  </Button>
+                )}
               </div>
+              
+              {flowchartProgress !== 'idle' && (
+                <div className="px-4 py-3 border-b border-border bg-muted/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">{FLOWCHART_PROGRESS[flowchartProgress].label}</span>
+                    <span className="text-xs font-medium text-primary">{FLOWCHART_PROGRESS[flowchartProgress].percent}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${FLOWCHART_PROGRESS[flowchartProgress].percent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
               <div className="p-6 min-h-[400px] flex items-center justify-center" data-testid="content-flowchart">
                 <div ref={flowchartRef} className="w-full overflow-x-auto flex justify-center" />
               </div>
