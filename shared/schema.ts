@@ -90,6 +90,7 @@ export const meetings = pgTable("meetings", {
   isAllDay: boolean("is_all_day").notNull().default(false), // whether this is an all-day event
   recurrence: text("recurrence").default("none"), // none, daily, weekly, monthly, annually, weekdays, custom
   recurrenceEndDate: timestamp("recurrence_end_date"), // when the recurrence ends
+  createdBy: text("created_by"), // Firebase UID of the meeting creator (moderator)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
