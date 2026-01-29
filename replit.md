@@ -54,18 +54,24 @@ When a meeting recording is uploaded (via JaaS webhook), the system automaticall
 Users can also manually trigger transcription from the Recording Detail page using the "Generate Transcript" button.
 
 ### Meeting Agents System
-The platform supports AI agents that can be enabled/disabled per meeting:
+The platform supports AI agents and generators that can be enabled/disabled per meeting:
 
-| Agent | Type | Functionality |
-|-------|------|---------------|
-| **EVA Assistant** | eva | Unified AI assistant with tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis and SOP generation) |
-| **AI Voice Assistant** | voice_11labs | Voice-powered AI meeting assistant using 11Labs - enables natural voice interactions, text-to-speech for SOPs, and real-time voice responses |
+| Component | Type | Functionality |
+|-----------|------|---------------|
+| **EVA Assistant** | eva | Always-on AI assistant with unified tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis) |
+| **SOP Generator** | generator | Creates Standard Operating Procedures from meeting transcript and/or screen observation |
+| **CRO Generator** | generator | Creates Core Role Outcomes (FABIUS structure) from meeting transcript and/or screen observation |
+| **AI Voice Assistant** | voice_11labs | Voice-powered AI meeting assistant using 11Labs - enables natural voice interactions |
 
-Each agent:
-- Only runs when explicitly selected in the meeting
-- Uses its own custom prompt (configurable in Admin panel)
-- EVA Assistant uses a unified tabbed panel (EVAPanel.tsx) instead of separate panels
-- Properly starts/stops when toggled during a live meeting
+Generator Features:
+- Both SOP and CRO generators work from **transcript only** (no screen sharing needed) OR with screen observation
+- When screen observer is enabled, generators combine both transcript and screen data
+- Real-time generation as meeting progresses via WebSocket
+- Custom prompts configurable in Admin panel (types: sop, cro)
+
+Agent Behavior:
+- EVA Assistant is always on during meetings
+- Generators can be toggled independently via the "Generators" dropdown
 - EVA panel only appears after the user has joined the meeting (not in the pre-join lobby)
 
 ### Data Flow
