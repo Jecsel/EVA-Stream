@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 interface EvaLiveMessage {
-  type: "text" | "audio" | "sop_update" | "sop_status" | "error" | "status";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status";
   content: string;
   audioData?: string;
   observationCount?: number;
   sopVersion?: number;
   flowchartCode?: string;
+  croContent?: string;
+  croVersion?: number;
 }
 
 interface UseEvaLiveOptions {
@@ -14,6 +16,8 @@ interface UseEvaLiveOptions {
   onMessage?: (message: EvaLiveMessage) => void;
   onSopUpdate?: (content: string, observationCount?: number, sopVersion?: number, flowchartCode?: string) => void;
   onSopStatus?: (observationCount: number, sopVersion: number) => void;
+  onCroUpdate?: (content: string, croVersion?: number) => void;
+  onCroStatus?: (croVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
 }
 
@@ -22,6 +26,8 @@ export function useEvaLive({
   onMessage,
   onSopUpdate,
   onSopStatus,
+  onCroUpdate,
+  onCroStatus,
   onStatusChange,
 }: UseEvaLiveOptions) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -56,8 +62,16 @@ export function useEvaLive({
         
         if (message.type === "sop_update") {
           onSopUpdate?.(message.content, message.observationCount, message.sopVersion, message.flowchartCode);
+          // Also check for CRO content in combined updates
+          if (message.croContent) {
+            onCroUpdate?.(message.croContent, message.croVersion);
+          }
         } else if (message.type === "sop_status") {
           onSopStatus?.(message.observationCount || 0, message.sopVersion || 0);
+        } else if (message.type === "cro_update") {
+          onCroUpdate?.(message.croContent || message.content, message.croVersion);
+        } else if (message.type === "cro_status") {
+          onCroStatus?.(message.croVersion || 0);
         }
         
         onMessage?.(message);
@@ -190,6 +204,18 @@ export function useEvaLive({
     }
   }, []);
 
+  const sendTranscript = useCallback((text: string, speaker: string, enableSop: boolean, enableCro: boolean) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN && text.trim().length > 2) {
+      wsRef.current.send(JSON.stringify({
+        type: "transcript",
+        data: text,
+        speaker,
+        enableSop,
+        enableCro,
+      }));
+    }
+  }, []);
+
   // Connect on mount
   useEffect(() => {
     if (meetingId) {
@@ -208,6 +234,7 @@ export function useEvaLive({
     startScreenCapture,
     stopScreenCapture,
     sendTextMessage,
+    sendTranscript,
     disconnect,
   };
 }

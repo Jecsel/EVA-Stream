@@ -293,6 +293,11 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     setSopVersion(version);
   }, []);
 
+  const handleCroUpdate = useCallback((content: string, version?: number) => {
+    setCroContent(content);
+    console.log(`[CRO] Updated to v${version || 1}`);
+  }, []);
+
   const {
     isConnected: evaConnected,
     isObserving,
@@ -301,11 +306,13 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     startScreenCapture,
     stopScreenCapture,
     sendTextMessage,
+    sendTranscript,
   } = useEvaLive({
     meetingId: meeting?.id || "",
     onMessage: handleEvaMessage,
     onSopUpdate: handleSopUpdate,
     onSopStatus: handleSopStatus,
+    onCroUpdate: handleCroUpdate,
     onStatusChange: setEvaStatus,
   });
 
@@ -486,7 +493,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       return [...prev.filter(t => t.isFinal || t.speaker !== participant), transcriptEntry];
     });
     
-    // Save final transcripts to database
+    // Save final transcripts to database and send to EVA for SOP/CRO generation
     if (isFinal && text.trim().length > 2) {
       try {
         await api.createTranscriptSegment(meeting.id, {
@@ -494,11 +501,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           speaker: participant || "Unknown",
           isFinal: true,
         });
+        
+        // Send transcript to EVA for processing (SOP/CRO generation)
+        if (evaConnected) {
+          sendTranscript(text.trim(), participant || "Unknown", isScreenObserverEnabled, isCROEnabled);
+        }
       } catch (error) {
         console.error("Failed to save transcript segment:", error);
       }
     }
-  }, [meeting?.id]);
+  }, [meeting?.id, evaConnected, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
 
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;

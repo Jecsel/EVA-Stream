@@ -25,6 +25,13 @@ interface ScreenObservation {
   timestamp: number;
   description: string;
   type: "ui" | "code" | "document" | "diagram" | "presentation" | "other";
+  source: "screen" | "transcript";
+}
+
+interface TranscriptEntry {
+  timestamp: number;
+  speaker: string;
+  text: string;
 }
 
 interface LiveSession {
@@ -43,6 +50,14 @@ interface LiveSession {
   lastSopGeneration?: number;
   lastSopObservationIndex: number; // Index of last observation used for SOP
   sopVersion: number;
+  // CRO generation state
+  currentCro: string;
+  lastCroGeneration?: number;
+  lastCroObservationIndex: number;
+  croVersion: number;
+  // Transcript-based observations
+  transcriptBuffer: TranscriptEntry[];
+  lastTranscriptProcess?: number;
 }
 
 const activeSessions = new Map<string, LiveSession>();
@@ -110,6 +125,10 @@ function createSession(meetingId: string): LiveSession {
     currentSop: "",
     lastSopObservationIndex: 0,
     sopVersion: 0,
+    currentCro: "",
+    lastCroObservationIndex: 0,
+    croVersion: 0,
+    transcriptBuffer: [],
   };
 }
 
@@ -151,6 +170,45 @@ function isValidObservation(description: string): boolean {
   return hasActionVerb;
 }
 
+// Default CRO prompt template
+const DEFAULT_CRO_PROMPT = `You are an expert at identifying Core Role Outcomes (CRO) from meeting discussions using the FABIUS structure.
+
+## FABIUS Structure
+- **F**unction: What is the role's primary function?
+- **A**ctions: What specific actions must be performed?
+- **B**ehaviors: What behaviors are expected?
+- **I**ndicators: What are the success indicators?
+- **U**nique value: What unique value does this role provide?
+- **S**kills: What skills are required?
+
+## Output Format
+For each role discussed, create a structured CRO document:
+
+### Role: [Role Title]
+
+**Function:** 
+[Primary function of this role]
+
+**Key Actions:**
+1. [Action 1]
+2. [Action 2]
+...
+
+**Expected Behaviors:**
+- [Behavior 1]
+- [Behavior 2]
+
+**Success Indicators:**
+- [Indicator 1]
+- [Indicator 2]
+
+**Unique Value:**
+[What makes this role valuable]
+
+**Required Skills:**
+- [Skill 1]
+- [Skill 2]`;
+
 // Default SOP prompt template (fallback if database prompt not found)
 const DEFAULT_SOP_PROMPT = `You are an expert SOP documentation specialist. Generate comprehensive, structured SOPs based on observed screen actions.
 
@@ -174,18 +232,27 @@ Document each step with numbered sub-steps (4.1, 4.2, etc.)
 
 Use clear, imperative language and include specific UI elements.`;
 
-// Generate SOP from accumulated observations (only new ones since last generation)
+// Generate SOP from accumulated observations and transcript (only new ones since last generation)
 async function generateSOP(session: LiveSession): Promise<{ sop: string; newIndex: number } | null> {
   // Get only new observations since last SOP generation
   const newObservations = session.observations.slice(session.lastSopObservationIndex);
   
-  if (newObservations.length < MIN_OBSERVATIONS_FOR_SOP) {
+  // Get transcript content
+  const transcriptText = session.transcriptBuffer
+    .map(t => `${t.speaker}: ${t.text}`)
+    .join("\n");
+  
+  // Allow generation from transcript alone (3+ entries) OR observations
+  const hasEnoughTranscript = transcriptText.length > 50 && session.transcriptBuffer.length >= 3;
+  const hasEnoughObservations = newObservations.length >= MIN_OBSERVATIONS_FOR_SOP;
+  
+  if (!hasEnoughTranscript && !hasEnoughObservations) {
     return null;
   }
 
-  const newObservationsSummary = newObservations
-    .map((obs, i) => `${i + 1}. [${obs.type.toUpperCase()}] ${obs.description}`)
-    .join("\n");
+  const newObservationsSummary = newObservations.length > 0
+    ? newObservations.map((obs, i) => `${i + 1}. [${obs.source.toUpperCase()}] ${obs.description}`).join("\n")
+    : "No screen observations available.";
 
   // Fetch SOP prompt template from database
   let sopPromptTemplate = DEFAULT_SOP_PROMPT;
@@ -205,12 +272,15 @@ async function generateSOP(session: LiveSession): Promise<{ sop: string; newInde
 
 ---
 
-## OBSERVATIONS FROM SCREEN (actions captured during meeting):
+## MEETING TRANSCRIPT:
+${transcriptText || "No transcript available."}
+
+## SCREEN OBSERVATIONS:
 ${newObservationsSummary}
 
 ${session.currentSop ? `## EXISTING SOP (integrate new steps into this document):\n${session.currentSop}\n\n` : ""}
 
-Generate the complete SOP document now based on these observations. If updating an existing SOP, merge the new observations into the appropriate sections.`;
+Generate the complete SOP document now based on the meeting transcript and any screen observations. Extract procedural steps, workflows, and processes discussed in the meeting. If updating an existing SOP, merge new content into the appropriate sections.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -229,20 +299,126 @@ Generate the complete SOP document now based on these observations. If updating 
   }
 }
 
+// Generate CRO from accumulated observations and transcript
+async function generateCRO(session: LiveSession): Promise<{ cro: string; newIndex: number } | null> {
+  // Get observations since last CRO generation
+  const newObservations = session.observations.slice(session.lastCroObservationIndex);
+  const transcriptText = session.transcriptBuffer
+    .map(t => `${t.speaker}: ${t.text}`)
+    .join("\n");
+  
+  if (newObservations.length < 1 && transcriptText.length < 50) {
+    return null;
+  }
+
+  const observationsSummary = newObservations.length > 0 
+    ? newObservations.map((obs, i) => `${i + 1}. [${obs.source.toUpperCase()}] ${obs.description}`).join("\n")
+    : "No screen observations available.";
+
+  // Fetch CRO prompt template from database
+  let croPromptTemplate = DEFAULT_CRO_PROMPT;
+  try {
+    const dbPrompt = await storage.getActivePromptByType("cro");
+    if (dbPrompt?.content) {
+      croPromptTemplate = dbPrompt.content;
+      console.log("[EVA CRO] Using prompt template from database");
+    } else {
+      console.log("[EVA CRO] No database prompt found, using default template");
+    }
+  } catch (error) {
+    console.error("[EVA CRO] Failed to fetch prompt from database, using default:", error);
+  }
+
+  const prompt = `${croPromptTemplate}
+
+---
+
+## MEETING TRANSCRIPT:
+${transcriptText || "No transcript available."}
+
+## SCREEN OBSERVATIONS:
+${observationsSummary}
+
+${session.currentCro ? `## EXISTING CRO (update and expand this document):\n${session.currentCro}\n\n` : ""}
+
+Analyze the meeting content and generate Core Role Outcomes based on roles and responsibilities discussed. Focus on what the participants are saying about job roles, responsibilities, expectations, and success metrics.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const croText = response.text || null;
+    if (croText) {
+      return { cro: croText, newIndex: session.observations.length };
+    }
+    return null;
+  } catch (error) {
+    console.error("[EVA CRO] Generation failed:", error);
+    return null;
+  }
+}
+
+// Process transcript entries and extract observations
+async function processTranscriptForObservations(session: LiveSession, transcript: string, speaker: string): Promise<ScreenObservation | null> {
+  // Add to transcript buffer
+  session.transcriptBuffer.push({
+    timestamp: Date.now(),
+    speaker,
+    text: transcript,
+  });
+  
+  // Keep buffer to last 50 entries to avoid memory issues
+  if (session.transcriptBuffer.length > 50) {
+    session.transcriptBuffer = session.transcriptBuffer.slice(-50);
+  }
+
+  // Check if transcript contains procedural content
+  const proceduralKeywords = [
+    'step', 'first', 'then', 'next', 'after', 'before', 'process', 'procedure',
+    'click', 'select', 'enter', 'configure', 'setup', 'install', 'create',
+    'open', 'navigate', 'go to', 'make sure', 'ensure', 'verify', 'check'
+  ];
+  
+  const lower = transcript.toLowerCase();
+  const hasProceduralContent = proceduralKeywords.some(kw => lower.includes(kw));
+  
+  if (!hasProceduralContent) {
+    return null;
+  }
+
+  // Create observation from transcript
+  const observation: ScreenObservation = {
+    timestamp: Date.now(),
+    description: `TRANSCRIPT: ${speaker} said: "${transcript}"`,
+    type: "document",
+    source: "transcript",
+  };
+  
+  return observation;
+}
+
 export interface GeminiLiveMessage {
-  type: "audio" | "video" | "text" | "control" | "audio_transcribe";
+  type: "audio" | "video" | "text" | "control" | "audio_transcribe" | "transcript";
   data?: string; // base64 for audio/video, text for messages
   mimeType?: string;
   command?: "start" | "stop" | "ping" | "start_transcription" | "stop_transcription";
   meetingId?: string;
+  speaker?: string; // for transcript messages
+  enableSop?: boolean; // whether SOP generator is enabled
+  enableCro?: boolean; // whether CRO generator is enabled
 }
 
 export interface GeminiLiveResponse {
-  type: "text" | "audio" | "sop_update" | "sop_status" | "error" | "status" | "transcript";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status" | "transcript";
   content: string;
   audioData?: string; // base64 audio
   isFinal?: boolean;
   speaker?: string;
+  // CRO-specific fields
+  croContent?: string;
+  croVersion?: number;
   observationCount?: number;
   sopVersion?: number;
   flowchartCode?: string; // Mermaid flowchart code generated from SOP
@@ -438,9 +614,10 @@ If nothing actionable is visible (just video call faces), respond exactly: "[Obs
           timestamp: now,
           description: text,
           type: detectObservationType(text),
+          source: "screen",
         };
         session.observations.push(observation);
-        console.log(`[EVA SOP] Added valid observation #${session.observations.length}: ${observation.type}`);
+        console.log(`[EVA SOP] Added valid observation #${session.observations.length}: ${observation.type} (screen)`);
       } else {
         console.log(`[EVA SOP] Skipped non-procedural observation (no valid ACTION found)`);
       }
@@ -491,6 +668,99 @@ If nothing actionable is visible (just video call faces), respond exactly: "[Obs
         content: text,
         observationCount: session.observations.length,
         sopVersion: session.sopVersion,
+      };
+    }
+
+    // Process transcript message for SOP/CRO generation
+    if (message.type === "transcript" && message.data) {
+      const now = Date.now();
+      const speaker = message.speaker || "User";
+      const transcriptText = message.data;
+      
+      console.log(`[EVA] Processing transcript: "${transcriptText.substring(0, 50)}..." from ${speaker}`);
+      
+      // Get or create session
+      let session = activeSessions.get(meetingId);
+      if (!session) {
+        session = createSession(meetingId);
+        activeSessions.set(meetingId, session);
+      }
+      
+      // Process transcript for observations
+      const observation = await processTranscriptForObservations(session, transcriptText, speaker);
+      if (observation) {
+        session.observations.push(observation);
+        console.log(`[EVA] Added transcript observation #${session.observations.length}`);
+      }
+      
+      // Check if we should generate SOP from transcript
+      const timeSinceLastSop = session.lastSopGeneration ? now - session.lastSopGeneration : Infinity;
+      const shouldGenerateSop = message.enableSop !== false && 
+                                 session.transcriptBuffer.length >= 3 && 
+                                 timeSinceLastSop >= SOP_GENERATION_INTERVAL;
+      
+      // Check if we should generate CRO from transcript
+      const timeSinceLastCro = session.lastCroGeneration ? now - session.lastCroGeneration : Infinity;
+      const shouldGenerateCro = message.enableCro === true && 
+                                 session.transcriptBuffer.length >= 3 && 
+                                 timeSinceLastCro >= SOP_GENERATION_INTERVAL;
+      
+      let sopResult = null;
+      let croResult = null;
+      
+      if (shouldGenerateSop) {
+        console.log(`[EVA SOP] Generating SOP from transcript...`);
+        sopResult = await generateSOP(session);
+        if (sopResult) {
+          session.currentSop = sopResult.sop;
+          session.lastSopObservationIndex = sopResult.newIndex;
+          session.lastSopGeneration = now;
+          session.sopVersion++;
+          console.log(`[EVA SOP] Generated SOP v${session.sopVersion} from transcript`);
+        }
+      }
+      
+      if (shouldGenerateCro) {
+        console.log(`[EVA CRO] Generating CRO from transcript...`);
+        croResult = await generateCRO(session);
+        if (croResult) {
+          session.currentCro = croResult.cro;
+          session.lastCroObservationIndex = croResult.newIndex;
+          session.lastCroGeneration = now;
+          session.croVersion++;
+          console.log(`[EVA CRO] Generated CRO v${session.croVersion} from transcript`);
+        }
+      }
+      
+      // Return combined update if we have results
+      if (sopResult || croResult) {
+        let flowchartCode: string | undefined;
+        if (sopResult) {
+          try {
+            flowchartCode = await generateMermaidFlowchart(sopResult.sop);
+          } catch (e) {
+            console.error(`[EVA] Flowchart generation failed:`, e);
+          }
+        }
+        
+        return {
+          type: sopResult ? "sop_update" : "cro_update",
+          content: sopResult?.sop || "",
+          observationCount: session.observations.length,
+          sopVersion: session.sopVersion,
+          flowchartCode,
+          croContent: croResult?.cro,
+          croVersion: session.croVersion,
+        };
+      }
+      
+      // Return status update
+      return {
+        type: "status",
+        content: `Transcript processed (${session.transcriptBuffer.length} entries)`,
+        observationCount: session.observations.length,
+        sopVersion: session.sopVersion,
+        croVersion: session.croVersion,
       };
     }
 
