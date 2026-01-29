@@ -288,9 +288,12 @@ export function EVAMeetingAssistant({
       };
       setMessages(prev => [...prev, userMessage]);
       
-      // Save voice message to database for transcript
+      // Save voice message to database for chat history
+      // Note: User transcripts are NOT saved as transcript segments here to avoid duplication
+      // with local speech-to-text (Jitsi transcription) which already captures user speech
       if (meetingId && text.trim().length > 2) {
         try {
+          // Save to chat messages only (for EVA panel history)
           await api.createChatMessage(meetingId, {
             role: "user",
             content: text,
@@ -324,13 +327,25 @@ export function EVAMeetingAssistant({
       };
       setMessages(prev => [...prev, aiMessage]);
       
-      // Save AI response to database for transcript
+      // Determine the agent label based on current voice agent type
+      const agentLabel = voiceAgentTypeRef.current === 'cro_interview' ? "CRO Agent" : 
+                        voiceAgentTypeRef.current === 'sop' ? "SOP Agent" : "EVA";
+      
+      // Save AI response to database for chat history AND transcript
       if (meetingId && text.trim().length > 2) {
         try {
+          // Save to chat messages (for EVA panel history)
           await api.createChatMessage(meetingId, {
             role: "ai",
             content: text,
             context: "Voice (ElevenLabs)",
+          });
+          
+          // Also save as transcript segment (for Recording Detail view)
+          await api.createTranscriptSegment(meetingId, {
+            speaker: agentLabel,
+            text: text,
+            isFinal: true,
           });
         } catch (error) {
           console.error("Failed to save AI response:", error);
@@ -339,8 +354,6 @@ export function EVAMeetingAssistant({
       
       // Send transcript to EVA for CRO/SOP generation when using specialized agents
       if (sendTranscriptRef.current && text.trim().length > 2) {
-        const agentLabel = voiceAgentTypeRef.current === 'cro_interview' ? "CRO Agent" : 
-                          voiceAgentTypeRef.current === 'sop' ? "SOP Agent" : "EVA";
         console.log("[EVA Agent] Sending agent response to EVA WebSocket", { agentLabel, isSop: isSopEnabledRef.current, isCro: isCroEnabledRef.current });
         sendTranscriptRef.current(text, agentLabel, isSopEnabledRef.current, isCroEnabledRef.current);
       }
