@@ -144,6 +144,58 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     queryFn: () => api.listAgents(),
   });
 
+  // Initialize selectedAgents and generator states from meeting data when it loads
+  // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
+  const [hasInitializedAgents, setHasInitializedAgents] = useState(false);
+  useEffect(() => {
+    if (meeting?.id && agents.length > 0 && !hasInitializedAgents) {
+      const sessionKey = `agent-toggles-${meeting.id}`;
+      const savedToggles = sessionStorage.getItem(sessionKey);
+      
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        // API-created meeting with pre-selected agents
+        setSelectedAgents(meeting.selectedAgents);
+        
+        // Enable generators based on pre-selected agent types
+        const selectedAgentTypes = agents
+          .filter(a => meeting.selectedAgents?.includes(a.id))
+          .map(a => a.type?.toLowerCase());
+        
+        // Check for SOP-type agents (sop, eva)
+        if (selectedAgentTypes.some(t => t === "sop" || t === "eva")) {
+          setIsScreenObserverEnabled(true);
+        }
+        // Check for CRO-type agents (cro builder, cro)
+        if (selectedAgentTypes.some(t => t?.includes("cro"))) {
+          setIsCROEnabled(true);
+        }
+      } else if (savedToggles) {
+        // Returning to a meeting - restore from sessionStorage
+        const allAgentIds = agents.map(a => a.id);
+        setSelectedAgents(allAgentIds);
+        try {
+          const parsed = JSON.parse(savedToggles);
+          if (typeof parsed.screenObserver === 'boolean') {
+            setIsScreenObserverEnabled(parsed.screenObserver);
+          }
+          if (typeof parsed.cro === 'boolean') {
+            setIsCROEnabled(parsed.cro);
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+      } else {
+        // New meeting without pre-selected agents - select all agents, disable generators
+        const allAgentIds = agents.map(a => a.id);
+        setSelectedAgents(allAgentIds);
+        setIsScreenObserverEnabled(false);
+        setIsCROEnabled(false);
+      }
+      
+      setHasInitializedAgents(true);
+    }
+  }, [meeting?.id, meeting?.selectedAgents, agents, hasInitializedAgents]);
+
   const isAgentTypeSelected = useCallback((agentType: string): boolean => {
     // Support backward compatibility: treat legacy "sop" type as "eva"
     const typesToCheck = agentType === "eva" ? ["eva", "sop"] : [agentType];
@@ -175,12 +227,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   useEffect(() => {
     if (meeting?.id) {
       meetingIdRef.current = meeting.id;
-      if (agents.length > 0) {
-        const allAgentIds = agents.map(a => a.id);
-        setSelectedAgents(allAgentIds);
-      }
     }
-  }, [meeting?.id, agents]);
+  }, [meeting?.id]);
 
   const prevSelectedAgentsRef = useRef<string[]>([]);
 
@@ -203,30 +251,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     }
   }, [meeting?.id, isScreenObserverEnabled, isCROEnabled]);
 
-  useEffect(() => {
-    if (meeting?.id) {
-      const key = `agent-toggles-${meeting.id}`;
-      const saved = sessionStorage.getItem(key);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (typeof parsed.screenObserver === 'boolean') {
-            setIsScreenObserverEnabled(parsed.screenObserver);
-          }
-          if (typeof parsed.cro === 'boolean') {
-            setIsCROEnabled(parsed.cro);
-          }
-        } catch (e) {
-          // ignore parse errors
-        }
-      } else {
-        // New meeting: Both generators disabled by default
-        setIsScreenObserverEnabled(false);
-        setIsCROEnabled(false);
-      }
-    }
-  }, [meeting?.id]);
-
+  
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
