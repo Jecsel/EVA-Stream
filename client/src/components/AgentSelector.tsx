@@ -114,7 +114,7 @@ export function AgentSelector({
                     </div>
                     <div>
                       <span className="font-medium text-sm">SOP Generator</span>
-                      <p className="text-[10px] text-muted-foreground">Creates procedures from screens</p>
+                      <p className="text-[10px] text-muted-foreground">From transcript + screen</p>
                     </div>
                   </div>
                   <Switch
@@ -137,7 +137,7 @@ export function AgentSelector({
                     </div>
                     <div>
                       <span className="font-medium text-sm">CRO Generator</span>
-                      <p className="text-[10px] text-muted-foreground">Creates role outcomes</p>
+                      <p className="text-[10px] text-muted-foreground">From transcript + screen</p>
                     </div>
                   </div>
                   <Switch
