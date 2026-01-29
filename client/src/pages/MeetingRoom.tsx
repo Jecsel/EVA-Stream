@@ -37,7 +37,6 @@ export default function MeetingRoom() {
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
-  const [isMeetingAssistantEnabled, setIsMeetingAssistantEnabled] = useState(true);
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
@@ -132,22 +131,19 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const prevSelectedAgentsRef = useRef<string[]>([]);
 
   useEffect(() => {
-    if (!isMeetingAssistantEnabled && isScreenObserverEnabled && evaPanelMode === "assistant") {
-      setEvaPanelMode("observe");
-    } else if (isMeetingAssistantEnabled && !isScreenObserverEnabled && evaPanelMode === "observe") {
+    if (!isScreenObserverEnabled && evaPanelMode === "observe") {
       setEvaPanelMode("assistant");
     }
-  }, [isMeetingAssistantEnabled, isScreenObserverEnabled, evaPanelMode]);
+  }, [isScreenObserverEnabled, evaPanelMode]);
 
   useEffect(() => {
     if (meeting?.id) {
       const key = `agent-toggles-${meeting.id}`;
       sessionStorage.setItem(key, JSON.stringify({
-        meetingAssistant: isMeetingAssistantEnabled,
         screenObserver: isScreenObserverEnabled
       }));
     }
-  }, [meeting?.id, isMeetingAssistantEnabled, isScreenObserverEnabled]);
+  }, [meeting?.id, isScreenObserverEnabled]);
 
   useEffect(() => {
     if (meeting?.id) {
@@ -156,9 +152,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (typeof parsed.meetingAssistant === 'boolean') {
-            setIsMeetingAssistantEnabled(parsed.meetingAssistant);
-          }
           if (typeof parsed.screenObserver === 'boolean') {
             setIsScreenObserverEnabled(parsed.screenObserver);
           }
@@ -166,8 +159,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           // ignore parse errors
         }
       } else {
-        // New meeting: ensure both Meeting Assistant and SOP Agent are enabled by default
-        setIsMeetingAssistantEnabled(true);
+        // New meeting: SOP Agent enabled by default
         setIsScreenObserverEnabled(true);
       }
     }
@@ -595,27 +587,23 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  roomId={roomId}
                  selectedAgents={selectedAgents}
                  onAgentsChange={setSelectedAgents}
-                 isMeetingAssistantEnabled={isMeetingAssistantEnabled}
-                 onMeetingAssistantChange={setIsMeetingAssistantEnabled}
                  isScreenObserverEnabled={isScreenObserverEnabled}
                  onScreenObserverChange={setIsScreenObserverEnabled}
                />
              )}
-             {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && hasJoinedMeeting && (
-               <>
-                 <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
-                   evaConnected ? 'border-green-500/50' : 'border-border'
-                 }`}>
-                    <span className={`w-2 h-2 rounded-full ${
-                      evaStatus === "connected" ? "bg-green-500 animate-pulse" :
-                      evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
-                      "bg-gray-500"
-                    }`} />
-                    <span className="text-xs font-medium text-muted-foreground">
-                      EVA {evaStatus === "connected" ? (isObserving && isScreenObserverEnabled ? "Observing" : "Ready") : evaStatus}
-                    </span>
-                 </div>
-               </>
+             {hasJoinedMeeting && (
+               <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
+                 evaConnected ? 'border-green-500/50' : 'border-border'
+               }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    evaStatus === "connected" ? "bg-green-500 animate-pulse" :
+                    evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
+                    "bg-gray-500"
+                  }`} />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    EVA {evaStatus === "connected" ? (isObserving && isScreenObserverEnabled ? "Observing" : "Ready") : evaStatus}
+                  </span>
+               </div>
              )}
              <div className="bg-card/50 border border-border px-3 py-1.5 rounded-full flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -637,7 +625,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              />
           </div>
 
-          {isAgentTypeSelected("eva") && meeting?.id && hasJoinedMeeting && (
+          {meeting?.id && hasJoinedMeeting && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
@@ -645,23 +633,23 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                 rounded-2xl overflow-hidden shadow-xl border border-border
               `}
             >
-              {/* Panel header with mode indicator */}
+              {/* Panel header with mode tabs */}
               <div className="bg-muted/30 border-b">
-                {/* Mode tabs - only show if both agents are enabled */}
-                {isMeetingAssistantEnabled && isScreenObserverEnabled && (
-                  <div className="flex bg-background/50">
-                    <button
-                      onClick={() => setEvaPanelMode("assistant")}
-                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                        evaPanelMode === "assistant" 
-                          ? "bg-background text-foreground border-b-2 border-purple-500" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      data-testid="button-eva-mode-assistant"
-                    >
-                      <MessageSquare className="w-3 h-3 inline mr-1" />
-                      Meeting Assistant
-                    </button>
+                {/* Mode tabs - show Screen Observer tab only if SOP Agent is enabled */}
+                <div className="flex bg-background/50">
+                  <button
+                    onClick={() => setEvaPanelMode("assistant")}
+                    className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                      evaPanelMode === "assistant" 
+                        ? "bg-background text-foreground border-b-2 border-purple-500" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    data-testid="button-eva-mode-assistant"
+                  >
+                    <MessageSquare className="w-3 h-3 inline mr-1" />
+                    Meeting Assistant
+                  </button>
+                  {isScreenObserverEnabled && (
                     <button
                       onClick={() => setEvaPanelMode("observe")}
                       className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
@@ -674,42 +662,21 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       <Eye className="w-3 h-3 inline mr-1" />
                       Screen Observer
                     </button>
-                  </div>
-                )}
-                
-                {/* Single agent header when only one is enabled */}
-                {isMeetingAssistantEnabled && !isScreenObserverEnabled && (
-                  <div className="px-3 py-2.5 bg-purple-500/10 flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
-                    <span className="text-xs font-semibold text-purple-400">Meeting Assistant</span>
-                  </div>
-                )}
-                {!isMeetingAssistantEnabled && isScreenObserverEnabled && (
-                  <div className="px-3 py-2.5 bg-blue-500/10 flex items-center gap-2">
-                    <Eye className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-semibold text-blue-400">Screen Observer</span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
               
-              {/* Show content based on enabled agents and selected mode */}
-              {!isMeetingAssistantEnabled && !isScreenObserverEnabled ? (
-                <div className="h-[calc(100%-120px)] flex items-center justify-center text-center p-6">
-                  <div className="text-muted-foreground">
-                    <div className="text-4xl mb-3">🤖</div>
-                    <p className="text-sm font-medium mb-1">No agents active</p>
-                    <p className="text-xs">Enable an agent above to get started</p>
-                  </div>
-                </div>
-              ) : evaPanelMode === "assistant" && isMeetingAssistantEnabled ? (
+              {/* Show content based on selected mode */}
+              {evaPanelMode === "assistant" ? (
                 <EVAMeetingAssistant
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
                   meetingStatus={meeting.status}
                   className="h-[calc(100%-120px)]"
                   onRequestScreenObserver={() => {
-                    // Switch to Screen Observer tab
-                    setEvaPanelMode("observe");
+                    if (isScreenObserverEnabled) {
+                      setEvaPanelMode("observe");
+                    }
                   }}
                   currentSopContent={sopContent}
                   messages={evaMessages}
@@ -734,7 +701,18 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   isSopUpdating={isSopUpdating}
                   className="h-[calc(100%-120px)]"
                 />
-              ) : null}
+              ) : (
+                <EVAMeetingAssistant
+                  meetingId={meeting.id}
+                  meetingTitle={meeting.title}
+                  meetingStatus={meeting.status}
+                  className="h-[calc(100%-120px)]"
+                  onRequestScreenObserver={() => {}}
+                  currentSopContent={sopContent}
+                  messages={evaMessages}
+                  setMessages={setEvaMessages}
+                />
+              )}
             </div>
           )}
 
@@ -792,7 +770,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         </div>
 
         <div className="h-20 flex items-center justify-center gap-4 px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/50">
-            {isAgentTypeSelected("eva") && isScreenObserverEnabled && (
+            {isScreenObserverEnabled && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -812,7 +790,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
               </TooltipProvider>
             )}
 
-            {isAgentTypeSelected("eva") && (isMeetingAssistantEnabled || isScreenObserverEnabled) && (
+            {hasJoinedMeeting && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -826,12 +804,12 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       <Brain className="h-5 w-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle AI Panel</TooltipContent>
+                  <TooltipContent>Toggle EVA Assistant</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
 
-            {isAgentTypeSelected("eva") && isScreenObserverEnabled && (
+            {isScreenObserverEnabled && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>

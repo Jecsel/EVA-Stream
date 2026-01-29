@@ -19,8 +19,6 @@ interface AgentSelectorProps {
   roomId: string;
   selectedAgents: string[];
   onAgentsChange: (agentIds: string[]) => void;
-  isMeetingAssistantEnabled?: boolean;
-  onMeetingAssistantChange?: (enabled: boolean) => void;
   isScreenObserverEnabled?: boolean;
   onScreenObserverChange?: (enabled: boolean) => void;
   className?: string;
@@ -31,8 +29,6 @@ export function AgentSelector({
   roomId,
   selectedAgents, 
   onAgentsChange,
-  isMeetingAssistantEnabled = true,
-  onMeetingAssistantChange,
   isScreenObserverEnabled = false,
   onScreenObserverChange,
   className = ""
@@ -117,33 +113,39 @@ export function AgentSelector({
           </p>
         </div>
         
-        {/* EVA Assistant Toggles */}
-        {onMeetingAssistantChange && onScreenObserverChange && (
-          <div className="p-2 border-b border-border bg-muted/20">
+        {/* EVA Assistant - Always On */}
+        <div className="p-2 border-b border-border bg-muted/20">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-2.5 mb-2">
+            EVA Assistant
+          </div>
+          <div className="space-y-1">
+            <div 
+              className="flex items-center justify-between p-2.5 rounded-lg bg-purple-500/10"
+              data-testid="toggle-meeting-assistant-row"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded flex items-center justify-center bg-purple-500/20 text-purple-500">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <span className="font-medium text-sm">Meeting Assistant</span>
+                  <p className="text-[10px] text-muted-foreground">Voice commands & Q&A</p>
+                </div>
+              </div>
+              <div className="px-2 py-0.5 bg-purple-500/20 text-purple-500 text-[10px] font-medium rounded-full">
+                Always On
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Agent Toggles */}
+        {onScreenObserverChange && (
+          <div className="p-2 border-b border-border">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-2.5 mb-2">
-              EVA Assistant
+              Agents
             </div>
             <div className="space-y-1">
-              <div 
-                className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isMeetingAssistantEnabled ? 'bg-purple-500/10' : 'hover:bg-muted/50'}`}
-                data-testid="toggle-meeting-assistant-row"
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded flex items-center justify-center ${isMeetingAssistantEnabled ? 'bg-purple-500/20 text-purple-500' : 'bg-muted text-muted-foreground'}`}>
-                    <MessageSquare className="h-3.5 w-3.5" />
-                  </div>
-                  <div>
-                    <span className="font-medium text-sm">Meeting Assistant</span>
-                    <p className="text-[10px] text-muted-foreground">Voice commands & Q&A</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={isMeetingAssistantEnabled}
-                  onCheckedChange={onMeetingAssistantChange}
-                  className="scale-90"
-                  data-testid="toggle-meeting-assistant"
-                />
-              </div>
               <div 
                 className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isScreenObserverEnabled ? 'bg-blue-500/10' : 'hover:bg-muted/50'}`}
                 data-testid="toggle-screen-observer-row"
