@@ -36,8 +36,15 @@ export default function MeetingRoom() {
   const queryClient = useQueryClient();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
-  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe">("assistant");
+  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
+  const [isCROEnabled, setIsCROEnabled] = useState(false);
+  const [croContent, setCroContent] = useState(`# Core Role Outcomes
+
+*Waiting to generate CRO...*
+
+Enable the CRO Agent and discuss role responsibilities during the meeting to generate Core Role Outcomes.
+`);
   const [isSOPOpen, setIsSOPOpen] = useState(false);
   const [isFlowchartOpen, setIsFlowchartOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
@@ -134,16 +141,20 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     if (!isScreenObserverEnabled && evaPanelMode === "observe") {
       setEvaPanelMode("assistant");
     }
-  }, [isScreenObserverEnabled, evaPanelMode]);
+    if (!isCROEnabled && evaPanelMode === "cro") {
+      setEvaPanelMode("assistant");
+    }
+  }, [isScreenObserverEnabled, isCROEnabled, evaPanelMode]);
 
   useEffect(() => {
     if (meeting?.id) {
       const key = `agent-toggles-${meeting.id}`;
       sessionStorage.setItem(key, JSON.stringify({
-        screenObserver: isScreenObserverEnabled
+        screenObserver: isScreenObserverEnabled,
+        cro: isCROEnabled
       }));
     }
-  }, [meeting?.id, isScreenObserverEnabled]);
+  }, [meeting?.id, isScreenObserverEnabled, isCROEnabled]);
 
   useEffect(() => {
     if (meeting?.id) {
@@ -155,12 +166,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           if (typeof parsed.screenObserver === 'boolean') {
             setIsScreenObserverEnabled(parsed.screenObserver);
           }
+          if (typeof parsed.cro === 'boolean') {
+            setIsCROEnabled(parsed.cro);
+          }
         } catch (e) {
           // ignore parse errors
         }
       } else {
-        // New meeting: SOP Agent enabled by default
+        // New meeting: SOP Agent enabled by default, CRO disabled
         setIsScreenObserverEnabled(true);
+        setIsCROEnabled(false);
       }
     }
   }, [meeting?.id]);
@@ -589,6 +604,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  onAgentsChange={setSelectedAgents}
                  isScreenObserverEnabled={isScreenObserverEnabled}
                  onScreenObserverChange={setIsScreenObserverEnabled}
+                 isCROEnabled={isCROEnabled}
+                 onCROChange={setIsCROEnabled}
                />
              )}
              {hasJoinedMeeting && (
@@ -663,11 +680,25 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       Screen Observer
                     </button>
                   )}
+                  {isCROEnabled && (
+                    <button
+                      onClick={() => setEvaPanelMode("cro")}
+                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                        evaPanelMode === "cro" 
+                          ? "bg-background text-foreground border-b-2 border-green-500" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="button-eva-mode-cro"
+                    >
+                      <FileText className="w-3 h-3 inline mr-1" />
+                      CRO Generator
+                    </button>
+                  )}
                 </div>
               </div>
               
               {/* Show content based on selected mode */}
-              {evaPanelMode === "assistant" ? (
+              {evaPanelMode === "assistant" && (
                 <EVAMeetingAssistant
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
@@ -682,7 +713,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   messages={evaMessages}
                   setMessages={setEvaMessages}
                 />
-              ) : isScreenObserverEnabled ? (
+              )}
+              
+              {evaPanelMode === "observe" && isScreenObserverEnabled && (
                 <EVAPanel 
                   meetingId={meeting.id}
                   messages={displayMessages}
@@ -701,17 +734,27 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   isSopUpdating={isSopUpdating}
                   className="h-[calc(100%-120px)]"
                 />
-              ) : (
-                <EVAMeetingAssistant
-                  meetingId={meeting.id}
-                  meetingTitle={meeting.title}
-                  meetingStatus={meeting.status}
-                  className="h-[calc(100%-120px)]"
-                  onRequestScreenObserver={() => {}}
-                  currentSopContent={sopContent}
-                  messages={evaMessages}
-                  setMessages={setEvaMessages}
-                />
+              )}
+              
+              {evaPanelMode === "cro" && isCROEnabled && (
+                <div className="h-[calc(100%-120px)] flex flex-col p-4 overflow-y-auto">
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-green-500" />
+                      <span className="font-medium text-sm text-green-500">CRO Generator</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Discuss role responsibilities during the meeting. The CRO Agent will analyze the conversation and generate Core Role Outcomes using the FABIUS structure.
+                    </p>
+                  </div>
+                  <div className="flex-1 bg-muted/30 rounded-lg p-4 overflow-y-auto">
+                    <div className="prose prose-sm prose-invert max-w-none">
+                      <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {croContent}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}

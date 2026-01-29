@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, ChevronDown, Loader2, MessageSquare, Eye } from "lucide-react";
+import { Bot, ChevronDown, Loader2, MessageSquare, Eye, FileText } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import type { Agent } from "@shared/schema";
 
@@ -21,6 +21,8 @@ interface AgentSelectorProps {
   onAgentsChange: (agentIds: string[]) => void;
   isScreenObserverEnabled?: boolean;
   onScreenObserverChange?: (enabled: boolean) => void;
+  isCROEnabled?: boolean;
+  onCROChange?: (enabled: boolean) => void;
   className?: string;
 }
 
@@ -31,6 +33,8 @@ export function AgentSelector({
   onAgentsChange,
   isScreenObserverEnabled = false,
   onScreenObserverChange,
+  isCROEnabled = false,
+  onCROChange,
   className = ""
 }: AgentSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -140,32 +144,57 @@ export function AgentSelector({
         </div>
         
         {/* Agent Toggles */}
-        {onScreenObserverChange && (
+        {(onScreenObserverChange || onCROChange) && (
           <div className="p-2 border-b border-border">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-2.5 mb-2">
               Agents
             </div>
             <div className="space-y-1">
-              <div 
-                className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isScreenObserverEnabled ? 'bg-blue-500/10' : 'hover:bg-muted/50'}`}
-                data-testid="toggle-screen-observer-row"
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded flex items-center justify-center ${isScreenObserverEnabled ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
-                    <Eye className="h-3.5 w-3.5" />
+              {onScreenObserverChange && (
+                <div 
+                  className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isScreenObserverEnabled ? 'bg-blue-500/10' : 'hover:bg-muted/50'}`}
+                  data-testid="toggle-screen-observer-row"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded flex items-center justify-center ${isScreenObserverEnabled ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
+                      <Eye className="h-3.5 w-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-sm">SOP Agent</span>
+                      <p className="text-[10px] text-muted-foreground">Analyzes shared screens</p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium text-sm">SOP Agent</span>
-                    <p className="text-[10px] text-muted-foreground">Analyzes shared screens</p>
-                  </div>
+                  <Switch
+                    checked={isScreenObserverEnabled}
+                    onCheckedChange={onScreenObserverChange}
+                    className="scale-90"
+                    data-testid="toggle-screen-observer"
+                  />
                 </div>
-                <Switch
-                  checked={isScreenObserverEnabled}
-                  onCheckedChange={onScreenObserverChange}
-                  className="scale-90"
-                  data-testid="toggle-screen-observer"
-                />
-              </div>
+              )}
+              
+              {onCROChange && (
+                <div 
+                  className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isCROEnabled ? 'bg-green-500/10' : 'hover:bg-muted/50'}`}
+                  data-testid="toggle-cro-agent-row"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded flex items-center justify-center ${isCROEnabled ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'}`}>
+                      <FileText className="h-3.5 w-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-sm">CRO Agent</span>
+                      <p className="text-[10px] text-muted-foreground">Generates role outcomes</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={isCROEnabled}
+                    onCheckedChange={onCROChange}
+                    className="scale-90"
+                    data-testid="toggle-cro-agent"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
