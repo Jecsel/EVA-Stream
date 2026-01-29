@@ -52,6 +52,7 @@ Enable the CRO Agent and discuss role responsibilities during the meeting to gen
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
   const [transcripts, setTranscripts] = useState<Array<{id: string; text: string; speaker: string; timestamp: Date; isFinal: boolean;}>>([]);
+  const evaConnectedRef = useRef(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
   const [isJitsiTranscribing, setIsJitsiTranscribing] = useState(false);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
@@ -316,6 +317,12 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     onStatusChange: setEvaStatus,
   });
 
+  // Keep ref in sync with evaConnected for use in callbacks that may have stale closures
+  useEffect(() => {
+    evaConnectedRef.current = evaConnected;
+    console.log(`[EVA Ref] evaConnectedRef updated to: ${evaConnected}`);
+  }, [evaConnected]);
+
   useEffect(() => {
     if (!isScreenObserverEnabled && isObserving) {
       stopObserving();
@@ -503,14 +510,20 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         });
         
         // Send transcript to EVA for processing (SOP/CRO generation)
-        if (evaConnected) {
+        // Use ref to get latest connection status (callbacks may have stale closures)
+        const isConnected = evaConnectedRef.current;
+        console.log(`[Transcript] evaConnected=${isConnected}, sending to EVA: "${text.trim().substring(0, 30)}..."`);
+        if (isConnected) {
           sendTranscript(text.trim(), participant || "Unknown", isScreenObserverEnabled, isCROEnabled);
+          console.log(`[Transcript] Sent to EVA with SOP=${isScreenObserverEnabled}, CRO=${isCROEnabled}`);
+        } else {
+          console.log(`[Transcript] NOT sent - EVA not connected`);
         }
       } catch (error) {
         console.error("Failed to save transcript segment:", error);
       }
     }
-  }, [meeting?.id, evaConnected, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
+  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
 
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;

@@ -40,12 +40,17 @@ export function useEvaLive({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    console.log(`[EVA] connect() called, current state: ${wsRef.current?.readyState}`);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log(`[EVA] Already connected, skipping`);
+      return;
+    }
 
     onStatusChange?.("connecting");
     
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws/eva?meetingId=${meetingId}`;
+    console.log(`[EVA] Connecting to: ${wsUrl}`);
     
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -96,7 +101,7 @@ export function useEvaLive({
     ws.onerror = (error) => {
       console.error("EVA WebSocket error:", error);
     };
-  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onStatusChange]);
+  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -218,8 +223,12 @@ export function useEvaLive({
 
   // Connect on mount
   useEffect(() => {
+    console.log(`[EVA] useEffect triggered - meetingId: "${meetingId}"`);
     if (meetingId) {
+      console.log(`[EVA] Attempting to connect for meeting: ${meetingId}`);
       connect();
+    } else {
+      console.log(`[EVA] No meetingId, skipping connection`);
     }
     return () => {
       disconnect();
