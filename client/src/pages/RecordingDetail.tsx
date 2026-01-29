@@ -633,7 +633,7 @@ export default function RecordingDetail() {
           <TabsList className="mb-4">
             <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
               <FileText className="w-4 h-4" />
-              SOP Document
+              Document
             </TabsTrigger>
             <TabsTrigger value="flowchart" className="flex items-center gap-2" data-testid="tab-flowchart">
               <GitBranch className="w-4 h-4" />
@@ -654,7 +654,7 @@ export default function RecordingDetail() {
               <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <FileText className="w-4 h-4 text-primary" />
-                  Standard Operating Procedure
+                  Generated Document
                 </h2>
                 <div className="flex items-center gap-2">
                   {isEditing ? (
@@ -796,7 +796,7 @@ export default function RecordingDetail() {
                         {recording.sopContent}
                       </ReactMarkdown>
                     ) : (
-                      <p className="text-muted-foreground italic">No SOP content was generated for this meeting.</p>
+                      <p className="text-muted-foreground italic">No document was generated for this meeting.</p>
                     )}
                   </div>
                 </ScrollArea>
