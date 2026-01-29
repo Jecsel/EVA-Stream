@@ -7,7 +7,9 @@ import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square } from "lucide-react";
+
+export type GeneratorState = "idle" | "running" | "paused" | "stopped";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +73,10 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const [sopObservationCount, setSopObservationCount] = useState(0);
   const [sopVersion, setSopVersion] = useState(0);
   const [liveFlowchartCode, setLiveFlowchartCode] = useState<string | undefined>(undefined);
+  
+  // Per-agent generation states (idle, running, paused, stopped)
+  const [sopGeneratorState, setSopGeneratorState] = useState<GeneratorState>("idle");
+  const [croGeneratorState, setCroGeneratorState] = useState<GeneratorState>("idle");
 
   const hasEndedMeetingRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
@@ -512,18 +518,27 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         // Send transcript to EVA for processing (SOP/CRO generation)
         // Use ref to get latest connection status (callbacks may have stale closures)
         const isConnected = evaConnectedRef.current;
-        console.log(`[Transcript] evaConnected=${isConnected}, sending to EVA: "${text.trim().substring(0, 30)}..."`);
-        if (isConnected) {
-          sendTranscript(text.trim(), participant || "Unknown", isScreenObserverEnabled, isCROEnabled);
-          console.log(`[Transcript] Sent to EVA with SOP=${isScreenObserverEnabled}, CRO=${isCROEnabled}`);
+        
+        // Check if either generator is in "running" state (active generation)
+        const isSopGeneratorRunning = sopGeneratorState === "running";
+        const isCroGeneratorRunning = croGeneratorState === "running";
+        const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
+        const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
+        
+        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${sopGeneratorState}, croState=${croGeneratorState}`);
+        console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
+        
+        if (isConnected && (shouldSendToSop || shouldSendToCro)) {
+          sendTranscript(text.trim(), participant || "Unknown", shouldSendToSop, shouldSendToCro);
+          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}`);
         } else {
-          console.log(`[Transcript] NOT sent - EVA not connected`);
+          console.log(`[Transcript] NOT sent - EVA not connected or generators not running`);
         }
       } catch (error) {
         console.error("Failed to save transcript segment:", error);
       }
     }
-  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
+  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled, sopGeneratorState, croGeneratorState]);
 
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
@@ -782,18 +797,95 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   onSopContentChange={setSopContent}
                   isSopUpdating={isSopUpdating}
                   className="h-[calc(100%-120px)]"
+                  generatorState={sopGeneratorState}
+                  onGeneratorStateChange={setSopGeneratorState}
                 />
               )}
               
               {evaPanelMode === "cro" && isCROEnabled && (
                 <div className="h-[calc(100%-120px)] flex flex-col p-4 overflow-y-auto">
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-4 h-4 text-green-500" />
-                      <span className="font-medium text-sm text-green-500">CRO Generator</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-green-500" />
+                        <span className="font-medium text-sm text-green-500">CRO Generator</span>
+                        <span className={`w-2 h-2 rounded-full ${
+                          croGeneratorState === "running" ? "bg-green-500 animate-pulse" :
+                          croGeneratorState === "paused" ? "bg-yellow-500" :
+                          croGeneratorState === "stopped" ? "bg-red-500" :
+                          "bg-muted-foreground"
+                        }`} />
+                        <span className="text-xs text-muted-foreground">
+                          {croGeneratorState === "running" ? "Recording" :
+                           croGeneratorState === "paused" ? "Paused" :
+                           croGeneratorState === "stopped" ? "Stopped" : "Ready"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {(croGeneratorState === "idle" || croGeneratorState === "stopped") && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                            onClick={() => setCroGeneratorState("running")}
+                            data-testid="button-start-cro-generator"
+                          >
+                            <Play className="w-3 h-3 mr-1" />
+                            Start
+                          </Button>
+                        )}
+                        {croGeneratorState === "running" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10"
+                              onClick={() => setCroGeneratorState("paused")}
+                              data-testid="button-pause-cro-generator"
+                            >
+                              <Pause className="w-3 h-3 mr-1" />
+                              Pause
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                              onClick={() => setCroGeneratorState("stopped")}
+                              data-testid="button-stop-cro-generator"
+                            >
+                              <Square className="w-3 h-3 mr-1" />
+                              Stop
+                            </Button>
+                          </>
+                        )}
+                        {croGeneratorState === "paused" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                              onClick={() => setCroGeneratorState("running")}
+                              data-testid="button-resume-cro-generator"
+                            >
+                              <Play className="w-3 h-3 mr-1" />
+                              Resume
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                              onClick={() => setCroGeneratorState("stopped")}
+                              data-testid="button-stop-cro-generator-paused"
+                            >
+                              <Square className="w-3 h-3 mr-1" />
+                              Stop
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Discuss role responsibilities during the meeting. The CRO Agent will analyze the conversation and generate Core Role Outcomes using the FABIUS structure.
+                      Discuss role responsibilities during the meeting. Click Start to begin generating Core Role Outcomes.
                     </p>
                   </div>
                   <div className="flex-1 bg-muted/30 rounded-lg p-4 overflow-y-auto">

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Edit3, Save, X, FileText } from "lucide-react";
+import { Loader2, Edit3, Save, X, FileText, Play, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,6 +7,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@shared/schema";
+
+export type GeneratorState = "idle" | "running" | "paused" | "stopped";
 
 interface Message {
   id: string;
@@ -30,6 +32,8 @@ interface EVAPanelProps {
   sopContent?: string;
   onSopContentChange?: (content: string) => void;
   isSopUpdating?: boolean;
+  generatorState?: GeneratorState;
+  onGeneratorStateChange?: (state: GeneratorState) => void;
 }
 
 export function EVAPanel({
@@ -46,6 +50,8 @@ export function EVAPanel({
   sopContent = "",
   onSopContentChange,
   isSopUpdating = false,
+  generatorState = "idle",
+  onGeneratorStateChange,
 }: EVAPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(sopContent);
@@ -95,24 +101,95 @@ export function EVAPanel({
             <div className="flex items-center gap-1.5">
               <span className={cn(
                 "w-2 h-2 rounded-full",
-                evaStatus === "connected" ? "bg-green-500 animate-pulse" :
-                evaStatus === "connecting" ? "bg-yellow-500 animate-pulse" :
+                generatorState === "running" ? "bg-green-500 animate-pulse" :
+                generatorState === "paused" ? "bg-yellow-500" :
+                generatorState === "stopped" ? "bg-red-500" :
                 "bg-muted-foreground"
               )} />
               <p className="text-xs text-muted-foreground">
-                {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
+                {generatorState === "running" ? "Recording" :
+                 generatorState === "paused" ? "Paused" :
+                 generatorState === "stopped" ? "Stopped" : "Ready"}
               </p>
             </div>
           </div>
         </div>
         
-        {/* Status indicator */}
-        {isSopUpdating && (
-          <div className="flex items-center gap-1.5 text-primary">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-xs">Updating...</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Generator Controls */}
+          {onGeneratorStateChange && (
+            <div className="flex items-center gap-1">
+              {(generatorState === "idle" || generatorState === "stopped") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                  onClick={() => onGeneratorStateChange("running")}
+                  data-testid="button-start-sop-generator"
+                >
+                  <Play className="w-4 h-4 mr-1" />
+                  Start
+                </Button>
+              )}
+              {generatorState === "running" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10"
+                    onClick={() => onGeneratorStateChange("paused")}
+                    data-testid="button-pause-sop-generator"
+                  >
+                    <Pause className="w-4 h-4 mr-1" />
+                    Pause
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                    onClick={() => onGeneratorStateChange("stopped")}
+                    data-testid="button-stop-sop-generator"
+                  >
+                    <Square className="w-4 h-4 mr-1" />
+                    Stop
+                  </Button>
+                </>
+              )}
+              {generatorState === "paused" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                    onClick={() => onGeneratorStateChange("running")}
+                    data-testid="button-resume-sop-generator"
+                  >
+                    <Play className="w-4 h-4 mr-1" />
+                    Resume
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                    onClick={() => onGeneratorStateChange("stopped")}
+                    data-testid="button-stop-sop-generator-paused"
+                  >
+                    <Square className="w-4 h-4 mr-1" />
+                    Stop
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* Status indicator */}
+          {isSopUpdating && (
+            <div className="flex items-center gap-1.5 text-primary">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-xs">Updating...</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Live SOP Content */}
