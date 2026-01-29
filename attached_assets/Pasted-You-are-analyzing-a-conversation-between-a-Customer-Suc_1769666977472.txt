@@ -1,0 +1,118 @@
+You are analyzing a conversation between a Customer Success Manager and a business owner to generate Core Role Outcomes for a Virtual Assistant position.
+
+TRANSCRIPT:
+{{TRANSCRIPT}}
+
+CONVERSATION HISTORY:
+{{CONVERSATION_HISTORY}}
+
+### **PHASE 2: CORE ROLE OUTCOMES**
+
+**Instructions:**
+1. Analyze all gathered information from the transcript and conversation.
+2. Present your findings conversationally: "Based on everything you've shared, I can see some clear areas where a VA could make a real impact for you. Let me walk you through what I'm thinking..."
+3. **MANDATORY REQUIREMENT:** You MUST generate EXACTLY 4 Core Role Outcomes, organized into numbered categories.
+4. **CRITICAL:** Format the outcomes EXACTLY as shown below, using the FABIUS structure.
+
+**CATEGORY GENERATION STRATEGY:**
+- **Categories 1-3 are DYNAMIC:** Analyze the conversation and create descriptive category names that reflect the client's specific business needs. Examples:
+- "Quality Assurance & Compliance Documentation"
+- "Administrative Process Management & Communication"
+- "Workshop Operations Support & Resource Optimization"
+- "Client Communication & Scheduling"
+- "Financial Administration & Invoicing"
+- **Category 4 is ALWAYS "Systems & Process Documentation (Knowledge Capture)"** - This is a SET category that applies to every VA role.
+
+**REQUIRED FORMAT (FABIUS STRUCTURE):**
+[CORE ROLE OUTCOMES]
+
+---
+
+**Core Role Outcomes for [Position Name based on context, e.g., "CMS Asia Pacific VA Position"]**
+
+---
+
+## 1. [DYNAMIC CATEGORY NAME]
+
+**Ongoing Objectives:**
+- [Specific ongoing task/responsibility the VA will handle - be specific to the client's business]
+- [Another ongoing task/responsibility - reference their actual systems, processes, or pain points]
+- [Third ongoing task/responsibility - if applicable]
+
+**Success Measurements:**
+[Write as a narrative paragraph or bullet points describing what success looks like. This is Not the impact of succeeding at the role but at least vaguely measurable KPIs linked to the objectives that would identify success. Include specific metrics where mentioned in conversation, e.g., "Zero compliance failures during audits, elimination of illegible handwriting issues, and 100% completion of required safety documentation with photo evidence"]
+
+**Potential Positive Impact:**
+[1-2 sentences describing the tangible business impact - what improves, what problems go away, what opportunities open up. E.g., "Reduce form errors, lower skill barrier for data entry, simplify and lower training requirements for field staff"]
+
+---
+
+## 2. [DYNAMIC CATEGORY NAME]
+
+**Ongoing Objectives:**
+- [Specific ongoing task/responsibility]
+- [Another ongoing task/responsibility]
+- [Third ongoing task/responsibility - if applicable]
+
+**Success Measurements:**
+[Narrative describing success metrics specific to their situation, e.g., "Clients not requesting job status updates, elimination of duplicate work due to poor handovers, and consistent 24-48 hour turnaround on quotes and reports"]
+
+**Potential Positive Impact:**
+[Tangible business impact statement]
+
+---
+
+## 3. [DYNAMIC CATEGORY NAME]
+
+**Ongoing Objectives:**
+- [Specific ongoing task/responsibility]
+- [Another ongoing task/responsibility]
+- [Third ongoing task/responsibility - if applicable]
+
+**Success Measurements:**
+[Narrative describing success metrics, e.g., "Workshop supervisor time reduced by 80% on administrative tasks, zero delays in quote generation due to administrative bottlenecks"]
+
+**Potential Positive Impact:**
+[Tangible business impact statement]
+
+---
+
+## 4. Systems & Process Documentation (Knowledge Capture)
+
+**Ongoing Objectives:**
+- [Knowledge capture objective specific to their situation - e.g., "Extract and systematize knowledge from retiring senior staff before succession timeline"]
+- [SOP creation objective - e.g., "Create comprehensive SOPs for administrative procedures, technical processes, and training protocols"]
+- [Knowledge base objective - e.g., "Develop searchable knowledge base for industry expertise and equipment specifications"]
+
+**Success Measurements:**
+[Narrative describing success metrics, e.g., "New team members can independently handle 80% of routine tasks within 2 weeks using documented procedures, successful knowledge transfer from retiring experts captured in accessible digital format"]
+
+**Potential Positive Impact:**
+[Impact on onboarding, consistency, knowledge retention]
+
+---
+
+## POTENTIAL PROJECTS LIST
+
+**Potential future implementations to enable the outcomes above:**
+
+1. [Project based on conversation - e.g., "Digitise or simplify field data collection"]
+2. [Project based on their systems - e.g., "Implement new set of statuses and triggers in [their software]"]
+3. [Project based on their needs - e.g., "Create scripts/tasks/prebuilds"]
+4. [Project based on their goals - e.g., "Audit customer journey"]
+
+[/CORE ROLE OUTCOMES]
+
+**CRITICAL GUIDELINES:**
+1. **Dynamic Category Names:** Categories 1-3 must have descriptive names that reflect THIS client's specific business areas (not generic "Outcome 1, 2, 3").
+2. **Set Category 4:** Always include "Systems & Process Documentation (Knowledge Capture)" as the 4th category - this applies to every VA role.
+3. **Ongoing Objectives:** Each category should have 2-3 specific, actionable ongoing tasks the VA will perform.
+4. **Use Client-Specific Language:** Reference their actual business, industry terms they used, software they mentioned, and specific challenges.
+5. **Success Measurements:** Describe measurable outcomes. Include percentages and timeframes when the client mentioned them.
+6. **Potential Positive Impact:** Connect each outcome to tangible business benefits - time saved, errors reduced, capacity increased.
+7. **Potential Projects List:** Include 3-5 specific implementation projects that would support the outcomes, based on what was discussed.
+
+**CLOSING:**
+End with: "How does this align with what you're looking for? Is there anything you'd want to adjust or add?"
+
+Now generate the Core Role Outcomes following this exact FABIUS format.
