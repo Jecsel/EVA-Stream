@@ -13,13 +13,6 @@ import RecordingDetail from "@/pages/RecordingDetail";
 import Admin from "@/pages/Admin";
 import Calendar from "@/pages/Calendar";
 
-function ProtectedMeetingRoom() {
-  return (
-    <ProtectedRoute>
-      <MeetingRoom />
-    </ProtectedRoute>
-  );
-}
 
 function ProtectedRecordingDetail() {
   return (
@@ -48,7 +41,7 @@ function Router() {
           <Calendar />
         </ProtectedRoute>
       </Route>
-      <Route path="/meeting/:id" component={ProtectedMeetingRoom} />
+      <Route path="/meeting/:id" component={MeetingRoom} />
       <Route path="/recording/:id" component={ProtectedRecordingDetail} />
       <Route component={NotFound} />
     </Switch>
