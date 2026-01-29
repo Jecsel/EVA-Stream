@@ -91,7 +91,7 @@ export default function Login() {
             <div className="bg-primary/10 p-2 rounded-lg">
               <Video className="h-8 w-8 text-primary" />
             </div>
-            <span className="text-2xl font-bold">VideoAI</span>
+            <span className="text-2xl font-bold">EVA Stream</span>
           </div>
           <p className="text-muted-foreground">
             Sign in to access your meetings and recordings
