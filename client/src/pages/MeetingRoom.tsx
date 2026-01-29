@@ -41,7 +41,7 @@ export default function MeetingRoom() {
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
-  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(true);
+  const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
 
@@ -201,8 +201,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           // ignore parse errors
         }
       } else {
-        // New meeting: SOP Agent enabled by default, CRO disabled
-        setIsScreenObserverEnabled(true);
+        // New meeting: Both generators disabled by default
+        setIsScreenObserverEnabled(false);
         setIsCROEnabled(false);
       }
     }
