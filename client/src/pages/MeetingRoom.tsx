@@ -608,6 +608,30 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  onCROChange={setIsCROEnabled}
                />
              )}
+             {hasJoinedMeeting && evaConnected && (
+               <Button
+                 size="sm"
+                 variant={isObserving ? "destructive" : "default"}
+                 onClick={isObserving ? () => {
+                   stopObserving();
+                   stopScreenCapture();
+                 } : handleStartObservation}
+                 className="gap-1.5"
+                 data-testid="button-observation-toggle"
+               >
+                 {isObserving ? (
+                   <>
+                     <EyeOff className="w-4 h-4" />
+                     <span className="hidden sm:inline">Stop Observing</span>
+                   </>
+                 ) : (
+                   <>
+                     <Eye className="w-4 h-4" />
+                     <span className="hidden sm:inline">Start Observing</span>
+                   </>
+                 )}
+               </Button>
+             )}
              {hasJoinedMeeting && (
                <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
                  evaConnected ? 'border-green-500/50' : 'border-border'
@@ -618,7 +642,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                     "bg-gray-500"
                   }`} />
                   <span className="text-xs font-medium text-muted-foreground">
-                    EVA {evaStatus === "connected" ? (isObserving && isScreenObserverEnabled ? "Observing" : "Ready") : evaStatus}
+                    EVA {evaStatus === "connected" ? (isObserving ? "Observing" : "Ready") : evaStatus}
                   </span>
                </div>
              )}

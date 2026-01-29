@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Brain, Eye, Play, Pause, Loader2, Edit3, Save, X, FileText } from "lucide-react";
+import { Loader2, Edit3, Save, X, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,35 +106,13 @@ export function EVAPanel({
           </div>
         </div>
         
-        {/* Observation controls */}
-        <div className="flex items-center gap-2">
-          {isSopUpdating && (
-            <div className="flex items-center gap-1.5 text-primary">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-xs">Updating...</span>
-            </div>
-          )}
-          {!isObserving ? (
-            <Button 
-              size="sm" 
-              onClick={onStartObservation}
-              data-testid="button-start-observing"
-            >
-              <Play className="w-4 h-4 mr-1.5" />
-              Start Observing
-            </Button>
-          ) : (
-            <Button 
-              size="sm" 
-              variant="outline"
-              onClick={onStopObservation}
-              data-testid="button-stop-observing"
-            >
-              <Pause className="w-4 h-4 mr-1.5" />
-              Stop
-            </Button>
-          )}
-        </div>
+        {/* Status indicator */}
+        {isSopUpdating && (
+          <div className="flex items-center gap-1.5 text-primary">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-xs">Updating...</span>
+          </div>
+        )}
       </div>
 
       {/* Live SOP Content */}
