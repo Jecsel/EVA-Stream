@@ -56,6 +56,118 @@ export async function registerRoutes(
     scheduledDate: z.string().datetime().optional(),
   });
 
+  // External API - Schedule meeting with calendar integration
+  const externalScheduleMeetingSchema = z.object({
+    title: z.string().min(1),
+    scheduledDate: z.string().datetime(),
+    endDate: z.string().datetime().optional(),
+    attendeeEmails: z.array(z.string().email()).optional(),
+    description: z.string().optional(),
+    userId: z.string().optional(),
+    userEmail: z.string().email().optional(),
+    eventType: z.enum(["event", "task"]).optional().default("event"),
+    isAllDay: z.boolean().optional().default(false),
+    recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays"]).optional().default("none"),
+    recurrenceEndDate: z.string().datetime().optional(),
+  });
+
+  app.post("/api/external/schedule-meeting", validateApiKey, async (req, res) => {
+    try {
+      const validated = externalScheduleMeetingSchema.parse(req.body);
+      
+      const roomId = generateRoomId();
+      const startTime = new Date(validated.scheduledDate);
+      const endTime = validated.endDate 
+        ? new Date(validated.endDate) 
+        : new Date(startTime.getTime() + 60 * 60 * 1000);
+
+      if (endTime <= startTime) {
+        res.status(400).json({ error: "endDate must be after scheduledDate" });
+        return;
+      }
+
+      const host = req.headers.host || "localhost:5000";
+      const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
+      const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+
+      const allAgents = await storage.listAgents();
+      const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
+      const selectedAgentIds = sopAgent ? [sopAgent.id] : null;
+
+      const meeting = await storage.createMeeting({
+        title: validated.title,
+        roomId,
+        status: "scheduled",
+        scheduledDate: startTime,
+        endDate: endTime,
+        attendeeEmails: validated.attendeeEmails || null,
+        eventType: validated.eventType,
+        isAllDay: validated.isAllDay,
+        recurrence: validated.recurrence,
+        recurrenceEndDate: validated.recurrenceEndDate ? new Date(validated.recurrenceEndDate) : null,
+        createdBy: validated.userId || null,
+        selectedAgents: selectedAgentIds,
+      });
+
+      let calendarEvent = null;
+      let user = null;
+      if (validated.userId) {
+        user = await storage.getUser(validated.userId);
+      }
+      if (!user && validated.userEmail) {
+        user = await storage.getUserByEmail(validated.userEmail);
+      }
+
+      if (user?.googleAccessToken) {
+        try {
+          calendarEvent = await createCalendarEvent({
+            title: validated.title,
+            description: validated.description || `Join the meeting: ${meetingLink}`,
+            startTime,
+            endTime,
+            attendeeEmails: validated.attendeeEmails || [],
+            meetingLink,
+            accessToken: user.googleAccessToken,
+            refreshToken: user.googleRefreshToken || undefined,
+            isAllDay: validated.isAllDay,
+            recurrence: validated.recurrence,
+          });
+
+          await storage.updateMeeting(meeting.id, {
+            calendarEventId: calendarEvent.id || null,
+          });
+        } catch (calendarError) {
+          console.error("Failed to create calendar event:", calendarError);
+        }
+      }
+
+      res.json({
+        success: true,
+        meeting: {
+          id: meeting.id,
+          title: meeting.title,
+          roomId: meeting.roomId,
+          status: meeting.status,
+          scheduledDate: meeting.scheduledDate,
+          endDate: endTime,
+          attendeeEmails: meeting.attendeeEmails,
+          recurrence: meeting.recurrence,
+          calendarEventId: calendarEvent?.id || null,
+          createdAt: meeting.createdAt,
+        },
+        link: meetingLink,
+        calendarEventCreated: !!calendarEvent,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: fromZodError(error).message });
+      } else {
+        console.error("External schedule meeting error:", error);
+        res.status(500).json({ error: "Failed to schedule meeting" });
+      }
+    }
+  });
+
   app.post("/api/external/create-meeting", validateApiKey, async (req, res) => {
     try {
       const validated = externalCreateMeetingSchema.parse(req.body);

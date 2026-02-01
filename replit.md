@@ -121,10 +121,7 @@ Agent Behavior:
 
 Creates a new meeting and returns a shareable link. Other systems can call this endpoint to programmatically generate meeting links.
 
-**Authentication**: If `EXTERNAL_API_KEY` is configured, requests must include:
-```
-Authorization: Bearer <your-api-key>
-```
+**Authentication**: Requires API key via `X-API-Key` header (manage keys in Admin panel).
 
 **Request Body** (optional):
 ```json
@@ -149,6 +146,52 @@ Authorization: Bearer <your-api-key>
   "link": "https://your-domain.replit.dev/meeting/abc-defg-hij"
 }
 ```
+
+### POST /api/external/schedule-meeting
+
+Schedules a meeting with optional Google Calendar integration. Creates the meeting and optionally adds it to a user's Google Calendar if their credentials are provided.
+
+**Authentication**: Requires API key via `X-API-Key` header (manage keys in Admin panel).
+
+**Request Body**:
+```json
+{
+  "title": "Weekly Team Sync",              // Required
+  "scheduledDate": "2026-02-05T09:00:00.000Z", // Required (ISO 8601)
+  "endDate": "2026-02-05T10:00:00.000Z",    // Optional (defaults to 1 hour after start)
+  "attendeeEmails": ["team@example.com"],   // Optional
+  "description": "Weekly sync meeting",     // Optional
+  "userId": "firebase-uid",                 // Optional (links calendar & sets moderator)
+  "userEmail": "user@example.com",          // Optional (fallback for calendar lookup)
+  "eventType": "event",                     // Optional: "event" or "task"
+  "isAllDay": false,                        // Optional
+  "recurrence": "weekly",                   // Optional: "none", "daily", "weekly", "monthly", "annually", "weekdays"
+  "recurrenceEndDate": "2026-12-31T23:59:59.000Z" // Optional
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "meeting": {
+    "id": "uuid",
+    "title": "Weekly Team Sync",
+    "roomId": "abc-defg-hij",
+    "status": "scheduled",
+    "scheduledDate": "2026-02-05T09:00:00.000Z",
+    "endDate": "2026-02-05T10:00:00.000Z",
+    "attendeeEmails": ["team@example.com"],
+    "recurrence": "weekly",
+    "calendarEventId": "google-calendar-event-id",
+    "createdAt": "2026-02-01T10:00:00.000Z"
+  },
+  "link": "https://your-domain.replit.dev/meeting/abc-defg-hij",
+  "calendarEventCreated": true
+}
+```
+
+**Calendar Integration**: If `userId` or `userEmail` matches a user with connected Google Calendar, the meeting is automatically added to their calendar with attendee invitations.
 
 ## AI Meeting Assistant (11Labs)
 
