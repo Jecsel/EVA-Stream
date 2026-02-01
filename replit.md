@@ -121,7 +121,7 @@ Agent Behavior:
 
 Creates a new meeting and returns a shareable link. Other systems can call this endpoint to programmatically generate meeting links.
 
-**Authentication**: Requires API key via `X-API-Key` header (manage keys in Admin panel).
+**Authentication**: Requires API key via `Authorization: Bearer <your-api-key>` header (manage keys in Admin panel).
 
 **Request Body** (optional):
 ```json
@@ -151,7 +151,7 @@ Creates a new meeting and returns a shareable link. Other systems can call this 
 
 Schedules a meeting with optional Google Calendar integration. Creates the meeting and optionally adds it to a user's Google Calendar if their credentials are provided.
 
-**Authentication**: Requires API key via `X-API-Key` header (manage keys in Admin panel).
+**Authentication**: Requires API key via `Authorization: Bearer <your-api-key>` header (manage keys in Admin panel).
 
 **Request Body**:
 ```json

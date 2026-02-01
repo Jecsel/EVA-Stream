@@ -15,11 +15,18 @@ const SALT_ROUNDS = 10;
 
 // API Key authentication middleware for external API
 async function validateApiKey(req: Request, res: Response, next: NextFunction) {
-  // Check X-API-Key header
-  const providedKey = req.headers["x-api-key"] as string;
+  // Check Authorization: Bearer header
+  const authHeader = req.headers["authorization"] as string;
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or invalid Authorization header. Use: Authorization: Bearer <your-api-key>" });
+    return;
+  }
+  
+  const providedKey = authHeader.substring(7); // Remove "Bearer " prefix
   
   if (!providedKey) {
-    res.status(401).json({ error: "Missing X-API-Key header" });
+    res.status(401).json({ error: "Missing API key in Authorization header" });
     return;
   }
   
