@@ -3,7 +3,8 @@ import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repe
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
@@ -69,6 +70,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   const [endTime, setEndTime] = useState("");
   const [isAllDay, setIsAllDay] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceType>("none");
+  const [description, setDescription] = useState("");
   const [agenda, setAgenda] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<Array<{
     filename: string;
@@ -94,13 +96,12 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   const recurrenceOptions = useMemo(() => {
     if (!date) {
       return [
-        { value: "none", label: "Does not repeat" },
+        { value: "none", label: "No Repeat" },
         { value: "daily", label: "Daily" },
         { value: "weekly", label: "Weekly" },
         { value: "monthly", label: "Monthly" },
         { value: "annually", label: "Annually" },
-        { value: "weekdays", label: "Every weekday (Monday to Friday)" },
-        { value: "custom", label: "Custom..." },
+        { value: "weekdays", label: "Weekdays" },
       ];
     }
 
@@ -112,13 +113,12 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
     const monthName = format(selectedDate, "MMMM");
 
     return [
-      { value: "none", label: "Does not repeat" },
+      { value: "none", label: "No Repeat" },
       { value: "daily", label: "Daily" },
       { value: "weekly", label: `Weekly on ${dayName}` },
-      { value: "monthly", label: `Monthly on the ${weekOrdinal} ${dayName}` },
+      { value: "monthly", label: `Monthly on ${weekOrdinal} ${dayName}` },
       { value: "annually", label: `Annually on ${monthName} ${dayOfMonth}` },
-      { value: "weekdays", label: "Every weekday (Monday to Friday)" },
-      { value: "custom", label: "Custom..." },
+      { value: "weekdays", label: "Weekdays" },
     ];
   }, [date]);
 
@@ -326,7 +326,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
         scheduledDate: scheduledDate.toISOString(),
         endDate: endDate?.toISOString(),
         attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
-        description: agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined,
+        description: description || (agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined),
         agenda: agenda || undefined,
         files: attachedFiles.length > 0 ? attachedFiles : undefined,
         userId: user?.uid,
@@ -337,10 +337,10 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
       });
 
       toast({
-        title: eventType === "event" ? "Event Scheduled!" : "Task Created!",
+        title: eventType === "event" ? "Meeting Scheduled!" : "Task Created!",
         description: result.calendarEventCreated 
           ? "Calendar invitations have been sent to attendees." 
-          : `${eventType === "event" ? "Event" : "Task"} created successfully.`,
+          : `${eventType === "event" ? "Meeting" : "Task"} created successfully.`,
       });
 
       setTitle("");
@@ -350,6 +350,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
       setEndTime("");
       setIsAllDay(false);
       setRecurrence("none");
+      setDescription("");
       setAgenda("");
       setAttachedFiles([]);
       setAttendeeEmails([]);
@@ -371,115 +372,120 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            Add title
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 border-0 shadow-xl rounded-xl p-0">
+        <DialogHeader className="p-6 pb-4 border-b border-gray-100 dark:border-zinc-800">
+          <DialogTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+            <Calendar className="w-5 h-5 text-orange-500" />
+            Schedule Meeting
           </DialogTitle>
-          <DialogDescription className="sr-only">
-            Create an event or task and optionally send calendar invitations.
+          <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
+            Schedule a meeting with your client to discuss this task.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <Input
-            placeholder="Add title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="text-lg font-medium border-0 border-b rounded-none px-0 focus-visible:ring-0 focus-visible:border-primary"
-            data-testid="input-meeting-title"
-          />
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={eventType === "event" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setEventType("event")}
-              className="rounded-full"
-              data-testid="button-event-type"
-            >
-              Event
-            </Button>
-            <Button
-              type="button"
-              variant={eventType === "task" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setEventType("task")}
-              className="rounded-full"
-              data-testid="button-task-type"
-            >
-              Task
-            </Button>
+        <div className="p-6 space-y-5">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Meeting Title</Label>
+            <Input
+              placeholder="Enter meeting title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg focus:border-orange-500 focus:ring-orange-500 focus-visible:ring-orange-500"
+              data-testid="input-meeting-title"
+            />
           </div>
 
-          <div className="flex items-center gap-3">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  min={today}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-auto"
-                  data-testid="input-meeting-date"
-                />
-                {isAllDay && (
-                  <>
-                    <span className="text-muted-foreground">–</span>
-                    <Input
-                      type="date"
-                      min={date || today}
-                      value={endDateStr}
-                      onChange={(e) => setEndDateStr(e.target.value)}
-                      className="w-auto"
-                      data-testid="input-meeting-end-date"
-                    />
-                  </>
-                )}
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Event Type</Label>
+              <Select value={eventType} onValueChange={(value) => setEventType(value as EventType)}>
+                <SelectTrigger className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg" data-testid="select-event-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="z-[10000]">
+                  <SelectItem value="event">Event</SelectItem>
+                  <SelectItem value="task">Task</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="all-day"
-                  checked={isAllDay}
-                  onCheckedChange={(checked) => setIsAllDay(checked === true)}
-                  data-testid="checkbox-all-day"
-                />
-                <Label htmlFor="all-day" className="text-sm cursor-pointer">
-                  All day
-                </Label>
-              </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</Label>
+              <Input
+                type="date"
+                min={today}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg"
+                data-testid="input-meeting-date"
+              />
+            </div>
+          </div>
 
-              {!isAllDay && (
-                <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between py-2">
+            <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">All Day Event</Label>
+            <Switch
+              checked={isAllDay}
+              onCheckedChange={setIsAllDay}
+              className="data-[state=checked]:bg-orange-500"
+              data-testid="switch-all-day"
+            />
+          </div>
+
+          {!isAllDay && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Start Time</Label>
+                <div className="relative">
                   <Input
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-auto"
+                    className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg pl-10"
                     data-testid="input-meeting-start-time"
                   />
-                  <span className="text-muted-foreground">–</span>
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">End Time</Label>
+                <div className="relative">
                   <Input
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-auto"
+                    className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg pl-10"
                     data-testid="input-meeting-end-time"
                   />
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-3">
-            <Repeat className="w-4 h-4 text-muted-foreground" />
+          {isAllDay && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">End Date (Optional)</Label>
+              <Input
+                type="date"
+                min={date || today}
+                value={endDateStr}
+                onChange={(e) => setEndDateStr(e.target.value)}
+                className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg"
+                data-testid="input-meeting-end-date"
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Repeat className="w-4 h-4 text-gray-400" />
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Recurrence</Label>
+            </div>
             <Select value={recurrence} onValueChange={(value) => setRecurrence(value as RecurrenceType)}>
-              <SelectTrigger className="w-auto min-w-[200px]" data-testid="select-recurrence">
-                <SelectValue placeholder="Does not repeat" />
+              <SelectTrigger className="h-11 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg" data-testid="select-recurrence">
+                <SelectValue placeholder="No Repeat" />
               </SelectTrigger>
               <SelectContent className="z-[10000]" position="popper" sideOffset={4}>
                 {recurrenceOptions.map((option) => (
@@ -492,63 +498,35 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Attendees</span>
-            </div>
-            <div className="flex gap-2 ml-7">
-              <Input
-                placeholder="email@example.com"
-                value={attendeeInput}
-                onChange={(e) => setAttendeeInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                data-testid="input-attendee-email"
-              />
-              <Button type="button" variant="outline" onClick={addAttendee} data-testid="button-add-attendee">
-                Add
-              </Button>
-            </div>
-            {attendeeEmails.length > 0 && (
-              <div className="flex flex-wrap gap-2 ml-7">
-                {attendeeEmails.map((email) => (
-                  <div
-                    key={email}
-                    className="flex items-center gap-1 bg-muted px-2 py-1 rounded-md text-sm"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>{email}</span>
-                    <button
-                      onClick={() => removeAttendee(email)}
-                      className="ml-1 hover:text-destructive"
-                      data-testid={`button-remove-attendee-${email}`}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description (Optional)</Label>
+            <Textarea
+              placeholder="Add any additional notes or context for the meeting..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="min-h-[80px] bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg resize-none"
+              data-testid="input-meeting-description"
+            />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <List className="w-4 h-4 text-muted-foreground" />
-              <Label>Agenda (optional)</Label>
+              <List className="w-4 h-4 text-gray-400" />
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Agenda (Optional)</Label>
             </div>
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border border-gray-200 dark:border-zinc-700 rounded-lg overflow-hidden">
               <RichTextEditor
                 content={agenda}
                 onChange={setAgenda}
                 placeholder="Add meeting agenda items..."
-                minHeight="100px"
+                minHeight="80px"
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Paperclip className="w-4 h-4 text-muted-foreground" />
-              <Label>Attachments (optional)</Label>
+              <Paperclip className="w-4 h-4 text-gray-400" />
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Attachments (Optional)</Label>
             </div>
             <input
               ref={fileInputRef}
@@ -563,7 +541,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
               variant="outline"
               size="sm"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full"
+              className="w-full h-10 border-dashed border-gray-300 dark:border-zinc-600 hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/10"
               data-testid="button-attach-files"
             >
               <Upload className="w-4 h-4 mr-2" />
@@ -574,12 +552,12 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
                 {attachedFiles.map((file) => (
                   <div
                     key={file.filename}
-                    className="flex items-center justify-between p-2 bg-muted rounded-md text-sm"
+                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-zinc-800 rounded-lg text-sm"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <FileText className="w-4 h-4 flex-shrink-0 text-blue-500" />
-                      <span className="truncate">{file.originalName}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <FileText className="w-4 h-4 flex-shrink-0 text-orange-500" />
+                      <span className="truncate text-gray-700 dark:text-gray-300">{file.originalName}</span>
+                      <span className="text-xs text-gray-400">
                         ({formatFileSize(file.size)})
                       </span>
                     </div>
@@ -588,10 +566,10 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
                       variant="ghost"
                       size="sm"
                       onClick={() => removeFile(file.filename)}
-                      className="h-6 w-6 p-0"
+                      className="h-6 w-6 p-0 hover:bg-red-100 dark:hover:bg-red-900/20"
                       data-testid={`button-remove-file-${file.filename}`}
                     >
-                      <Trash2 className="w-3 h-3 text-destructive" />
+                      <Trash2 className="w-3 h-3 text-red-500" />
                     </Button>
                   </div>
                 ))}
@@ -599,7 +577,68 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
             )}
           </div>
 
-          <div className="border rounded-lg p-4 space-y-3">
+          {(attendeeEmails.length > 0 || googleStatus.email) && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400">
+                <Users className="w-4 h-4" />
+                <span className="text-sm font-medium">Attendee:</span>
+                <span className="text-sm">{attendeeEmails[0] || googleStatus.email}</span>
+              </div>
+              {attendeeEmails.length > 0 && (
+                <div className="text-sm text-orange-600 dark:text-orange-300 ml-6">
+                  ({attendeeEmails.join(", ")})
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-gray-400" />
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Attendees</Label>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="email@example.com"
+                value={attendeeInput}
+                onChange={(e) => setAttendeeInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="h-10 bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 rounded-lg"
+                data-testid="input-attendee-email"
+              />
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={addAttendee} 
+                className="h-10 px-4 border-gray-200 dark:border-zinc-700"
+                data-testid="button-add-attendee"
+              >
+                Add
+              </Button>
+            </div>
+            {attendeeEmails.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {attendeeEmails.map((email) => (
+                  <div
+                    key={email}
+                    className="flex items-center gap-1 bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full text-sm"
+                  >
+                    <Mail className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700 dark:text-gray-300">{email}</span>
+                    <button
+                      onClick={() => removeAttendee(email)}
+                      className="ml-1 text-gray-400 hover:text-red-500"
+                      data-testid={`button-remove-attendee-${email}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg viewBox="0 0 24 24" className="w-5 h-5">
@@ -608,17 +647,18 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                 </svg>
-                <span className="font-medium">Google Calendar</span>
+                <span className="font-medium text-gray-900 dark:text-white">Google Calendar</span>
               </div>
               {isLoadingGoogleStatus ? (
-                <span className="text-sm text-muted-foreground">Loading...</span>
+                <span className="text-sm text-gray-500">Loading...</span>
               ) : googleStatus.connected ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">{googleStatus.email}</span>
+                  <span className="text-sm text-gray-500">{googleStatus.email}</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleDisconnectGoogle}
+                    className="h-8 px-2 text-gray-500 hover:text-red-500"
                     data-testid="button-disconnect-google"
                   >
                     Disconnect
@@ -630,6 +670,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
                   size="sm"
                   onClick={handleConnectGoogle}
                   disabled={isConnectingGoogle || !user}
+                  className="h-8"
                   data-testid="button-connect-google"
                 >
                   {isConnectingGoogle ? "Connecting..." : "Connect"}
@@ -639,12 +680,12 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
             </div>
             
             {googleStatus.connected ? (
-              <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-2 rounded">
+              <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
                 <Check className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>Calendar event will be created and invitations sent to attendees.</span>
               </div>
             ) : (
-              <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+              <div className="flex items-start gap-2 text-sm text-gray-500 bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>Connect Google Calendar to automatically create events and send invitations.</span>
               </div>
@@ -652,12 +693,22 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="p-6 pt-4 border-t border-gray-100 dark:border-zinc-800 gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => onOpenChange(false)}
+            className="h-11 px-6 border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-300 rounded-lg"
+          >
             Cancel
           </Button>
-          <Button onClick={handleSchedule} disabled={isLoading} data-testid="button-schedule-meeting">
-            {isLoading ? "Saving..." : "Save"}
+          <Button 
+            onClick={handleSchedule} 
+            disabled={isLoading} 
+            className="h-11 px-6 bg-orange-500 hover:bg-orange-600 text-white rounded-lg"
+            data-testid="button-schedule-meeting"
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            {isLoading ? "Scheduling..." : "Schedule Meeting"}
           </Button>
         </DialogFooter>
       </DialogContent>
