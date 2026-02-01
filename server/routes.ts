@@ -175,6 +175,66 @@ export async function registerRoutes(
     }
   });
 
+  // External API - Get meetings by userId or userEmail
+  app.get("/api/external/meetings", validateApiKey, async (req, res) => {
+    try {
+      const { userId, userEmail, status, limit, offset } = req.query;
+      
+      if (!userId && !userEmail) {
+        res.status(400).json({ error: "Either userId or userEmail query parameter is required" });
+        return;
+      }
+
+      const allMeetings = await storage.listMeetings();
+      const host = req.headers.host || "localhost:5000";
+      const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
+
+      let filteredMeetings = allMeetings.filter(meeting => {
+        if (userId && meeting.createdBy === userId) return true;
+        if (userEmail && meeting.attendeeEmails?.includes(userEmail as string)) return true;
+        return false;
+      });
+
+      if (status) {
+        filteredMeetings = filteredMeetings.filter(m => m.status === status);
+      }
+
+      filteredMeetings.sort((a, b) => 
+        new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime()
+      );
+
+      const limitNum = limit ? parseInt(limit as string, 10) : 50;
+      const offsetNum = offset ? parseInt(offset as string, 10) : 0;
+      const paginatedMeetings = filteredMeetings.slice(offsetNum, offsetNum + limitNum);
+
+      const meetingsWithLinks = paginatedMeetings.map(meeting => ({
+        id: meeting.id,
+        title: meeting.title,
+        roomId: meeting.roomId,
+        status: meeting.status,
+        scheduledDate: meeting.scheduledDate,
+        endDate: meeting.endDate,
+        attendeeEmails: meeting.attendeeEmails,
+        recurrence: meeting.recurrence,
+        calendarEventId: meeting.calendarEventId,
+        createdBy: meeting.createdBy,
+        createdAt: meeting.createdAt,
+        link: `${protocol}://${host}/meeting/${meeting.roomId}`,
+      }));
+
+      res.json({
+        success: true,
+        meetings: meetingsWithLinks,
+        total: filteredMeetings.length,
+        limit: limitNum,
+        offset: offsetNum,
+      });
+    } catch (error) {
+      console.error("External get meetings error:", error);
+      res.status(500).json({ error: "Failed to get meetings" });
+    }
+  });
+
   app.post("/api/external/create-meeting", validateApiKey, async (req, res) => {
     try {
       const validated = externalCreateMeetingSchema.parse(req.body);

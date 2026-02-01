@@ -2,286 +2,87 @@
 
 ## Overview
 
-VideoAI is a Jitsi-powered video conferencing platform with real-time AI context awareness. The application enables users to create and join video meetings while an AI assistant (EVA) observes the meeting, analyzes shared screens and conversations, and automatically generates Standard Operating Procedures (SOPs) documentation in real-time.
+VideoAI is a Jitsi-powered video conferencing platform enhanced with a real-time AI assistant (EVA). Its primary purpose is to observe video meetings, analyze shared screens and conversations, and automatically generate Standard Operating Procedures (SOPs) and other documentation in real-time. This aims to streamline meeting outcomes, improve documentation efficiency, and provide an intelligent assistant for collaborative sessions.
 
-Key features:
-- Video conferencing via Jitsi integration
-- Real-time AI assistant (EVA) powered by Google Gemini
-- AI Voice Assistant powered by 11Labs for natural voice interactions
-- WebSocket-based live AI communication
-- Automatic SOP generation and flowchart visualization
-- Meeting scheduling, recordings, and chat history
-- Admin panel for user and prompt management
+Key capabilities include:
+- Real-time AI context awareness through Google Gemini.
+- AI Voice Assistant for natural voice interactions.
+- WebSocket-based live AI communication.
+- Automatic SOP generation and flowchart visualization.
+- Meeting scheduling, recordings, and chat history.
+- An admin panel for user and AI prompt management.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
-**Important Note:** Every feature, UI/UX and design should be mobile-first.
+Every feature, UI/UX and design should be mobile-first.
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight router)
-- **State Management**: TanStack React Query for server state
-- **Styling**: Tailwind CSS v4 with custom dark theme (Google Meet-inspired)
-- **UI Components**: shadcn/ui component library with Radix UI primitives
-- **Build Tool**: Vite with custom plugins for Replit integration
+### Frontend
+- **Framework**: React 18 with TypeScript.
+- **Routing**: Wouter.
+- **State Management**: TanStack React Query.
+- **Styling**: Tailwind CSS v4 with a dark theme (Google Meet-inspired).
+- **UI Components**: shadcn/ui and Radix UI.
+- **Build Tool**: Vite.
+- **Architecture**: Component-based, with custom hooks for WebSocket connections.
 
-The frontend follows a component-based architecture with pages in `client/src/pages/` and reusable components in `client/src/components/`. Custom hooks handle WebSocket connections for real-time AI communication.
-
-### Backend Architecture
-- **Runtime**: Node.js with Express
-- **Language**: TypeScript with ESM modules
-- **API Style**: RESTful endpoints under `/api/`
-- **Real-time**: WebSocket server at `/ws/eva` for AI live streaming
-
-The server uses a storage abstraction layer (`server/storage.ts`) implementing the `IStorage` interface, allowing database operations to be centralized and testable.
+### Backend
+- **Runtime**: Node.js with Express.
+- **Language**: TypeScript with ESM modules.
+- **API Style**: RESTful endpoints.
+- **Real-time**: WebSocket server for AI live streaming.
+- **Data Storage**: Uses a storage abstraction layer for database operations.
 
 ### AI Integration
-- **Provider**: Google Gemini API via `@google/genai`
-- **Communication**: Dual-mode - HTTP for chat analysis, WebSocket for live observation
-- **Capabilities**: Screen analysis, conversation understanding, SOP generation, post-meeting video transcription
-
-### Post-Meeting AI Transcription
-When a meeting recording is uploaded (via JaaS webhook), the system automatically:
-1. Sends the video URL to Gemini for audio analysis
-2. Generates a full transcript with speaker identification and timestamps
-3. Creates a meeting summary, action items, and key topics
-4. Saves transcript segments to the database for display
-
-Users can also manually trigger transcription from the Recording Detail page using the "Generate Transcript" button.
+- **Provider**: Google Gemini API.
+- **Communication**: HTTP for chat analysis, WebSocket for live observation.
+- **Capabilities**: Screen analysis, conversation understanding, SOP generation, and post-meeting video transcription.
+- **Post-Meeting Transcription**: Automated transcription and summarization of recorded meetings, including speaker identification and action items.
 
 ### Meeting Agents System
-The platform supports AI agents and generators that can be enabled/disabled per meeting:
+The platform supports configurable AI agents and generators:
+- **EVA Assistant**: An always-on assistant providing chat, notes, and screen observation.
+- **SOP Generator**: Creates SOPs from meeting transcripts and/or screen observation.
+- **CRO Generator**: Creates Core Role Outcomes (FABIUS structure) from meeting transcripts and/or screen observation.
+- **AI Voice Assistant**: Utilizes 11Labs for voice-powered interactions, enabling EVA to speak responses and narrate documents.
 
-| Component | Type | Functionality |
-|-----------|------|---------------|
-| **EVA Assistant** | eva | Always-on AI assistant with unified tabbed interface: Chat (real-time Q&A), Notes (meeting key points), Observe (screen analysis) |
-| **SOP Generator** | generator | Creates Standard Operating Procedures from meeting transcript and/or screen observation |
-| **CRO Generator** | generator | Creates Core Role Outcomes (FABIUS structure) from meeting transcript and/or screen observation |
-| **AI Voice Assistant** | voice_11labs | Voice-powered AI meeting assistant using 11Labs - enables natural voice interactions |
-
-Generator Features:
-- Both SOP and CRO generators work from **transcript only** (no screen sharing needed) OR with screen observation
-- When screen observer is enabled, generators combine both transcript and screen data
-- Real-time generation as meeting progresses via WebSocket
-- Custom prompts configurable in Admin panel (types: sop, cro)
-
-Agent Behavior:
-- EVA Assistant is always on during meetings
-- Generators can be toggled independently via the "Generators" dropdown
-- EVA panel only appears after the user has joined the meeting (not in the pre-join lobby)
+Generators can operate from transcript only or combine transcript and screen observation for real-time generation via WebSockets. Custom prompts are configurable via the Admin panel.
 
 ### Data Flow
-1. User creates/joins meeting via Dashboard
-2. Jitsi handles video/audio streaming
-3. Selected agents activate based on user's agent choices
-4. EVA connects via WebSocket for real-time observation (if EVA agent selected)
-5. AI responses update SOP document and flowchart visualization
-6. Meeting data persisted to PostgreSQL
+User interaction initiates meeting creation/joining. Jitsi handles media streaming. Selected AI agents activate, with EVA connecting via WebSocket for real-time observation. AI responses update SOPs and flowchart visualizations. All meeting data is persisted to PostgreSQL.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary data store
-- **ORM**: Drizzle ORM with `drizzle-kit` for migrations
-- **Schema**: Defined in `shared/schema.ts` (users, meetings, recordings, chat messages, prompts)
-- **Connection**: Uses `pg` driver with connection pooling
-
-### Admin Panel
-- **Route**: `/admin` - accessible via Settings icon in header
-- **User Management**: Full CRUD with role (admin/user) and status (active/inactive/suspended)
-- **Prompt Management**: Configure AI prompts by type (chat, summary, analysis, eva)
-- **Security**: Bcrypt password hashing, passwords never returned in API responses
+- **PostgreSQL**: Primary data store.
+- **ORM**: Drizzle ORM for schema management and migrations.
 
 ### Third-Party Services
-- **Google Gemini API**: AI analysis and SOP generation (requires `GEMINI_API_KEY`)
-- **Jitsi Meet**: Video conferencing (uses public `meet.jit.si` or JaaS with JWT)
+- **Google Gemini API**: For AI analysis and SOP generation.
+- **Jitsi Meet**: For video conferencing.
+- **11Labs API**: For the AI Voice Assistant, providing text-to-speech capabilities and specialized voice agents (EVA Meeting Assistant, SOP Voice Agent, CRO Interview Agent).
 
 ### Key NPM Dependencies
-- `@jitsi/react-sdk`: Jitsi video integration
-- `@tanstack/react-query`: Data fetching and caching
-- `react-markdown` + `remark-gfm`: Markdown rendering for AI responses
-- `mermaid`: Flowchart visualization for SOPs
-- `framer-motion`: UI animations
-- `zod` + `drizzle-zod`: Schema validation
-- `ws`: WebSocket server implementation
+- `@jitsi/react-sdk`: Jitsi integration.
+- `@tanstack/react-query`: Data fetching.
+- `react-markdown` + `remark-gfm`: Markdown rendering.
+- `mermaid`: Flowchart visualization.
+- `framer-motion`: UI animations.
+- `zod` + `drizzle-zod`: Schema validation.
+- `ws`: WebSocket server.
 
-### Environment Variables Required
-- `DATABASE_URL`: PostgreSQL connection string
-- `GEMINI_API_KEY`: Google Gemini API key for AI features
-- `ELEVENLABS_API_KEY`: 11Labs API key for AI Voice Assistant
-- `EXTERNAL_API_KEY`: (Optional) API key to protect the external meeting creation endpoint
+### Environment Variables
+- `DATABASE_URL`: PostgreSQL connection string.
+- `GEMINI_API_KEY`: Google Gemini API key.
+- `ELEVENLABS_API_KEY`: 11Labs API key.
+- `ELEVENLABS_AGENT_ID`, `ELEVENLABS_SOP_AGENT_ID`, `ELEVENLABS_CRO_INTERVIEW_AGENT_ID`: IDs for specific 11Labs voice agents.
+- `EXTERNAL_API_KEY`: Optional API key for external meeting creation.
 
-## External API
-
-### POST /api/external/create-meeting
-
-Creates a new meeting and returns a shareable link. Other systems can call this endpoint to programmatically generate meeting links.
-
-**Authentication**: Requires API key via `Authorization: Bearer <your-api-key>` header (manage keys in Admin panel).
-
-**Request Body** (optional):
-```json
-{
-  "title": "Meeting Title",
-  "scheduledDate": "2026-01-20T14:00:00.000Z"
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "meeting": {
-    "id": "uuid",
-    "title": "Meeting Title",
-    "roomId": "abc-defg-hij",
-    "status": "live",
-    "scheduledDate": "2026-01-15T10:00:00.000Z",
-    "createdAt": "2026-01-15T10:00:00.000Z"
-  },
-  "link": "https://your-domain.replit.dev/meeting/abc-defg-hij"
-}
-```
-
-### POST /api/external/schedule-meeting
-
-Schedules a meeting with optional Google Calendar integration. Creates the meeting and optionally adds it to a user's Google Calendar if their credentials are provided.
-
-**Authentication**: Requires API key via `Authorization: Bearer <your-api-key>` header (manage keys in Admin panel).
-
-**Request Body**:
-```json
-{
-  "title": "Weekly Team Sync",              // Required
-  "scheduledDate": "2026-02-05T09:00:00.000Z", // Required (ISO 8601)
-  "endDate": "2026-02-05T10:00:00.000Z",    // Optional (defaults to 1 hour after start)
-  "attendeeEmails": ["team@example.com"],   // Optional
-  "description": "Weekly sync meeting",     // Optional
-  "userId": "firebase-uid",                 // Optional (links calendar & sets moderator)
-  "userEmail": "user@example.com",          // Optional (fallback for calendar lookup)
-  "eventType": "event",                     // Optional: "event" or "task"
-  "isAllDay": false,                        // Optional
-  "recurrence": "weekly",                   // Optional: "none", "daily", "weekly", "monthly", "annually", "weekdays"
-  "recurrenceEndDate": "2026-12-31T23:59:59.000Z" // Optional
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "meeting": {
-    "id": "uuid",
-    "title": "Weekly Team Sync",
-    "roomId": "abc-defg-hij",
-    "status": "scheduled",
-    "scheduledDate": "2026-02-05T09:00:00.000Z",
-    "endDate": "2026-02-05T10:00:00.000Z",
-    "attendeeEmails": ["team@example.com"],
-    "recurrence": "weekly",
-    "calendarEventId": "google-calendar-event-id",
-    "createdAt": "2026-02-01T10:00:00.000Z"
-  },
-  "link": "https://your-domain.replit.dev/meeting/abc-defg-hij",
-  "calendarEventCreated": true
-}
-```
-
-**Calendar Integration**: If `userId` or `userEmail` matches a user with connected Google Calendar, the meeting is automatically added to their calendar with attendee invitations.
-
-## AI Meeting Assistant (11Labs)
-
-### Overview
-
-The AI Meeting Assistant powered by 11Labs brings natural voice capabilities to VideoAI meetings. This feature enables EVA to speak responses aloud, read SOPs and meeting notes via text-to-speech, and provide a more immersive AI-assisted meeting experience.
-
-### Key Capabilities
-
-| Capability | Description |
-|------------|-------------|
-| **Voice Responses** | EVA speaks answers and insights during meetings instead of text-only responses |
-| **SOP Narration** | Converts generated SOPs to natural speech for hands-free review |
-| **Meeting Summaries** | Audio playback of meeting summaries and action items |
-| **Custom Voice Selection** | Choose from multiple AI voice options to match your preference |
-| **Real-time Synthesis** | Low-latency voice generation for natural conversation flow |
-
-### How It Works
-
-1. **Enable the Agent**: Select "AI Voice Assistant" when creating or joining a meeting
-2. **Voice Output**: EVA's responses are synthesized using 11Labs' voice AI technology
-3. **Audio Controls**: Play, pause, or skip voice responses as needed
-4. **Text Fallback**: All voiced content remains visible as text in the EVA panel
-
-### Technical Integration
-
-- **Provider**: 11Labs Conversational AI / Text-to-Speech API
-- **Communication**: Audio streams delivered via WebSocket for real-time playback
-- **Voice Models**: Supports 11Labs' multilingual voice models
-- **Latency**: Optimized for sub-second response times using streaming synthesis
-
-### Multiple Voice Agents
-
-The platform supports 3 specialized 11Labs voice agents:
-
-| Agent Type | Purpose | Environment Variable |
-|------------|---------|---------------------|
-| **EVA Meeting Assistant** | General Q&A, document analysis, meeting help | `ELEVENLABS_AGENT_ID` |
-| **SOP Voice Agent** | Guides screen sharing and process documentation | `ELEVENLABS_SOP_AGENT_ID` |
-| **CRO Interview Agent** | Business discovery interview for role definition | `ELEVENLABS_CRO_INTERVIEW_AGENT_ID` |
-
-Users can switch between agents using the dropdown in the EVA panel header during meetings.
-
-#### CRO Interview Agent
-The CRO Interview Agent conducts structured business discovery interviews using 15 predefined questions. Interview data is stored in:
-- `server/data/cro-interview-questions.json` - Question set with intents and follow-ups
-- `server/data/cro-interview-prompt.txt` - Agent system prompt
-
-API endpoints:
-- `GET /api/elevenlabs/cro-interview-questions` - Get interview questions
-- `GET /api/elevenlabs/cro-interview-prompt` - Get agent prompt
-- `GET /api/elevenlabs/agents` - List available agent types and their status
-
-### Configuration
-
-#### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ELEVENLABS_API_KEY` | Yes | Your 11Labs API key for voice synthesis |
-| `ELEVENLABS_AGENT_ID` | Yes | EVA Meeting Assistant agent ID from 11Labs |
-| `ELEVENLABS_SOP_AGENT_ID` | No | SOP Voice Agent ID (optional) |
-| `ELEVENLABS_CRO_INTERVIEW_AGENT_ID` | No | CRO Interview Agent ID (optional) |
-| `ELEVENLABS_VOICE_ID` | No | Default voice ID (uses 11Labs default if not set) |
-| `ELEVENLABS_MODEL_ID` | No | Voice model to use (default: `eleven_turbo_v2_5`) |
-
-#### Admin Panel Settings
-
-Navigate to **Admin > Prompts** to configure the AI Voice Assistant prompt. This controls how EVA responds when the voice agent is active, optimizing responses for spoken delivery (shorter sentences, clearer phrasing).
-
-### Voice Options
-
-11Labs provides various voice profiles:
-
-- **Professional**: Clear, neutral tone suitable for business meetings
-- **Friendly**: Warm, approachable tone for team discussions
-- **Custom**: Clone or create custom voices via 11Labs dashboard
-
-### Usage Tips
-
-- Keep responses concise for better voice delivery
-- Use headphones to prevent audio feedback during meetings
-- The voice agent works best with a stable internet connection
-- Combine with Meeting Transcriber for complete audio-to-text and text-to-audio coverage
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| No audio playback | Check browser audio permissions and volume settings |
-| Voice cuts out | Verify stable internet connection; voice uses streaming |
-| High latency | Switch to `eleven_turbo_v2_5` model for faster synthesis |
-| API errors | Confirm `ELEVENLABS_API_KEY` is set correctly in Secrets |
+### External API
+Provides RESTful endpoints for external systems to interact with VideoAI, including:
+- `POST /api/external/create-meeting`: Programmatically create meetings.
+- `POST /api/external/schedule-meeting`: Schedule meetings, with optional Google Calendar integration.
+- `GET /api/external/meetings`: Retrieve meetings for a specific user.
