@@ -212,7 +212,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, [agents, selectedAgents]);
 
   const { data: jaasToken } = useQuery({
-    queryKey: ["jaas-token", roomId, user?.uid],
+    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id],
     queryFn: async () => {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       
@@ -239,6 +239,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       }
       return response.json();
     },
+    // Wait for meeting to be created/claimed before requesting token
+    // This ensures createdBy is set before we check moderator status
+    enabled: !!meeting?.id,
     retry: false,
     staleTime: 1000 * 60 * 60 * 2,
   });

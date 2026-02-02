@@ -1144,14 +1144,17 @@ export async function registerRoutes(
       
       // Check for Firebase ID token in Authorization header
       const authHeader = req.headers["authorization"] as string;
+      console.log("[JaaS Token] Auth header present:", !!authHeader, "Firebase Admin ready:", admin.apps.length > 0);
+      
       if (authHeader && authHeader.startsWith("Bearer ") && admin.apps.length > 0) {
         const idToken = authHeader.substring(7);
         try {
           const decodedToken = await admin.auth().verifyIdToken(idToken);
           verifiedUserId = decodedToken.uid;
+          console.log("[JaaS Token] Verified user UID:", verifiedUserId);
         } catch (e) {
           // Token verification failed - user will join as non-moderator
-          console.log("Firebase token verification failed:", e);
+          console.log("[JaaS Token] Firebase token verification failed:", e);
         }
       }
       
@@ -1161,12 +1164,20 @@ export async function registerRoutes(
         const roomId = roomName.replace(/^VideoAI-/i, "");
         if (roomId) {
           const meeting = await storage.getMeetingByRoomId(roomId);
+          console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId });
           // User is moderator only if they created the meeting
           if (meeting && meeting.createdBy === verifiedUserId) {
             isModerator = true;
+            console.log("[JaaS Token] User is moderator (creator match)");
+          } else {
+            console.log("[JaaS Token] User is NOT moderator (creator mismatch or no creator)");
           }
         }
+      } else {
+        console.log("[JaaS Token] No verified user or no roomName, moderator=false");
       }
+      
+      console.log("[JaaS Token] Final moderator status:", isModerator);
 
       // JaaS configuration from environment - all required
       const rawPrivateKey = process.env.JAAS_PRIVATE_KEY;
