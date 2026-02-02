@@ -485,7 +485,7 @@ export default function Admin() {
       
       const headers: Record<string, string> = { 
         "Content-Type": "application/json",
-        "X-API-Key": apiKeyToUse
+        "Authorization": `Bearer ${apiKeyToUse}`
       };
       
       const res = await fetch("/api/external/create-meeting", {
@@ -1501,7 +1501,7 @@ export default function Admin() {
 {`curl -X POST \\
   "${window.location.origin}/api/external/create-meeting" \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: YOUR_API_KEY" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
   -d '{"title": "SOP Draft Session"}'`}
                     </pre>
                   </div>
@@ -1510,7 +1510,7 @@ export default function Admin() {
                     <p className="mb-2">Request headers:</p>
                     <pre className="bg-background p-3 rounded text-xs overflow-x-auto">
 {`Content-Type: application/json
-X-API-Key: YOUR_API_KEY`}
+Authorization: Bearer YOUR_API_KEY`}
                     </pre>
                   </div>
                   
