@@ -219,6 +219,7 @@ export default function Admin() {
   // API Key state
   const [newKeyName, setNewKeyName] = useState("");
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKey | null>(null);
+  const [testApiKey, setTestApiKey] = useState("");
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["admin-users", searchQuery],
@@ -476,12 +477,16 @@ export default function Admin() {
   // API Test mutation for creating instant meetings
   const createTestMeetingMutation = useMutation({
     mutationFn: async (title: string) => {
-      // Get the first active API key to use for the test
-      const activeKey = apiKeys.find(k => k.isActive);
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (activeKey && newlyCreatedKey?.key) {
-        headers["X-API-Key"] = newlyCreatedKey.key;
+      // Use testApiKey (which can be set from newlyCreatedKey or manually entered)
+      const apiKeyToUse = testApiKey || newlyCreatedKey?.key;
+      if (!apiKeyToUse) {
+        throw new Error("Please enter an API key or create a new one first");
       }
+      
+      const headers: Record<string, string> = { 
+        "Content-Type": "application/json",
+        "X-API-Key": apiKeyToUse
+      };
       
       const res = await fetch("/api/external/create-meeting", {
         method: "POST",
@@ -520,6 +525,9 @@ export default function Admin() {
     onSuccess: (data: ApiKey) => {
       setNewlyCreatedKey(data);
       setNewKeyName("");
+      if (data.key) {
+        setTestApiKey(data.key);
+      }
       queryClient.invalidateQueries({ queryKey: ["api-keys"] });
       toast({ title: "API key created", description: "Copy your key now - it won't be shown again!" });
     },
@@ -1386,6 +1394,21 @@ export default function Admin() {
                 <h3 className="font-medium text-lg">Test API</h3>
                 
                 <div className="space-y-2">
+                  <Label htmlFor="test-api-key">API Key</Label>
+                  <Input
+                    id="test-api-key"
+                    type="password"
+                    value={testApiKey}
+                    onChange={(e) => setTestApiKey(e.target.value)}
+                    placeholder="Enter your API key (sk_...)"
+                    data-testid="input-test-api-key"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter an API key from above, or create a new one to auto-fill this field.
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
                   <Label htmlFor="meeting-title">Meeting Title</Label>
                   <Input
                     id="meeting-title"
@@ -1398,7 +1421,7 @@ export default function Admin() {
 
                 <Button 
                   onClick={() => createTestMeetingMutation.mutate(testMeetingTitle)}
-                  disabled={createTestMeetingMutation.isPending || apiKeys.filter(k => k.isActive).length === 0}
+                  disabled={createTestMeetingMutation.isPending || !testApiKey}
                   className="w-full sm:w-auto"
                   data-testid="button-create-test-meeting"
                 >
@@ -1412,9 +1435,9 @@ export default function Admin() {
                   )}
                 </Button>
 
-                {apiKeys.filter(k => k.isActive).length === 0 && (
+                {!testApiKey && (
                   <p className="text-sm text-muted-foreground">
-                    Create an API key above to test the external API.
+                    Enter an API key or create a new one above to test the external API.
                   </p>
                 )}
 
