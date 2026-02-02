@@ -10,6 +10,18 @@ import { textToSpeech, textToSpeechStream, getVoices, getDefaultVoiceId } from "
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin SDK for token verification
+// Uses Application Default Credentials or GOOGLE_APPLICATION_CREDENTIALS
+if (!admin.apps.length) {
+  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
+  if (projectId) {
+    admin.initializeApp({
+      projectId,
+    });
+  }
+}
 
 const SALT_ROUNDS = 10;
 
@@ -1118,6 +1130,36 @@ export async function registerRoutes(
   app.post("/api/jaas/token", async (req, res) => {
     try {
       const { roomName, userName, userEmail, userAvatar } = req.body;
+      
+      // Determine if user should be moderator by verifying Firebase ID token
+      let isModerator = false;
+      let verifiedUserId: string | null = null;
+      
+      // Check for Firebase ID token in Authorization header
+      const authHeader = req.headers["authorization"] as string;
+      if (authHeader && authHeader.startsWith("Bearer ") && admin.apps.length > 0) {
+        const idToken = authHeader.substring(7);
+        try {
+          const decodedToken = await admin.auth().verifyIdToken(idToken);
+          verifiedUserId = decodedToken.uid;
+        } catch (e) {
+          // Token verification failed - user will join as non-moderator
+          console.log("Firebase token verification failed:", e);
+        }
+      }
+      
+      // Check if verified user is the meeting creator
+      if (verifiedUserId && roomName) {
+        // Extract roomId from roomName (format: "VideoAI-{roomId}")
+        const roomId = roomName.replace(/^VideoAI-/i, "");
+        if (roomId) {
+          const meeting = await storage.getMeetingByRoomId(roomId);
+          // User is moderator only if they created the meeting
+          if (meeting && meeting.createdBy === verifiedUserId) {
+            isModerator = true;
+          }
+        }
+      }
 
       // JaaS configuration from environment - all required
       const rawPrivateKey = process.env.JAAS_PRIVATE_KEY;
@@ -1176,7 +1218,7 @@ export async function registerRoutes(
               name: userName || "Guest",
               avatar: userAvatar || "",
               email: userEmail || `${userId}@guest.local`,
-              moderator: "true",
+              moderator: isModerator ? "true" : "false",
             },
             features: {
               livestreaming: "true",

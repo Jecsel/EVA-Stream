@@ -211,14 +211,26 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, [agents, selectedAgents]);
 
   const { data: jaasToken } = useQuery({
-    queryKey: ["jaas-token", roomId],
+    queryKey: ["jaas-token", roomId, user?.uid],
     queryFn: async () => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      
+      // If user is authenticated, get their ID token for server-side verification
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          headers["Authorization"] = `Bearer ${idToken}`;
+        } catch (e) {
+          console.error("Failed to get ID token:", e);
+        }
+      }
+      
       const response = await fetch("/api/jaas/token", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           roomName: `VideoAI-${roomId}`,
-          userName: "User",
+          userName: user?.displayName || "User",
         }),
       });
       if (!response.ok) {
