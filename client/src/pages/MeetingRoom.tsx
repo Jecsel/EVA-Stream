@@ -100,6 +100,7 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [evaMessages, setEvaMessages] = useState<EvaMessage[]>([]);
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
+  const [wantsModerator, setWantsModerator] = useState(true);
   const meetingStartTime = useRef(Date.now());
   const [sopContent, setSopContent] = useState(`# Live SOP Document
 
@@ -212,7 +213,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, [agents, selectedAgents]);
 
   const { data: jaasToken } = useQuery({
-    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id],
+    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator],
     queryFn: async () => {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       
@@ -232,6 +233,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         body: JSON.stringify({
           roomName: `VideoAI-${roomId}`,
           userName: user?.displayName || "User",
+          wantsModerator: user ? wantsModerator : false,
         }),
       });
       if (!response.ok) {
@@ -821,8 +823,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         </header>
 
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
-          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}>
+          <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 relative`}>
              <JitsiMeeting 
+               key={`jitsi-${roomId}-${jaasToken?.token?.substring(0, 20) || 'no-token'}`}
                roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
@@ -832,6 +835,31 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                appId={jaasToken?.appId}
                roomId={roomId}
              />
+             
+             {/* Moderator toggle overlay - shows before joining for authenticated users */}
+             {user && !hasJoinedMeeting && (
+               <div className="absolute bottom-4 left-4 z-20">
+                 <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg">
+                   <div className="flex items-center gap-3">
+                     <Switch
+                       id="moderator-toggle"
+                       checked={wantsModerator}
+                       onCheckedChange={setWantsModerator}
+                       data-testid="switch-moderator"
+                     />
+                     <label 
+                       htmlFor="moderator-toggle" 
+                       className="text-sm font-medium cursor-pointer select-none"
+                     >
+                       Join as Moderator
+                     </label>
+                   </div>
+                   <p className="text-xs text-muted-foreground mt-1">
+                     Moderators can control meeting settings and recording
+                   </p>
+                 </div>
+               </div>
+             )}
           </div>
 
           {meeting?.id && hasJoinedMeeting && (

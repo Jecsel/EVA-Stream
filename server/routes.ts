@@ -1136,7 +1136,7 @@ export async function registerRoutes(
   // JaaS JWT Token Generation
   app.post("/api/jaas/token", async (req, res) => {
     try {
-      const { roomName, userName, userEmail, userAvatar } = req.body;
+      const { roomName, userName, userEmail, userAvatar, wantsModerator } = req.body;
       
       // Determine if user should be moderator by verifying Firebase ID token
       let isModerator = false;
@@ -1144,9 +1144,12 @@ export async function registerRoutes(
       
       // Check for Firebase ID token in Authorization header
       const authHeader = req.headers["authorization"] as string;
-      console.log("[JaaS Token] Auth header present:", !!authHeader, "Firebase Admin ready:", admin.apps.length > 0);
+      console.log("[JaaS Token] Auth header present:", !!authHeader, "Firebase Admin ready:", admin.apps.length > 0, "wantsModerator:", wantsModerator);
       
-      if (authHeader && authHeader.startsWith("Bearer ") && admin.apps.length > 0) {
+      // If user explicitly doesn't want moderator, skip the verification
+      if (wantsModerator === false) {
+        console.log("[JaaS Token] User opted out of moderator role");
+      } else if (authHeader && authHeader.startsWith("Bearer ") && admin.apps.length > 0) {
         const idToken = authHeader.substring(7);
         try {
           const decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -1158,8 +1161,8 @@ export async function registerRoutes(
         }
       }
       
-      // Check if verified user is the meeting creator
-      if (verifiedUserId && roomName) {
+      // Check if verified user is the meeting creator (only if they want moderator role)
+      if (verifiedUserId && roomName && wantsModerator !== false) {
         // Extract roomId from roomName (format: "VideoAI-{roomId}")
         const roomId = roomName.replace(/^VideoAI-/i, "");
         if (roomId) {
@@ -1173,6 +1176,8 @@ export async function registerRoutes(
             console.log("[JaaS Token] User is NOT moderator (creator mismatch or no creator)");
           }
         }
+      } else if (wantsModerator === false) {
+        console.log("[JaaS Token] User declined moderator role, moderator=false");
       } else {
         console.log("[JaaS Token] No verified user or no roomName, moderator=false");
       }
