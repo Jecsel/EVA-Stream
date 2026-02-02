@@ -100,7 +100,7 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [evaMessages, setEvaMessages] = useState<EvaMessage[]>([]);
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
-  const [wantsModerator, setWantsModerator] = useState(true);
+  const [wantsModerator, setWantsModerator] = useState(false);
   const meetingStartTime = useRef(Date.now());
   const [sopContent, setSopContent] = useState(`# Live SOP Document
 
@@ -862,7 +862,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              )}
           </div>
 
-          {meeting?.id && hasJoinedMeeting && (
+          {meeting?.id && hasJoinedMeeting && isModerator && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
@@ -1139,7 +1139,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
               </TooltipProvider>
             )}
 
-            {hasJoinedMeeting && (
+            {hasJoinedMeeting && isModerator && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
