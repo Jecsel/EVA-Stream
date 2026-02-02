@@ -13,13 +13,20 @@ import bcrypt from "bcrypt";
 import admin from "firebase-admin";
 
 // Initialize Firebase Admin SDK for token verification
-// Uses Application Default Credentials or GOOGLE_APPLICATION_CREDENTIALS
 if (!admin.apps.length) {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-  if (projectId) {
-    admin.initializeApp({
-      projectId,
-    });
+  const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (serviceAccountKey) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountKey);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log("Firebase Admin SDK initialized successfully");
+    } catch (e) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", e);
+    }
+  } else {
+    console.log("FIREBASE_SERVICE_ACCOUNT_KEY not set - moderator verification disabled");
   }
 }
 
