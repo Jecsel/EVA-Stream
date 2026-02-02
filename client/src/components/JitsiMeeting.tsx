@@ -11,6 +11,8 @@ interface JitsiMeetingProps {
   // Optional JaaS properties for future integration
   jwt?: string;
   appId?: string;
+  // The room ID for generating correct invite URLs
+  roomId?: string;
 }
 
 export function JitsiMeeting({ 
@@ -20,7 +22,8 @@ export function JitsiMeeting({
   onTranscriptionReceived,
   className,
   jwt,
-  appId
+  appId,
+  roomId
 }: JitsiMeetingProps) {
   const [loading, setLoading] = useState(true);
   const apiRef = useRef<any>(null);
@@ -46,6 +49,9 @@ export function JitsiMeeting({
   
   // Use 8x8.vc if a JWT is provided (indicating JaaS), otherwise fallback to the free community server
   const domain = jwt ? "8x8.vc" : "meet.jit.si";
+  
+  // Generate correct invite URL for this meeting (uses app's meeting page, not Jitsi's direct URL)
+  const inviteUrl = roomId ? `${window.location.origin}/meeting/${roomId}` : undefined;
 
   return (
     <div className={`relative w-full h-full overflow-hidden rounded-xl bg-background ${className}`}>
@@ -68,6 +74,8 @@ export function JitsiMeeting({
           theme: {
             default: 'dark',
           },
+          // Override the invite URL to use the app's meeting page format
+          ...(inviteUrl && { inviteAppName: 'VideoAI Meeting', conferenceInfo: { alwaysVisible: ['recording'], autoHide: [] } }),
           // Enable cloud recording features
           fileRecordingsEnabled: true,
           localRecording: {

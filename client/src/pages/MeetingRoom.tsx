@@ -9,7 +9,7 @@ import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { useAuth } from "@/contexts/AuthContext";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -96,6 +96,7 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [isJitsiTranscribing, setIsJitsiTranscribing] = useState(false);
   const [evaStatus, setEvaStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [isEndingMeeting, setIsEndingMeeting] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [evaMessages, setEvaMessages] = useState<EvaMessage[]>([]);
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
@@ -735,6 +736,30 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           </div>
           
           <div className="flex items-center gap-2">
+             <Button
+               size="sm"
+               variant="outline"
+               onClick={() => {
+                 const meetingUrl = `${window.location.origin}/meeting/${roomId}`;
+                 navigator.clipboard.writeText(meetingUrl);
+                 setLinkCopied(true);
+                 setTimeout(() => setLinkCopied(false), 2000);
+               }}
+               className="gap-1.5"
+               data-testid="button-copy-meeting-link"
+             >
+               {linkCopied ? (
+                 <>
+                   <Check className="w-4 h-4 text-green-500" />
+                   <span className="hidden sm:inline">Copied!</span>
+                 </>
+               ) : (
+                 <>
+                   <Link className="w-4 h-4" />
+                   <span className="hidden sm:inline">Copy Link</span>
+                 </>
+               )}
+             </Button>
              {meeting?.id && isModerator && (
                <AgentSelector
                  meetingId={meeting.id}
@@ -802,6 +827,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                className="bg-zinc-900"
                jwt={jaasToken?.token}
                appId={jaasToken?.appId}
+               roomId={roomId}
              />
           </div>
 
