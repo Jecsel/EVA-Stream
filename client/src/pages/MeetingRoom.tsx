@@ -284,8 +284,12 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   // The backend verifies: logged-in users must be the creator, non-logged-in users need correct moderator code
   const isModerator = jaasToken?.isModerator === true;
   
+  // Check if logged-in user is the meeting creator (they don't need a code)
+  const isCreator = user && meeting?.createdBy === user.uid;
+  
   // Track if moderator code was rejected (user entered code but server didn't grant moderator)
-  const moderatorCodeRejected = wantsModerator && !user && moderatorCode.length > 0 && jaasToken && !jaasToken.isModerator;
+  // This applies to any user who is not the creator and entered a code
+  const moderatorCodeRejected = wantsModerator && !isCreator && moderatorCode.length > 0 && jaasToken && !jaasToken.isModerator;
 
   useEffect(() => {
     if (meeting?.id) {
@@ -906,8 +910,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                      Moderators can control meeting settings and AI features
                    </p>
                    
-                   {/* Moderator code input - shows for non-logged-in users when toggle is on */}
-                   {wantsModerator && !user && (
+                   {/* Moderator code input - shows for anyone who is not the meeting creator when toggle is on */}
+                   {wantsModerator && !isCreator && (
                      <div className="mt-3 pt-3 border-t border-border">
                        <label 
                          htmlFor="moderator-code" 
