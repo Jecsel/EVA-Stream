@@ -1161,25 +1161,32 @@ export async function registerRoutes(
         }
       }
       
-      // Check if verified user is the meeting creator (only if they want moderator role)
-      if (verifiedUserId && roomName && wantsModerator !== false) {
+      // Check if user should be moderator
+      if (wantsModerator !== false && roomName) {
         // Extract roomId from roomName (format: "VideoAI-{roomId}")
         const roomId = roomName.replace(/^VideoAI-/i, "");
         if (roomId) {
           const meeting = await storage.getMeetingByRoomId(roomId);
           console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId });
-          // User is moderator only if they created the meeting
-          if (meeting && meeting.createdBy === verifiedUserId) {
+          
+          if (verifiedUserId) {
+            // Logged-in user: must be the meeting creator
+            if (meeting && meeting.createdBy === verifiedUserId) {
+              isModerator = true;
+              console.log("[JaaS Token] User is moderator (creator match)");
+            } else {
+              console.log("[JaaS Token] User is NOT moderator (creator mismatch)");
+            }
+          } else if (wantsModerator === true) {
+            // Non-logged-in user with explicit moderator request: allow moderator access
             isModerator = true;
-            console.log("[JaaS Token] User is moderator (creator match)");
-          } else {
-            console.log("[JaaS Token] User is NOT moderator (creator mismatch or no creator)");
+            console.log("[JaaS Token] User is moderator (non-authenticated with wantsModerator=true)");
           }
         }
       } else if (wantsModerator === false) {
         console.log("[JaaS Token] User declined moderator role, moderator=false");
       } else {
-        console.log("[JaaS Token] No verified user or no roomName, moderator=false");
+        console.log("[JaaS Token] No roomName provided, moderator=false");
       }
       
       console.log("[JaaS Token] Final moderator status:", isModerator);

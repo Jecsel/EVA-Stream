@@ -179,9 +179,13 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     queryFn: () => api.listAgents(),
   });
 
-  // Check if current user is the meeting moderator (creator who opted to be moderator)
-  // User must be the creator AND have the moderator toggle ON to see AI features
-  const isModerator = user?.uid && meeting?.createdBy === user.uid && wantsModerator;
+  // Check if current user is the meeting moderator
+  // For logged-in users: must be the creator AND have the moderator toggle ON
+  // For non-logged-in users: just need the moderator toggle ON to access AI features
+  const isModerator = wantsModerator && (
+    !user || // Non-logged-in users can be moderator if they toggle it on
+    (user?.uid && meeting?.createdBy === user.uid) // Logged-in users must be the creator
+  );
 
   // Initialize selectedAgents and generator states from meeting data when it loads
   // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
@@ -265,7 +269,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         body: JSON.stringify({
           roomName: `VideoAI-${roomId}`,
           userName: user?.displayName || "User",
-          wantsModerator: user ? wantsModerator : false,
+          wantsModerator: wantsModerator,
         }),
       });
       if (!response.ok) {
@@ -869,8 +873,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                roomId={roomId}
              />
              
-             {/* Moderator toggle overlay - shows before joining for authenticated users */}
-             {user && !hasJoinedMeeting && (
+             {/* Moderator toggle overlay - shows before joining for all users */}
+             {!hasJoinedMeeting && (
                <div className="absolute bottom-4 left-4 z-20">
                  <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg">
                    <div className="flex items-center gap-3">
