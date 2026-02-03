@@ -1165,24 +1165,21 @@ export async function registerRoutes(
         }
       }
       
-      // Check if user should be moderator
+      // Check if user should be moderator (like Zoom: creator auto-moderator, or anyone with valid code)
       if (wantsModerator !== false && roomName) {
         // Extract roomId from roomName (format: "VideoAI-{roomId}")
         const roomId = roomName.replace(/^VideoAI-/i, "");
         if (roomId) {
           const meeting = await storage.getMeetingByRoomId(roomId);
-          console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId });
+          console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId, hasModeratorCode: !!moderatorCode });
           
-          if (verifiedUserId) {
-            // Logged-in user: must be the meeting creator
-            if (meeting && meeting.createdBy === verifiedUserId) {
-              isModerator = true;
-              console.log("[JaaS Token] User is moderator (creator match)");
-            } else {
-              console.log("[JaaS Token] User is NOT moderator (creator mismatch)");
-            }
-          } else if (wantsModerator === true && moderatorCode) {
-            // Non-logged-in user with explicit moderator request and code: verify the code
+          // Priority 1: Meeting creator is always a moderator (automatic, no code needed)
+          if (verifiedUserId && meeting && meeting.createdBy === verifiedUserId) {
+            isModerator = true;
+            console.log("[JaaS Token] User is moderator (creator match - automatic)");
+          }
+          // Priority 2: Anyone (logged-in or not) with valid moderator code becomes moderator
+          else if (wantsModerator === true && moderatorCode) {
             if (meeting && meeting.moderatorCode && meeting.moderatorCode === moderatorCode) {
               isModerator = true;
               console.log("[JaaS Token] User is moderator (valid moderator code provided)");
