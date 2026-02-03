@@ -40,7 +40,7 @@ export default function MeetingRoom() {
   const [, setLocation] = useLocation();
   const roomId = params?.id || "demo-room";
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
@@ -138,10 +138,41 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     return () => clearTimeout(timer);
   }, []);
 
-  const { data: meeting } = useQuery({
-    queryKey: ["meeting", roomId, user?.uid],
-    queryFn: () => api.getMeetingByRoomId(roomId, user?.uid),
+  // Wait for auth to resolve before fetching meeting to ensure proper ownership claim
+  const authReady = !authLoading;
+  
+  const { data: meeting, refetch: refetchMeeting } = useQuery({
+    queryKey: ["meeting", roomId, user?.uid, authReady],
+    queryFn: async () => {
+      console.log(`[Meeting Query] Fetching meeting for room: ${roomId}, userId: ${user?.uid || 'anonymous'}, authReady: ${authReady}`);
+      const result = await api.getMeetingByRoomId(roomId, user?.uid);
+      console.log(`[Meeting Query] Got meeting:`, result?.id, 'createdBy:', result?.createdBy);
+      return result;
+    },
+    // Only run when auth has finished loading
+    enabled: authReady,
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: 2,
   });
+  
+  // Refetch meeting when user becomes authenticated after initial load to claim ownership
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  const prevAuthReadyRef = useRef<boolean>(false);
+  useEffect(() => {
+    // If auth just became ready and we have a user, refetch to claim ownership
+    if (authReady && !prevAuthReadyRef.current && user?.uid) {
+      console.log('[Meeting Query] Auth ready with user, ensuring meeting ownership claim');
+      refetchMeeting();
+    }
+    // If user just became authenticated (was anonymous, now logged in), refetch to claim ownership
+    if (authReady && user?.uid && prevUserIdRef.current === undefined && meeting?.id && !meeting.createdBy) {
+      console.log('[Meeting Query] User authenticated, refetching to claim ownership');
+      refetchMeeting();
+    }
+    prevUserIdRef.current = user?.uid;
+    prevAuthReadyRef.current = authReady;
+  }, [user?.uid, meeting?.id, meeting?.createdBy, authReady, refetchMeeting]);
 
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
@@ -215,6 +246,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const { data: jaasToken } = useQuery({
     queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator],
     queryFn: async () => {
+      console.log(`[JaaS Token Query] Requesting token with wantsModerator: ${wantsModerator}`);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       
       // If user is authenticated, get their ID token for server-side verification
@@ -239,13 +271,14 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       if (!response.ok) {
         return null;
       }
-      return response.json();
+      const result = await response.json();
+      console.log(`[JaaS Token Query] Got token, moderator status in token context:`, result?.token?.substring(0, 50) + '...');
+      return result;
     },
     // Wait for meeting to be created/claimed before requesting token
     // This ensures createdBy is set before we check moderator status
     enabled: !!meeting?.id,
     retry: false,
-    staleTime: 1000 * 60 * 60 * 2,
   });
 
   useEffect(() => {
