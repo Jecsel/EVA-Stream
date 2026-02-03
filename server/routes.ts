@@ -1280,7 +1280,7 @@ export async function registerRoutes(
         { algorithm: "RS256", header: { kid: apiKey, typ: "JWT", alg: "RS256" } }
       );
 
-      res.json({ token, appId });
+      res.json({ token, appId, isModerator });
     } catch (error) {
       console.error("JaaS token generation error:", error);
       res.status(500).json({ error: "Failed to generate JaaS token" });

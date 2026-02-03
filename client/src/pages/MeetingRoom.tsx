@@ -181,14 +181,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     queryFn: () => api.listAgents(),
   });
 
-  // Check if current user is the meeting moderator
-  // For logged-in users: must be the creator AND have the moderator toggle ON
-  // For non-logged-in users: need the moderator toggle ON and a valid moderator code
-  const isModerator = wantsModerator && (
-    (user?.uid && meeting?.createdBy === user.uid) || // Logged-in users must be the creator
-    (!user && moderatorCode.length > 0) // Non-logged-in users need a moderator code
-  );
-
   // Initialize selectedAgents and generator states from meeting data when it loads
   // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
   const [hasInitializedAgents, setHasInitializedAgents] = useState(false);
@@ -287,6 +279,13 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     enabled: !!meeting?.id,
     retry: false,
   });
+
+  // Check if current user is the meeting moderator based on server-verified status
+  // The backend verifies: logged-in users must be the creator, non-logged-in users need correct moderator code
+  const isModerator = jaasToken?.isModerator === true;
+  
+  // Track if moderator code was rejected (user entered code but server didn't grant moderator)
+  const moderatorCodeRejected = wantsModerator && !user && moderatorCode.length > 0 && jaasToken && !jaasToken.isModerator;
 
   useEffect(() => {
     if (meeting?.id) {
@@ -922,12 +921,22 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                          value={moderatorCode}
                          onChange={(e) => setModeratorCode(e.target.value)}
                          placeholder="Enter code"
-                         className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                         className={`w-full px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 ${
+                           moderatorCodeRejected 
+                             ? 'border-red-500 focus:ring-red-500' 
+                             : 'border-border focus:ring-purple-500'
+                         }`}
                          data-testid="input-moderator-code"
                        />
-                       <p className="text-xs text-muted-foreground mt-1.5">
-                         Get this code from the meeting organizer
-                       </p>
+                       {moderatorCodeRejected ? (
+                         <p className="text-xs text-red-500 mt-1.5">
+                           Invalid moderator code. Please check and try again.
+                         </p>
+                       ) : (
+                         <p className="text-xs text-muted-foreground mt-1.5">
+                           Get this code from the meeting organizer
+                         </p>
+                       )}
                      </div>
                    )}
                  </div>
