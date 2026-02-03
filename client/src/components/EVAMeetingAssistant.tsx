@@ -1118,24 +1118,9 @@ export function EVAMeetingAssistant({
             </div>
           </ScrollArea>
 
-          {/* Input with push-to-talk button */}
+          {/* Input area */}
           <div className="p-3 border-t">
             <div className="flex gap-2 items-center">
-              {/* Push-to-talk button - click to start, click again to stop */}
-              <Button
-                variant={isPushToTalkActive ? "default" : "outline"}
-                size="icon"
-                className={cn(
-                  "flex-shrink-0 transition-all duration-200",
-                  isPushToTalkActive && "bg-red-500 hover:bg-red-600 animate-pulse"
-                )}
-                onClick={togglePushToTalk}
-                disabled={isTyping}
-                data-testid="button-push-to-talk"
-                title={isPushToTalkActive ? "Click to stop recording" : "Click to start speaking to EVA"}
-              >
-                <Mic className={cn("w-4 h-4", isPushToTalkActive && "text-white")} />
-              </Button>
               <Input
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
