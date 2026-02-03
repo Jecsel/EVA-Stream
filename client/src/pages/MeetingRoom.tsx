@@ -867,17 +867,27 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 relative`}>
-             <JitsiMeeting 
-               key={`jitsi-${roomId}`}
-               roomName={`VideoAI-${roomId}`}
-               displayName="User"
-               onApiReady={handleJitsiApiReady}
-               onTranscriptionReceived={handleTranscriptionReceived}
-               className="bg-zinc-900"
-               jwt={jaasToken?.token}
-               appId={jaasToken?.appId}
-               roomId={roomId}
-             />
+             {/* Only render Jitsi once we have a valid token - this ensures moderator JWT is ready */}
+             {jaasToken?.token ? (
+               <JitsiMeeting 
+                 key={`jitsi-${roomId}-${jaasToken.isModerator ? 'mod' : 'user'}-${jaasToken.token.slice(-8)}`}
+                 roomName={`VideoAI-${roomId}`}
+                 displayName="User"
+                 onApiReady={handleJitsiApiReady}
+                 onTranscriptionReceived={handleTranscriptionReceived}
+                 className="bg-zinc-900"
+                 jwt={jaasToken.token}
+                 appId={jaasToken.appId}
+                 roomId={roomId}
+               />
+             ) : (
+               <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                 <div className="text-center">
+                   <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+                   <p className="text-muted-foreground">Preparing meeting room...</p>
+                 </div>
+               </div>
+             )}
              
              {/* Moderator toggle overlay - shows before joining for all users */}
              {!hasJoinedMeeting && (
