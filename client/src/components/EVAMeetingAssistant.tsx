@@ -897,7 +897,7 @@ export function EVAMeetingAssistant({
                         : "bg-gray-500/10 text-gray-500"
                     )}
                   >
-                    <Phone className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
+                    <Mic className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
                     {isAgentSpeaking 
                       ? `${selectedVoiceAgent === 'cro_interview' ? 'Interviewing...' : selectedVoiceAgent === 'sop' ? 'Guiding...' : 'Speaking...'}` 
                       : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
