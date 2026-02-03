@@ -1258,7 +1258,7 @@ export async function registerRoutes(
               name: userName || "Guest",
               avatar: userAvatar || "",
               email: userEmail || `${userId}@guest.local`,
-              moderator: isModerator ? "true" : "false",
+              moderator: isModerator,
             },
             features: {
               livestreaming: "true",
