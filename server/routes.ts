@@ -80,6 +80,7 @@ export async function registerRoutes(
   const externalCreateMeetingSchema = z.object({
     title: z.string().optional(),
     scheduledDate: z.string().datetime().optional(),
+    moderatorCode: z.string().min(4).max(32).optional(), // Secret code for moderator access without login
   });
 
   // External API - Schedule meeting with calendar integration
@@ -95,6 +96,7 @@ export async function registerRoutes(
     isAllDay: z.boolean().optional().default(false),
     recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays"]).optional().default("none"),
     recurrenceEndDate: z.string().datetime().optional(),
+    moderatorCode: z.string().min(4).max(32).optional(), // Secret code for moderator access without login
   });
 
   app.post("/api/external/schedule-meeting", validateApiKey, async (req, res) => {
@@ -133,6 +135,7 @@ export async function registerRoutes(
         recurrenceEndDate: validated.recurrenceEndDate ? new Date(validated.recurrenceEndDate) : null,
         createdBy: validated.userId || null,
         selectedAgents: selectedAgentIds,
+        moderatorCode: validated.moderatorCode,
       });
 
       let calendarEvent = null;
@@ -273,6 +276,7 @@ export async function registerRoutes(
         status: validated.scheduledDate ? "scheduled" : "live",
         scheduledDate: validated.scheduledDate ? new Date(validated.scheduledDate) : new Date(),
         selectedAgents: selectedAgentIds,
+        moderatorCode: validated.moderatorCode,
       });
       
       // Build the full meeting link
@@ -1136,7 +1140,7 @@ export async function registerRoutes(
   // JaaS JWT Token Generation
   app.post("/api/jaas/token", async (req, res) => {
     try {
-      const { roomName, userName, userEmail, userAvatar, wantsModerator } = req.body;
+      const { roomName, userName, userEmail, userAvatar, wantsModerator, moderatorCode } = req.body;
       
       // Determine if user should be moderator by verifying Firebase ID token
       let isModerator = false;
@@ -1177,10 +1181,19 @@ export async function registerRoutes(
             } else {
               console.log("[JaaS Token] User is NOT moderator (creator mismatch)");
             }
-          } else if (wantsModerator === true) {
-            // Non-logged-in user with explicit moderator request: allow moderator access
-            isModerator = true;
-            console.log("[JaaS Token] User is moderator (non-authenticated with wantsModerator=true)");
+          } else if (wantsModerator === true && moderatorCode) {
+            // Non-logged-in user with explicit moderator request and code: verify the code
+            if (meeting && meeting.moderatorCode && meeting.moderatorCode === moderatorCode) {
+              isModerator = true;
+              console.log("[JaaS Token] User is moderator (valid moderator code provided)");
+            } else if (!meeting?.moderatorCode) {
+              // Meeting has no moderator code set - deny access for security
+              console.log("[JaaS Token] User is NOT moderator (meeting has no moderator code set)");
+            } else {
+              console.log("[JaaS Token] User is NOT moderator (invalid moderator code)");
+            }
+          } else if (wantsModerator === true && !moderatorCode) {
+            console.log("[JaaS Token] User wants moderator but no code provided");
           }
         }
       } else if (wantsModerator === false) {

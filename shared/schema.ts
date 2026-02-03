@@ -91,6 +91,7 @@ export const meetings = pgTable("meetings", {
   recurrence: text("recurrence").default("none"), // none, daily, weekly, monthly, annually, weekdays, custom
   recurrenceEndDate: timestamp("recurrence_end_date"), // when the recurrence ends
   createdBy: text("created_by"), // Firebase UID of the meeting creator (moderator)
+  moderatorCode: text("moderator_code"), // Secret code for moderator access without login
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

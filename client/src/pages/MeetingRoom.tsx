@@ -101,6 +101,8 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
   const [wantsModerator, setWantsModerator] = useState(false);
+  const [moderatorCode, setModeratorCode] = useState("");
+  const [showModeratorCodeInput, setShowModeratorCodeInput] = useState(false);
   const meetingStartTime = useRef(Date.now());
   const [sopContent, setSopContent] = useState(`# Live SOP Document
 
@@ -181,10 +183,10 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
   // Check if current user is the meeting moderator
   // For logged-in users: must be the creator AND have the moderator toggle ON
-  // For non-logged-in users: just need the moderator toggle ON to access AI features
+  // For non-logged-in users: need the moderator toggle ON and a valid moderator code
   const isModerator = wantsModerator && (
-    !user || // Non-logged-in users can be moderator if they toggle it on
-    (user?.uid && meeting?.createdBy === user.uid) // Logged-in users must be the creator
+    (user?.uid && meeting?.createdBy === user.uid) || // Logged-in users must be the creator
+    (!user && moderatorCode.length > 0) // Non-logged-in users need a moderator code
   );
 
   // Initialize selectedAgents and generator states from meeting data when it loads
@@ -248,9 +250,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, [agents, selectedAgents]);
 
   const { data: jaasToken } = useQuery({
-    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator],
+    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator, moderatorCode],
     queryFn: async () => {
-      console.log(`[JaaS Token Query] Requesting token with wantsModerator: ${wantsModerator}`);
+      console.log(`[JaaS Token Query] Requesting token with wantsModerator: ${wantsModerator}, hasModeratorCode: ${!!moderatorCode}`);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       
       // If user is authenticated, get their ID token for server-side verification
@@ -270,6 +272,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           roomName: `VideoAI-${roomId}`,
           userName: user?.displayName || "User",
           wantsModerator: wantsModerator,
+          moderatorCode: moderatorCode || undefined,
         }),
       });
       if (!response.ok) {
@@ -876,12 +879,21 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              {/* Moderator toggle overlay - shows before joining for all users */}
              {!hasJoinedMeeting && (
                <div className="absolute bottom-4 left-4 z-20">
-                 <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg">
+                 <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg min-w-[240px]">
                    <div className="flex items-center gap-3">
                      <Switch
                        id="moderator-toggle"
                        checked={wantsModerator}
-                       onCheckedChange={setWantsModerator}
+                       onCheckedChange={(checked) => {
+                         setWantsModerator(checked);
+                         // Show code input when non-logged-in user toggles moderator on
+                         if (checked && !user) {
+                           setShowModeratorCodeInput(true);
+                         } else if (!checked) {
+                           setShowModeratorCodeInput(false);
+                           setModeratorCode("");
+                         }
+                       }}
                        data-testid="switch-moderator"
                      />
                      <label 
@@ -892,8 +904,32 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                      </label>
                    </div>
                    <p className="text-xs text-muted-foreground mt-1">
-                     Moderators can control meeting settings and recording
+                     Moderators can control meeting settings and AI features
                    </p>
+                   
+                   {/* Moderator code input - shows for non-logged-in users when toggle is on */}
+                   {wantsModerator && !user && (
+                     <div className="mt-3 pt-3 border-t border-border">
+                       <label 
+                         htmlFor="moderator-code" 
+                         className="text-xs text-muted-foreground block mb-1.5"
+                       >
+                         Enter moderator code:
+                       </label>
+                       <input
+                         type="password"
+                         id="moderator-code"
+                         value={moderatorCode}
+                         onChange={(e) => setModeratorCode(e.target.value)}
+                         placeholder="Enter code"
+                         className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                         data-testid="input-moderator-code"
+                       />
+                       <p className="text-xs text-muted-foreground mt-1.5">
+                         Get this code from the meeting organizer
+                       </p>
+                     </div>
+                   )}
                  </div>
                </div>
              )}
