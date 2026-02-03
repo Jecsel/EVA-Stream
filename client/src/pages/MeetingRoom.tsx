@@ -858,7 +858,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 relative`}>
              <JitsiMeeting 
-               key={`jitsi-${roomId}-${jaasToken?.token?.substring(0, 20) || 'no-token'}`}
+               key={`jitsi-${roomId}`}
                roomName={`VideoAI-${roomId}`}
                displayName="User"
                onApiReady={handleJitsiApiReady}
