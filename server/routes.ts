@@ -76,6 +76,15 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Sentry config endpoint for frontend (production only)
+  app.get("/api/config/sentry", (req, res) => {
+    if (process.env.NODE_ENV === "production" && process.env.SENTRY_DSN) {
+      res.json({ dsn: process.env.SENTRY_DSN });
+    } else {
+      res.json({ dsn: null });
+    }
+  });
+
   // External API - Create meeting endpoint for other systems
   const externalCreateMeetingSchema = z.object({
     title: z.string().optional(),

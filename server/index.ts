@@ -5,6 +5,32 @@ import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { processLiveInput, type GeminiLiveMessage, type GeminiLiveResponse } from "./gemini-live";
 import { seedAgents } from "./seed";
+import * as Sentry from "@sentry/node";
+
+const isProduction = process.env.NODE_ENV === "production";
+const sentryEnabled = isProduction && !!process.env.SENTRY_DSN;
+
+if (sentryEnabled) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: "production",
+    tracesSampleRate: 1.0,
+    integrations: [
+      Sentry.httpIntegration(),
+      Sentry.expressIntegration(),
+    ],
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    Sentry.captureException(reason);
+  });
+
+  process.on("uncaughtException", (error) => {
+    Sentry.captureException(error);
+  });
+
+  console.log("Sentry initialized for production error tracking");
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,6 +60,9 @@ wss.on("connection", (ws: WebSocket, req) => {
       }
     } catch (error) {
       console.error("WebSocket message error:", error);
+      if (sentryEnabled) {
+        Sentry.captureException(error);
+      }
       ws.send(JSON.stringify({ type: "error", content: "Failed to process message" }));
     }
   });
@@ -44,6 +73,9 @@ wss.on("connection", (ws: WebSocket, req) => {
 
   ws.on("error", (error) => {
     console.error(`WebSocket error for meeting ${meetingId}:`, error);
+    if (sentryEnabled) {
+      Sentry.captureException(error);
+    }
   });
 
   // Send initial connection status
@@ -109,12 +141,14 @@ app.use((req, res, next) => {
   
   await seedAgents();
 
+  if (sentryEnabled) {
+    Sentry.setupExpressErrorHandler(app);
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
