@@ -64,6 +64,7 @@ User interaction initiates meeting creation/joining. Jitsi handles media streami
 - **Google Gemini API**: For AI analysis and SOP generation.
 - **Jitsi Meet**: For video conferencing.
 - **11Labs API**: For the AI Voice Assistant, providing text-to-speech capabilities and specialized voice agents (EVA Meeting Assistant, SOP Voice Agent, CRO Interview Agent).
+- **Sentry**: Production-only error tracking and monitoring for both frontend and backend.
 
 ### Key NPM Dependencies
 - `@jitsi/react-sdk`: Jitsi integration.
@@ -80,6 +81,7 @@ User interaction initiates meeting creation/joining. Jitsi handles media streami
 - `ELEVENLABS_API_KEY`: 11Labs API key.
 - `ELEVENLABS_AGENT_ID`, `ELEVENLABS_SOP_AGENT_ID`, `ELEVENLABS_CRO_INTERVIEW_AGENT_ID`: IDs for specific 11Labs voice agents.
 - `EXTERNAL_API_KEY`: Optional API key for external meeting creation.
+- `SENTRY_DSN`: Sentry DSN for error tracking (only active in production).
 
 ### External API
 Provides RESTful endpoints for external systems to interact with VideoAI, including:
