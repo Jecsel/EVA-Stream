@@ -38,11 +38,34 @@ const httpServer = createServer(app);
 // WebSocket server for Gemini Live API
 const wss = new WebSocketServer({ server: httpServer, path: "/ws/eva" });
 
+// Track all WebSocket connections by meetingId for broadcasting SOP updates
+const meetingConnections = new Map<string, Set<WebSocket>>();
+
+// Broadcast message to all clients in a meeting
+function broadcastToMeeting(meetingId: string, message: object) {
+  const connections = meetingConnections.get(meetingId);
+  if (connections) {
+    const data = JSON.stringify(message);
+    connections.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+}
+
 wss.on("connection", (ws: WebSocket, req) => {
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const meetingId = url.searchParams.get("meetingId") || "unknown";
   
   console.log(`EVA WebSocket connected for meeting: ${meetingId}`);
+  
+  // Track this connection for the meeting
+  if (!meetingConnections.has(meetingId)) {
+    meetingConnections.set(meetingId, new Set());
+  }
+  meetingConnections.get(meetingId)!.add(ws);
+  console.log(`Meeting ${meetingId} now has ${meetingConnections.get(meetingId)!.size} connected clients`);
 
   ws.on("message", async (data: Buffer) => {
     try {
@@ -54,9 +77,19 @@ wss.on("connection", (ws: WebSocket, req) => {
       // Always send SOP updates/status, only filter trivial observation messages
       const shouldSend = response.type === "sop_update" || 
                          response.type === "sop_status" ||
+                         response.type === "cro_update" ||
+                         response.type === "cro_status" ||
                          (response.content && response.content !== "[Observing meeting]" && response.content !== "observing");
       if (shouldSend) {
-        ws.send(JSON.stringify(response));
+        // Broadcast SOP/CRO updates to ALL clients in the meeting
+        if (response.type === "sop_update" || response.type === "sop_status" || 
+            response.type === "cro_update" || response.type === "cro_status") {
+          broadcastToMeeting(meetingId, response);
+          console.log(`Broadcasted ${response.type} to ${meetingConnections.get(meetingId)?.size || 0} clients`);
+        } else {
+          // Send other messages only to the sender
+          ws.send(JSON.stringify(response));
+        }
       }
     } catch (error) {
       console.error("WebSocket message error:", error);
@@ -69,6 +102,15 @@ wss.on("connection", (ws: WebSocket, req) => {
 
   ws.on("close", () => {
     console.log(`EVA WebSocket disconnected for meeting: ${meetingId}`);
+    // Remove this connection from tracking
+    const connections = meetingConnections.get(meetingId);
+    if (connections) {
+      connections.delete(ws);
+      if (connections.size === 0) {
+        meetingConnections.delete(meetingId);
+      }
+      console.log(`Meeting ${meetingId} now has ${connections.size} connected clients`);
+    }
   });
 
   ws.on("error", (error) => {
