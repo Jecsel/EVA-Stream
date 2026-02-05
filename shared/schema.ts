@@ -115,6 +115,7 @@ export const recordings = pgTable("recordings", {
   sopContent: text("sop_content"),
   flowchartCode: text("flowchart_code"),
   videoUrl: text("video_url"),
+  shareToken: text("share_token").unique(), // Unique token for public SOP sharing
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 });
 

@@ -109,6 +109,7 @@ export interface IStorage {
 
   // Recordings
   getRecording(id: string): Promise<Recording | undefined>;
+  getRecordingByShareToken(token: string): Promise<Recording | undefined>;
   createRecording(recording: InsertRecording): Promise<Recording>;
   listRecordings(limit?: number): Promise<Recording[]>;
   getRecordingsByMeeting(meetingId: string): Promise<Recording[]>;
@@ -402,6 +403,11 @@ export class DatabaseStorage implements IStorage {
   // Recordings
   async getRecording(id: string): Promise<Recording | undefined> {
     const [recording] = await db.select().from(recordings).where(eq(recordings.id, id));
+    return recording;
+  }
+
+  async getRecordingByShareToken(token: string): Promise<Recording | undefined> {
+    const [recording] = await db.select().from(recordings).where(eq(recordings.shareToken, token));
     return recording;
   }
 

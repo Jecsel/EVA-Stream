@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -85,6 +85,7 @@ export default function RecordingDetail() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [flowchartProgress, setFlowchartProgress] = useState<FlowchartProgressStep>('idle');
+  const [shareLinkCopied, setShareLinkCopied] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -410,6 +411,27 @@ export default function RecordingDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            data-testid="button-share-sop"
+            onClick={async () => {
+              try {
+                const shareToken = await api.getOrCreateShareToken(recordingId);
+                const shareUrl = `${window.location.origin}/sop/${shareToken}`;
+                await navigator.clipboard.writeText(shareUrl);
+                setShareLinkCopied(true);
+                toast.success("Share link copied to clipboard");
+                setTimeout(() => setShareLinkCopied(false), 2000);
+              } catch (error) {
+                toast.error("Failed to generate share link");
+              }
+            }}
+            disabled={!recording?.sopContent}
+          >
+            {shareLinkCopied ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Share2 className="w-4 h-4 mr-2" />}
+            {shareLinkCopied ? "Copied!" : "Share SOP"}
+          </Button>
           <Button 
             variant="outline" 
             size="sm" 

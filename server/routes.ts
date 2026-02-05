@@ -519,6 +519,53 @@ export async function registerRoutes(
     }
   });
 
+  // Public SOP view endpoint - requires share token for security
+  app.get("/api/public/sop/:token", async (req, res) => {
+    try {
+      const recording = await storage.getRecordingByShareToken(req.params.token);
+      if (!recording) {
+        res.status(404).json({ error: "SOP not found or invalid share link" });
+        return;
+      }
+      // Return only the SOP-related fields for public viewing
+      res.json({
+        id: recording.id,
+        title: recording.title,
+        sopContent: recording.sopContent,
+        flowchartCode: recording.flowchartCode,
+        recordedAt: recording.recordedAt,
+        duration: recording.duration,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP" });
+    }
+  });
+
+  // Generate or get share token for a recording
+  app.post("/api/recordings/:id/share-token", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      
+      // If already has a share token, return it
+      if (recording.shareToken) {
+        res.json({ shareToken: recording.shareToken });
+        return;
+      }
+      
+      // Generate new share token
+      const shareToken = uuidv4();
+      await storage.updateRecording(req.params.id, { shareToken });
+      
+      res.json({ shareToken });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate share token" });
+    }
+  });
+
   app.patch("/api/recordings/:id", async (req, res) => {
     try {
       const recording = await storage.updateRecording(req.params.id, req.body);

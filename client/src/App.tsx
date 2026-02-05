@@ -12,6 +12,7 @@ import Dashboard from "@/pages/Dashboard";
 import RecordingDetail from "@/pages/RecordingDetail";
 import Admin from "@/pages/Admin";
 import Calendar from "@/pages/Calendar";
+import SOPView from "@/pages/SOPView";
 
 
 function ProtectedRecordingDetail() {
@@ -43,6 +44,7 @@ function Router() {
       </Route>
       <Route path="/meeting/:id" component={MeetingRoom} />
       <Route path="/recording/:id" component={ProtectedRecordingDetail} />
+      <Route path="/sop/:id" component={SOPView} />
       <Route component={NotFound} />
     </Switch>
   );

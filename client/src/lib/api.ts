@@ -90,6 +90,16 @@ export const api = {
     return response.json();
   },
 
+  async getOrCreateShareToken(recordingId: string): Promise<string> {
+    const response = await fetch(`${API_BASE}/recordings/${recordingId}/share-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to generate share token");
+    const data = await response.json();
+    return data.shareToken;
+  },
+
   async deleteRecording(id: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE}/recordings/${id}`, {
       method: "DELETE",
