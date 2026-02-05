@@ -974,7 +974,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              )}
           </div>
 
-          {meeting?.id && hasJoinedMeeting && isModerator && (
+          {/* Live SOP Panel - visible to all participants */}
+          {meeting?.id && hasJoinedMeeting && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
@@ -984,53 +985,63 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
             >
               {/* Panel header with mode tabs */}
               <div className="bg-muted/30 border-b">
-                {/* Mode tabs - show Screen Observer tab only if SOP Agent is enabled */}
-                <div className="flex bg-background/50">
-                  <button
-                    onClick={() => setEvaPanelMode("assistant")}
-                    className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                      evaPanelMode === "assistant" 
-                        ? "bg-background text-foreground border-b-2 border-purple-500" 
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    data-testid="button-eva-mode-assistant"
-                  >
-                    <MessageSquare className="w-3 h-3 inline mr-1" />
-                    Meeting Assistant
-                  </button>
-                  {isScreenObserverEnabled && (
+                {/* Mode tabs - Moderators see full controls, participants see read-only SOP */}
+                {isModerator ? (
+                  <div className="flex bg-background/50">
                     <button
-                      onClick={() => setEvaPanelMode("observe")}
+                      onClick={() => setEvaPanelMode("assistant")}
                       className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                        evaPanelMode === "observe" 
-                          ? "bg-background text-foreground border-b-2 border-blue-500" 
+                        evaPanelMode === "assistant" 
+                          ? "bg-background text-foreground border-b-2 border-purple-500" 
                           : "text-muted-foreground hover:text-foreground"
                       }`}
-                      data-testid="button-eva-mode-observe"
+                      data-testid="button-eva-mode-assistant"
                     >
-                      <FileText className="w-3 h-3 inline mr-1" />
-                      SOP
+                      <MessageSquare className="w-3 h-3 inline mr-1" />
+                      Meeting Assistant
                     </button>
-                  )}
-                  {isCROEnabled && (
-                    <button
-                      onClick={() => setEvaPanelMode("cro")}
-                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                        evaPanelMode === "cro" 
-                          ? "bg-background text-foreground border-b-2 border-green-500" 
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      data-testid="button-eva-mode-cro"
-                    >
-                      <FileText className="w-3 h-3 inline mr-1" />
-                      CRO Generator
-                    </button>
-                  )}
-                </div>
+                    {isScreenObserverEnabled && (
+                      <button
+                        onClick={() => setEvaPanelMode("observe")}
+                        className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                          evaPanelMode === "observe" 
+                            ? "bg-background text-foreground border-b-2 border-blue-500" 
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid="button-eva-mode-observe"
+                      >
+                        <FileText className="w-3 h-3 inline mr-1" />
+                        SOP
+                      </button>
+                    )}
+                    {isCROEnabled && (
+                      <button
+                        onClick={() => setEvaPanelMode("cro")}
+                        className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                          evaPanelMode === "cro" 
+                            ? "bg-background text-foreground border-b-2 border-green-500" 
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid="button-eva-mode-cro"
+                      >
+                        <FileText className="w-3 h-3 inline mr-1" />
+                        CRO Generator
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center bg-background/50 py-2.5 px-3">
+                    <FileText className="w-3 h-3 inline mr-1 text-blue-500" />
+                    <span className="text-xs font-medium text-blue-500">Live SOP Document</span>
+                    {isSopUpdating && (
+                      <span className="ml-2 w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    )}
+                  </div>
+                )}
               </div>
               
-              {/* Show content based on selected mode */}
-              {evaPanelMode === "assistant" && (
+              {/* Moderator view - full controls */}
+              {isModerator && evaPanelMode === "assistant" && (
                 <EVAMeetingAssistant
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
@@ -1054,7 +1065,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                 />
               )}
               
-              {evaPanelMode === "observe" && isScreenObserverEnabled && (
+              {isModerator && evaPanelMode === "observe" && isScreenObserverEnabled && (
                 <EVAPanel 
                   meetingId={meeting.id}
                   messages={displayMessages}
@@ -1075,6 +1086,27 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   generatorState={sopGeneratorState}
                   onGeneratorStateChange={setSopGeneratorState}
                 />
+              )}
+              
+              {/* Participant view - read-only SOP */}
+              {!isModerator && (
+                <div className="h-[calc(100%-120px)] flex flex-col p-4 overflow-y-auto">
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-blue-500" />
+                      <span className="text-xs text-blue-500">
+                        {isSopUpdating ? "SOP is being updated..." : "Viewing live SOP from moderator"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-muted/30 rounded-lg p-4 overflow-y-auto">
+                    <div className="prose prose-sm prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {sopContent}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                </div>
               )}
               
               {evaPanelMode === "cro" && isCROEnabled && (
@@ -1251,7 +1283,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
               </TooltipProvider>
             )}
 
-            {hasJoinedMeeting && isModerator && (
+            {hasJoinedMeeting && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1265,7 +1297,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       <Brain className="h-5 w-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle EVA Assistant</TooltipContent>
+                  <TooltipContent>{isModerator ? "Toggle EVA Assistant" : "Toggle Live SOP"}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
