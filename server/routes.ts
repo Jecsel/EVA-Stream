@@ -123,9 +123,13 @@ export async function registerRoutes(
         return;
       }
 
+      // Auto-generate moderator code if not provided
+      const moderatorCode = validated.moderatorCode || uuidv4().substring(0, 8);
+
       const host = req.headers.host || "localhost:5000";
       const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
       const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+      const moderatorLink = `${meetingLink}?mod=${encodeURIComponent(moderatorCode)}`;
 
       const allAgents = await storage.listAgents();
       const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
@@ -144,7 +148,7 @@ export async function registerRoutes(
         recurrenceEndDate: validated.recurrenceEndDate ? new Date(validated.recurrenceEndDate) : null,
         createdBy: validated.userId || null,
         selectedAgents: selectedAgentIds,
-        moderatorCode: validated.moderatorCode,
+        moderatorCode,
       });
 
       let calendarEvent = null;
@@ -194,6 +198,7 @@ export async function registerRoutes(
           createdAt: meeting.createdAt,
         },
         link: meetingLink,
+        moderatorLink,
         calendarEventCreated: !!calendarEvent,
       });
     } catch (error) {
@@ -273,6 +278,9 @@ export async function registerRoutes(
       const roomId = generateRoomId();
       const title = validated.title || `Meeting ${roomId}`;
       
+      // Auto-generate moderator code if not provided
+      const moderatorCode = validated.moderatorCode || uuidv4().substring(0, 8);
+      
       // Get the SOP Generator agent to auto-enable for external meetings
       const allAgents = await storage.listAgents();
       const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
@@ -285,13 +293,14 @@ export async function registerRoutes(
         status: validated.scheduledDate ? "scheduled" : "live",
         scheduledDate: validated.scheduledDate ? new Date(validated.scheduledDate) : new Date(),
         selectedAgents: selectedAgentIds,
-        moderatorCode: validated.moderatorCode,
+        moderatorCode,
       });
       
       // Build the full meeting link
       const host = req.headers.host || "localhost:5000";
       const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
       const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+      const moderatorLink = `${meetingLink}?mod=${encodeURIComponent(moderatorCode)}`;
       
       res.json({
         success: true,
@@ -304,6 +313,7 @@ export async function registerRoutes(
           createdAt: meeting.createdAt,
         },
         link: meetingLink,
+        moderatorLink,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {

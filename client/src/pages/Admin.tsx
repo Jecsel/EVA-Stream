@@ -211,12 +211,13 @@ const API_CATEGORIES: ApiCategory[] = [
         requestBody: `{
   "title": "Meeting Title",           // optional
   "scheduledDate": "2026-01-30T14:00:00.000Z",  // optional
-  "moderatorCode": "secret123"        // optional, for moderator access
+  "moderatorCode": "secret123"        // optional, auto-generated if not provided
 }`,
         responseBody: `{
   "success": true,
   "meeting": { "id", "title", "roomId", "status", "scheduledDate", "createdAt" },
-  "link": "https://your-domain/meeting/abc-defg-hij"
+  "link": "https://your-domain/meeting/abc-defg-hij",
+  "moderatorLink": "https://your-domain/meeting/abc-defg-hij?mod=secret123"
 }`
       },
       {
@@ -242,6 +243,7 @@ const API_CATEGORIES: ApiCategory[] = [
   "success": true,
   "meeting": { "id", "title", "roomId", "status", "scheduledDate", "endDate", "attendeeEmails", "recurrence", "recurrenceEndDate", "calendarEventId", "createdAt" },
   "link": "https://your-domain/meeting/abc-defg-hij",
+  "moderatorLink": "https://your-domain/meeting/abc-defg-hij?mod=secret123",
   "calendarEventCreated": true
 }`
       },

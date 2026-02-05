@@ -103,7 +103,23 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [wantsModerator, setWantsModerator] = useState(false);
   const [moderatorCode, setModeratorCode] = useState("");
   const [showModeratorCodeInput, setShowModeratorCodeInput] = useState(false);
+  const modCodeFromUrlRef = useRef<string | null>(null);
   const meetingStartTime = useRef(Date.now());
+  
+  // Read ?mod= query parameter from URL for auto-moderator access
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const modParam = urlParams.get('mod');
+    if (modParam) {
+      modCodeFromUrlRef.current = modParam;
+      setModeratorCode(modParam);
+      setWantsModerator(true);
+      // Clean URL without reloading the page (remove the mod param for security)
+      // Done after state is set so the token fetch will use the stored moderatorCode
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
   const [sopContent, setSopContent] = useState(`# Live SOP Document
 
 *Waiting for screen observations...*
