@@ -199,7 +199,10 @@ export function EVAPanel({
                   size="sm"
                   variant="ghost"
                   className="h-8 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                  onClick={() => onGeneratorStateChange("running")}
+                  onClick={() => {
+                    onStartObservation?.();
+                    onGeneratorStateChange("running");
+                  }}
                   data-testid="button-start-sop-generator"
                 >
                   <Play className="w-4 h-4 mr-1" />
@@ -222,7 +225,10 @@ export function EVAPanel({
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
-                    onClick={() => onGeneratorStateChange("stopped")}
+                    onClick={() => {
+                      onStopObservation?.();
+                      onGeneratorStateChange("stopped");
+                    }}
                     data-testid="button-stop-sop-generator"
                   >
                     <Square className="w-4 h-4 mr-1" />
@@ -236,7 +242,10 @@ export function EVAPanel({
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                    onClick={() => onGeneratorStateChange("running")}
+                    onClick={() => {
+                      onStartObservation?.();
+                      onGeneratorStateChange("running");
+                    }}
                     data-testid="button-resume-sop-generator"
                   >
                     <Play className="w-4 h-4 mr-1" />
@@ -246,7 +255,10 @@ export function EVAPanel({
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-red-500 hover:text-red-400 hover:bg-red-500/10"
-                    onClick={() => onGeneratorStateChange("stopped")}
+                    onClick={() => {
+                      onStopObservation?.();
+                      onGeneratorStateChange("stopped");
+                    }}
                     data-testid="button-stop-sop-generator-paused"
                   >
                     <Square className="w-4 h-4 mr-1" />

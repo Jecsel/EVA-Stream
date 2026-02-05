@@ -727,6 +727,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     if (isObserving) {
       stopObserving();
       stopScreenCapture();
+      setSopGeneratorState("stopped");
       addSystemMessage("Screen Observer stopped.");
     } else {
       if (!isScreenObserverEnabled) {
@@ -734,6 +735,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         return;
       }
       startObserving();
+      setSopGeneratorState("running");
       
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
@@ -745,6 +747,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon again to try sharing your screen.");
         stopObserving();
+        setSopGeneratorState("stopped");
       }
     }
   };
@@ -756,6 +759,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     }
     if (!isObserving) {
       startObserving();
+      setSopGeneratorState("running");
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
           video: { frameRate: 1 } 
@@ -766,8 +770,15 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
         stopObserving();
+        setSopGeneratorState("stopped");
       }
     }
+  };
+  
+  const handleStopObservation = () => {
+    stopObserving();
+    stopScreenCapture();
+    setSopGeneratorState("stopped");
   };
 
   return (
@@ -840,10 +851,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                <Button
                  size="sm"
                  variant={isObserving ? "destructive" : "default"}
-                 onClick={isObserving ? () => {
-                   stopObserving();
-                   stopScreenCapture();
-                 } : handleStartObservation}
+                 onClick={isObserving ? handleStopObservation : handleStartObservation}
                  className="gap-1.5"
                  data-testid="button-observation-toggle"
                >
@@ -1075,10 +1083,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   isObserving={isObserving}
                   evaStatus={evaStatus}
                   onStartObservation={handleStartObservation}
-                  onStopObservation={() => {
-                    stopObserving();
-                    stopScreenCapture();
-                  }}
+                  onStopObservation={handleStopObservation}
                   sopContent={sopContent}
                   onSopContentChange={setSopContent}
                   isSopUpdating={isSopUpdating}
