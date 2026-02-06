@@ -12,7 +12,8 @@ import {
   Bot,
   Repeat,
   ChevronDown,
-  Mail
+  Mail,
+  Pencil
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,6 +30,7 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null);
+  const [editMeetingData, setEditMeetingData] = useState<any>(null);
 
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
@@ -392,7 +394,34 @@ export default function Calendar() {
                             </div>
                           )}
 
-                          <div className="px-4 pb-4">
+                          <div className="px-4 pb-4 space-y-2">
+                            {isExpanded && !String(meeting.id).includes("_") && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                data-testid={`button-edit-meeting-${meeting.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditMeetingData({
+                                    id: meeting.id,
+                                    title: meeting.title,
+                                    scheduledDate: meeting.scheduledDate,
+                                    endDate: meeting.endDate,
+                                    attendeeEmails: (meeting as any).attendeeEmails,
+                                    selectedAgents: (meeting as any).selectedAgents,
+                                    recurrence: (meeting as any).recurrence,
+                                    eventType: (meeting as any).eventType,
+                                    isAllDay: (meeting as any).isAllDay,
+                                    description: (meeting as any).description,
+                                  });
+                                  setScheduleDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                                Edit Meeting
+                              </Button>
+                            )}
                             <Link href={`/meeting/${meeting.roomId}`}>
                               <Button size="sm" className="w-full" data-testid={`button-join-${meeting.id}`}>
                                 Join Meeting
@@ -429,10 +458,15 @@ export default function Calendar() {
 
       <ScheduleMeetingDialog 
         open={scheduleDialogOpen} 
-        onOpenChange={setScheduleDialogOpen}
+        onOpenChange={(open) => {
+          setScheduleDialogOpen(open);
+          if (!open) setEditMeetingData(null);
+        }}
         initialDate={selectedDate || undefined}
+        editMeeting={editMeetingData}
         onSuccess={() => {
           setScheduleDialogOpen(false);
+          setEditMeetingData(null);
           queryClient.invalidateQueries({ queryKey: ["upcomingMeetings"] });
           queryClient.invalidateQueries({ queryKey: ["pastMeetings"] });
         }}
