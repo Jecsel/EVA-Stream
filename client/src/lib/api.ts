@@ -212,6 +212,13 @@ export const api = {
     return response.json();
   },
 
+  // Scrum Board - previous standup data
+  async getPreviousStandup(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/previous-standup`);
+    if (!response.ok) throw new Error("Failed to fetch previous standup");
+    return response.json();
+  },
+
   // Google Calendar integration
   async getGoogleAuthUrl(userId: string): Promise<{ authUrl: string }> {
     const response = await fetch(`${API_BASE}/google/auth-url`, {

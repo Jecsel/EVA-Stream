@@ -1109,6 +1109,45 @@ export async function registerRoutes(
     }
   });
 
+  // Get previous standup context for the Scrum Board
+  app.get("/api/meetings/:meetingId/previous-standup", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        res.status(404).json({ error: "Meeting not found" });
+        return;
+      }
+
+      const prevSummary = await storage.getPreviousScrumSummary(
+        meeting.title,
+        meetingId,
+        meeting.createdBy
+      );
+
+      if (!prevSummary?.scrumData) {
+        res.json({ hasPreviousStandup: false });
+        return;
+      }
+
+      const prevActionItems = prevSummary.meetingId
+        ? await storage.getScrumActionItemsByMeeting(prevSummary.meetingId)
+        : [];
+
+      res.json({
+        hasPreviousStandup: true,
+        summary: prevSummary.fullSummary,
+        scrumData: prevSummary.scrumData,
+        actionItems: prevActionItems,
+        meetingId: prevSummary.meetingId,
+        createdAt: prevSummary.createdAt,
+      });
+    } catch (error) {
+      console.error("Get previous standup error:", error);
+      res.status(500).json({ error: "Failed to get previous standup data" });
+    }
+  });
+
   // Google Calendar OAuth - Get auth URL
   app.post("/api/google/auth-url", async (req, res) => {
     try {
