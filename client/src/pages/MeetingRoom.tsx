@@ -44,7 +44,7 @@ export default function MeetingRoom() {
   const { user, loading: authLoading } = useAuth();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
-  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro" | "scrum">("assistant");
+  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
@@ -331,10 +331,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     if (!isCROEnabled && evaPanelMode === "cro") {
       setEvaPanelMode("assistant");
     }
-    if (!isScrumMasterEnabled && evaPanelMode === "scrum") {
-      setEvaPanelMode("assistant");
-    }
-  }, [isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled, evaPanelMode]);
+  }, [isScreenObserverEnabled, isCROEnabled, evaPanelMode]);
 
   useEffect(() => {
     if (meeting?.id) {
@@ -349,7 +346,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
   const handleScrumMasterToggle = useCallback((enabled: boolean) => {
     setIsScrumMasterEnabled(enabled);
-    if (enabled) setEvaPanelMode("scrum");
     if (!meeting?.id || agents.length === 0) return;
     const scrumAgent = agents.find((a: any) => a.type === "scrum");
     if (!scrumAgent) return;
@@ -1067,20 +1063,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                         CRO Generator
                       </button>
                     )}
-                    {isScrumMasterEnabled && (
-                      <button
-                        onClick={() => setEvaPanelMode("scrum")}
-                        className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                          evaPanelMode === "scrum" 
-                            ? "bg-background text-foreground border-b-2 border-indigo-500" 
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        data-testid="button-eva-mode-scrum"
-                      >
-                        <ScrollText className="w-3 h-3 inline mr-1" />
-                        Scrum
-                      </button>
-                    )}
                   </div>
                 ) : (
                   <div className="flex items-center justify-center bg-background/50 py-2.5 px-3">
@@ -1257,12 +1239,21 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                 </div>
               )}
 
-              {evaPanelMode === "scrum" && isScrumMasterEnabled && meeting?.id && (
-                <ScrumBoard
-                  meetingId={meeting.id}
-                  className="h-[calc(100%-120px)]"
-                />
-              )}
+            </div>
+          )}
+
+          {isScrumMasterEnabled && meeting?.id && hasJoinedMeeting && (
+            <div 
+              className={`
+                transition-all duration-500 ease-in-out transform origin-right
+                w-[360px] opacity-100 translate-x-0
+                rounded-2xl overflow-hidden shadow-xl border border-indigo-500/20 bg-card
+              `}
+            >
+              <ScrumBoard
+                meetingId={meeting.id}
+                className="h-full"
+              />
             </div>
           )}
 
