@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { 
   ArrowLeft, 
@@ -12,9 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday, getDay, addDays, addWeeks, addYears } from "date-fns";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import type { Meeting } from "@shared/schema";
 
 export default function Calendar() {
   const { user } = useAuth();
@@ -33,7 +34,7 @@ export default function Calendar() {
     queryFn: () => api.getPastMeetings(50),
   });
 
-  const allMeetings = [...upcomingMeetings, ...pastMeetings];
+  const rawMeetings = [...upcomingMeetings, ...pastMeetings];
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -41,6 +42,91 @@ export default function Calendar() {
 
   const startDayOfWeek = monthStart.getDay();
   const paddingDays = Array(startDayOfWeek).fill(null);
+
+  const allMeetings = useMemo(() => {
+    const expanded: typeof rawMeetings = [];
+    const addedOriginals = new Set<string>();
+
+    for (const meeting of rawMeetings) {
+      const recurrence = (meeting as any).recurrence || "none";
+      if (recurrence === "none" || recurrence === "custom") {
+        expanded.push(meeting);
+        continue;
+      }
+
+      const originalDate = meeting.scheduledDate
+        ? new Date(meeting.scheduledDate)
+        : meeting.createdAt
+          ? new Date(meeting.createdAt)
+          : null;
+      if (!originalDate) {
+        expanded.push(meeting);
+        continue;
+      }
+
+      const recurrenceEnd = (meeting as any).recurrenceEndDate
+        ? new Date((meeting as any).recurrenceEndDate)
+        : null;
+
+      const endBound = recurrenceEnd && recurrenceEnd < monthEnd ? recurrenceEnd : monthEnd;
+      const iterStart = monthStart > originalDate ? monthStart : originalDate;
+
+      if (iterStart > endBound) {
+        if (isSameMonth(originalDate, currentMonth)) {
+          expanded.push(meeting);
+        }
+        continue;
+      }
+
+      let cursor = new Date(iterStart);
+
+      while (cursor <= endBound) {
+        const isOriginalDay = isSameDay(cursor, originalDate);
+        const shouldInclude = (() => {
+          if (isOriginalDay) return true;
+          switch (recurrence) {
+            case "daily":
+              return true;
+            case "weekdays": {
+              const dow = getDay(cursor);
+              return dow >= 1 && dow <= 5;
+            }
+            case "weekly":
+              return getDay(cursor) === getDay(originalDate);
+            case "monthly":
+              return cursor.getDate() === originalDate.getDate();
+            case "annually":
+              return cursor.getDate() === originalDate.getDate() &&
+                     cursor.getMonth() === originalDate.getMonth();
+            default:
+              return false;
+          }
+        })();
+
+        if (shouldInclude) {
+          if (isOriginalDay) {
+            expanded.push(meeting);
+            addedOriginals.add(meeting.id);
+          } else {
+            expanded.push({
+              ...meeting,
+              scheduledDate: new Date(cursor) as any,
+              endDate: meeting.endDate
+                ? new Date(
+                    new Date(cursor).getTime() +
+                    (new Date(meeting.endDate as any).getTime() - originalDate.getTime())
+                  ) as any
+                : meeting.endDate,
+            });
+          }
+        }
+
+        cursor = addDays(cursor, 1);
+      }
+    }
+
+    return expanded;
+  }, [rawMeetings, monthStart, monthEnd, currentMonth]);
 
   const getMeetingsForDay = (date: Date) => {
     return allMeetings.filter(meeting => {
