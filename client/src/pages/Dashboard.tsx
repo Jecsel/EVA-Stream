@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Video, 
@@ -60,10 +60,11 @@ export default function Dashboard() {
     setLocation("/login");
   };
 
-  // Fetch recordings from the API
+  const [visibleCount, setVisibleCount] = useState(4);
+
   const { data: recordings = [], isLoading: recordingsLoading } = useQuery({
     queryKey: ["recordings"],
-    queryFn: () => api.listRecordings(10),
+    queryFn: () => api.listRecordings(50),
   });
 
   // Pre-fetch agents list so it's cached when entering meetings
@@ -289,17 +290,24 @@ export default function Dashboard() {
                                 No recordings yet. Start a meeting to create your first recording.
                             </div>
                         ) : (
-                            formattedRecordings.map(rec => (
+                            formattedRecordings.slice(0, visibleCount).map(rec => (
                                 <MeetingCard key={rec.id} recording={rec} />
                             ))
                         )}
                     </div>
                     
-                    <div className="mt-8 flex justify-center">
-                        <Button variant="outline" className="text-muted-foreground border-border hover:bg-muted">
-                            View older recordings
-                        </Button>
-                    </div>
+                    {formattedRecordings.length > visibleCount && (
+                      <div className="mt-8 flex justify-center">
+                          <Button 
+                            variant="outline" 
+                            className="text-muted-foreground border-border hover:bg-muted"
+                            onClick={() => setVisibleCount(prev => prev + 4)}
+                            data-testid="button-load-more-recordings"
+                          >
+                              Load more
+                          </Button>
+                      </div>
+                    )}
                 </div>
 
                 {/* Right Column: Meetings List (Takes up 1/3 space on large screens) */}
