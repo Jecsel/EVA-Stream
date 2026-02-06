@@ -13,7 +13,8 @@ import {
   Repeat,
   ChevronDown,
   Mail,
-  Pencil
+  Pencil,
+  FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -46,6 +47,24 @@ export default function Calendar() {
     queryKey: ["pastMeetings"],
     queryFn: () => api.getPastMeetings(50),
   });
+
+  const { data: recordings = [] } = useQuery({
+    queryKey: ["recordings"],
+    queryFn: () => api.listRecordings(100),
+  });
+
+  const recordingByMeetingId = useMemo(() => {
+    const map: Record<string, { id: string; recordedAt: string }> = {};
+    for (const rec of recordings) {
+      const mid = (rec as any).meetingId;
+      if (!mid) continue;
+      const recDate = (rec as any).recordedAt || (rec as any).createdAt || "";
+      if (!map[mid] || recDate > map[mid].recordedAt) {
+        map[mid] = { id: rec.id, recordedAt: recDate };
+      }
+    }
+    return map;
+  }, [recordings]);
 
   const rawMeetings = [...upcomingMeetings, ...pastMeetings];
 
@@ -395,7 +414,7 @@ export default function Calendar() {
                           )}
 
                           <div className="px-4 pb-4 space-y-2">
-                            {isExpanded && !String(meeting.id).includes("_") && (
+                            {isExpanded && !String(meeting.id).includes("_") && meeting.status !== "completed" && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -422,11 +441,39 @@ export default function Calendar() {
                                 Edit Meeting
                               </Button>
                             )}
-                            <Link href={`/meeting/${meeting.roomId}`}>
-                              <Button size="sm" className="w-full" data-testid={`button-join-${meeting.id}`}>
-                                Join Meeting
-                              </Button>
-                            </Link>
+                            {(() => {
+                              const originalMeetingId = String(meeting.id).includes("_") 
+                                ? String(meeting.id).split("_")[0] 
+                                : String(meeting.id);
+                              const recording = recordingByMeetingId[originalMeetingId];
+                              const isCompleted = meeting.status === "completed";
+
+                              if (isCompleted && recording) {
+                                return (
+                                  <Link href={`/recording/${recording.id}`}>
+                                    <Button size="sm" variant="outline" className="w-full" data-testid={`button-view-summary-${meeting.id}`}>
+                                      <FileText className="w-3.5 h-3.5 mr-1.5" />
+                                      View Summary
+                                    </Button>
+                                  </Link>
+                                );
+                              }
+                              if (isCompleted && !recording) {
+                                return (
+                                  <Button size="sm" variant="outline" className="w-full opacity-50 cursor-not-allowed" disabled data-testid={`button-no-summary-${meeting.id}`}>
+                                    <FileText className="w-3.5 h-3.5 mr-1.5" />
+                                    No Summary Available
+                                  </Button>
+                                );
+                              }
+                              return (
+                                <Link href={`/meeting/${meeting.roomId}`}>
+                                  <Button size="sm" className="w-full" data-testid={`button-join-${meeting.id}`}>
+                                    Join Meeting
+                                  </Button>
+                                </Link>
+                              );
+                            })()}
                           </div>
                         </div>
                       );
