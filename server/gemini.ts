@@ -820,6 +820,13 @@ ACTION ITEM TRACKING:
 - Note any commitments or deadlines mentioned
 - Flag unassigned action items
 
+STANDUP CONTINUITY:
+- When previous standup data is provided, compare today's updates against it
+- Flag blockers that persist from the previous standup as "carry-over blockers"
+- Note which previous action items were completed and which are still open
+- Highlight new blockers that appeared since the last standup
+- Track whether participants addressed what they planned to work on
+
 FAIL-SAFE BEHAVIOR:
 - If you can't determine who said what, note "Speaker unidentified"
 - If an update is vague, flag it for clarification
@@ -855,7 +862,8 @@ export async function generateScrumSummary(
   transcriptText: string,
   meetingTitle: string,
   chatMessages?: Array<{ role: string; content: string }>,
-  customSystemPrompt?: string
+  customSystemPrompt?: string,
+  previousStandupContext?: string
 ): Promise<ScrumSummaryResult | null> {
   if (!process.env.GEMINI_API_KEY) {
     console.log("[Scrum Summary] No API key");
@@ -874,6 +882,10 @@ export async function generateScrumSummary(
 
   const systemPrompt = customSystemPrompt || SCRUM_MASTER_SYSTEM_PROMPT;
 
+  const previousContext = previousStandupContext
+    ? `\n### Previous Standup Summary:\n${previousStandupContext}\n`
+    : "";
+
   const prompt = `${systemPrompt}
 
 ---
@@ -881,14 +893,20 @@ export async function generateScrumSummary(
 ## INPUT DATA
 
 Meeting: ${meetingTitle}
-
-### Meeting Transcript / Chat:
+${previousContext}
+### Today's Meeting Transcript / Chat:
 ${inputText.slice(0, 30000)}
 
 ---
 
 ## YOUR TASK
 Analyze this standup meeting and generate a structured JSON summary.
+${previousStandupContext ? `\nIMPORTANT - CONTINUITY FROM PREVIOUS STANDUP:
+- Compare today's updates against what was discussed in the previous standup
+- Flag any blockers from the previous standup that are still unresolved
+- Note which action items from the previous standup were completed vs. still open
+- Highlight any new blockers that appeared since the last standup
+- Include a "carryOverItems" note in the fullSummary if there are unresolved items from yesterday` : ""}
 
 Respond ONLY with valid JSON in this exact format:
 {

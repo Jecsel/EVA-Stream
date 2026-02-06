@@ -34,6 +34,13 @@ ACTION ITEM TRACKING:
 - Note any commitments or deadlines mentioned
 - Flag unassigned action items
 
+STANDUP CONTINUITY:
+- When previous standup data is provided, compare today's updates against it
+- Flag blockers that persist from the previous standup as "carry-over blockers"
+- Note which previous action items were completed and which are still open
+- Highlight new blockers that appeared since the last standup
+- Track whether participants addressed what they planned to work on
+
 FAIL-SAFE BEHAVIOR:
 - If you can't determine who said what, note "Speaker unidentified"
 - If an update is vague, flag it for clarification

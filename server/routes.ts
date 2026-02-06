@@ -892,13 +892,55 @@ export async function registerRoutes(
       }
 
       if (isScrumMeeting) {
+        // Fetch previous standup context for continuity
+        let previousStandupContext: string | undefined;
+        try {
+          const prevSummary = await storage.getPreviousScrumSummary(
+            meeting.title,
+            meetingId,
+            meeting.createdBy
+          );
+          if (prevSummary?.scrumData) {
+            const prevData = prevSummary.scrumData as any;
+            const parts: string[] = [];
+            if (prevSummary.fullSummary) {
+              parts.push(`Overview: ${prevSummary.fullSummary}`);
+            }
+            if (prevData.participants?.length > 0) {
+              parts.push("Per-person updates:");
+              for (const p of prevData.participants) {
+                parts.push(`  ${p.name}:`);
+                if (p.today?.length > 0) parts.push(`    Working on: ${p.today.join(", ")}`);
+                if (p.blockers?.length > 0) parts.push(`    Blockers: ${p.blockers.join(", ")}`);
+              }
+            }
+            if (prevData.blockers?.length > 0) {
+              parts.push("Active blockers:");
+              for (const b of prevData.blockers) {
+                parts.push(`  - ${b.description} (Owner: ${b.owner}, Severity: ${b.severity}, Status: ${b.status})`);
+              }
+            }
+            if (prevData.actionItems?.length > 0) {
+              parts.push("Action items:");
+              for (const a of prevData.actionItems) {
+                parts.push(`  - ${a.title} (Assigned to: ${a.assignee}, Priority: ${a.priority})`);
+              }
+            }
+            previousStandupContext = parts.join("\n");
+            console.log(`[Meeting End] Found previous standup context (${previousStandupContext.length} chars)`);
+          }
+        } catch (err) {
+          console.error("[Meeting End] Failed to fetch previous standup:", err);
+        }
+
         // Use Scrum Master summary generation
         const { generateScrumSummary } = await import("./gemini");
         scrumResult = await generateScrumSummary(
           transcriptText,
           meeting.title,
           messages.length > 0 ? messages : undefined,
-          scrumPromptContent
+          scrumPromptContent,
+          previousStandupContext
         );
         
         if (scrumResult) {

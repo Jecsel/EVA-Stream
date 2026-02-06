@@ -71,7 +71,7 @@ import {
   scrumActionItems
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, ilike, or, and, gte } from "drizzle-orm";
+import { eq, ne, desc, ilike, or, and, gte } from "drizzle-orm";
 
 export type AgentWithPrompt = Agent & { prompt?: Prompt | null };
 
@@ -196,6 +196,7 @@ export interface IStorage {
   getMeetingSummary(meetingId: string): Promise<MeetingSummary | undefined>;
   createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
   updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
+  getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined>;
 
   // Scrum Action Items
   createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem>;
@@ -839,6 +840,34 @@ export class DatabaseStorage implements IStorage {
       .where(eq(meetingSummaries.meetingId, meetingId))
       .returning();
     return result;
+  }
+
+  async getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined> {
+    const matchingMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        createdBy
+          ? and(eq(meetings.title, meetingTitle), eq(meetings.createdBy, createdBy))
+          : eq(meetings.title, meetingTitle)
+      );
+
+    const meetingIds = matchingMeetings.map(m => m.id).filter(id => id !== currentMeetingId);
+    if (meetingIds.length === 0) return undefined;
+
+    const results = await db
+      .select()
+      .from(meetingSummaries)
+      .where(
+        and(
+          eq(meetingSummaries.summaryType, "scrum"),
+          or(...meetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+        )
+      )
+      .orderBy(desc(meetingSummaries.createdAt))
+      .limit(1);
+
+    return results[0];
   }
 
   // EVA - Settings
