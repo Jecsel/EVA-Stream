@@ -854,7 +854,8 @@ export interface ScrumSummaryResult {
 export async function generateScrumSummary(
   transcriptText: string,
   meetingTitle: string,
-  chatMessages?: Array<{ role: string; content: string }>
+  chatMessages?: Array<{ role: string; content: string }>,
+  customSystemPrompt?: string
 ): Promise<ScrumSummaryResult | null> {
   if (!process.env.GEMINI_API_KEY) {
     console.log("[Scrum Summary] No API key");
@@ -871,7 +872,9 @@ export async function generateScrumSummary(
     return null;
   }
 
-  const prompt = `${SCRUM_MASTER_SYSTEM_PROMPT}
+  const systemPrompt = customSystemPrompt || SCRUM_MASTER_SYSTEM_PROMPT;
+
+  const prompt = `${systemPrompt}
 
 ---
 

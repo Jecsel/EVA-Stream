@@ -868,11 +868,13 @@ export async function registerRoutes(
 
       // Check if Scrum Master agent is selected for this meeting
       let isScrumMeeting = false;
+      let scrumPromptContent: string | undefined;
       if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
-        const allAgents = await storage.listAgents();
+        const allAgents = await storage.listAgentsWithPrompts();
         const scrumAgent = allAgents.find(a => a.type === "scrum");
         if (scrumAgent && meeting.selectedAgents.includes(scrumAgent.id)) {
           isScrumMeeting = true;
+          scrumPromptContent = scrumAgent.prompt?.content || undefined;
         }
       }
       
@@ -895,7 +897,8 @@ export async function registerRoutes(
         scrumResult = await generateScrumSummary(
           transcriptText,
           meeting.title,
-          messages.length > 0 ? messages : undefined
+          messages.length > 0 ? messages : undefined,
+          scrumPromptContent
         );
         
         if (scrumResult) {
