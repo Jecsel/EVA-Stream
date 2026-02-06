@@ -416,6 +416,8 @@ export const meetingSummaries = pgTable("meeting_summaries", {
   missedAgendaItems: text("missed_agenda_items").array(),
   fullSummary: text("full_summary"),
   audioUrl: text("audio_url"), // ElevenLabs generated audio URL
+  summaryType: text("summary_type").default("general"), // general, scrum
+  scrumData: jsonb("scrum_data"), // structured scrum standup data (per-person updates, blockers, action items)
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -426,6 +428,59 @@ export const insertMeetingSummarySchema = createInsertSchema(meetingSummaries).o
 
 export type InsertMeetingSummary = z.infer<typeof insertMeetingSummarySchema>;
 export type MeetingSummary = typeof meetingSummaries.$inferSelect;
+
+// Scrum Action Items - tracked across standups
+export const scrumActionItems = pgTable("scrum_action_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  assignee: text("assignee"),
+  status: text("status").notNull().default("open"), // open, in_progress, done, blocked
+  priority: text("priority").default("medium"), // low, medium, high
+  dueDate: timestamp("due_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScrumActionItemSchema = createInsertSchema(scrumActionItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScrumActionItem = z.infer<typeof insertScrumActionItemSchema>;
+export type ScrumActionItem = typeof scrumActionItems.$inferSelect;
+
+// Scrum standup data type for structured JSON
+export interface ScrumStandupData {
+  participants: ScrumParticipantUpdate[];
+  blockers: ScrumBlocker[];
+  actionItems: ScrumActionItemData[];
+  teamMood?: string;
+  sprintGoalProgress?: string;
+}
+
+export interface ScrumParticipantUpdate {
+  name: string;
+  yesterday: string[];
+  today: string[];
+  blockers: string[];
+}
+
+export interface ScrumBlocker {
+  description: string;
+  owner: string;
+  severity: "low" | "medium" | "high";
+  status: "active" | "resolved";
+}
+
+export interface ScrumActionItemData {
+  title: string;
+  assignee: string;
+  priority: "low" | "medium" | "high";
+  dueDate?: string;
+}
 
 // EVA Settings (user preferences)
 export const evaSettings = pgTable("eva_settings", {

@@ -789,3 +789,166 @@ Do NOT infer or guess missing information - flag anything unclear with "⚠️".
     return null;
   }
 }
+
+const SCRUM_MASTER_SYSTEM_PROMPT = `You are an AI Scrum Master embedded in a live daily standup meeting.
+
+Your primary role is to facilitate the standup, ensure it stays focused, and extract structured updates from each participant.
+
+STANDUP FORMAT:
+For each participant, track their answers to the three standup questions:
+1. What did you work on yesterday / since last standup?
+2. What are you working on today?
+3. Are there any blockers or impediments?
+
+BEHAVIOR RULES:
+- Keep the standup focused and time-boxed
+- Gently redirect off-topic discussions
+- Identify and highlight blockers that need immediate attention
+- Track action items that emerge from the discussion
+- Note any decisions made during the standup
+- If someone hasn't given their update, note it
+- Be concise and practical in responses
+
+BLOCKER AWARENESS:
+- Flag blockers that are cross-team dependencies
+- Identify blockers that have persisted across multiple standups
+- Suggest escalation for high-severity blockers
+- Track blocker resolution
+
+ACTION ITEM TRACKING:
+- Extract specific action items with owners
+- Note any commitments or deadlines mentioned
+- Flag unassigned action items
+
+FAIL-SAFE BEHAVIOR:
+- If you can't determine who said what, note "Speaker unidentified"
+- If an update is vague, flag it for clarification
+- Never invent information that wasn't discussed`;
+
+export interface ScrumSummaryResult {
+  fullSummary: string;
+  scrumData: {
+    participants: Array<{
+      name: string;
+      yesterday: string[];
+      today: string[];
+      blockers: string[];
+    }>;
+    blockers: Array<{
+      description: string;
+      owner: string;
+      severity: "low" | "medium" | "high";
+      status: "active" | "resolved";
+    }>;
+    actionItems: Array<{
+      title: string;
+      assignee: string;
+      priority: "low" | "medium" | "high";
+      dueDate?: string;
+    }>;
+    teamMood?: string;
+    sprintGoalProgress?: string;
+  };
+}
+
+export async function generateScrumSummary(
+  transcriptText: string,
+  meetingTitle: string,
+  chatMessages?: Array<{ role: string; content: string }>
+): Promise<ScrumSummaryResult | null> {
+  if (!process.env.GEMINI_API_KEY) {
+    console.log("[Scrum Summary] No API key");
+    return null;
+  }
+
+  const chatText = chatMessages
+    ? chatMessages.map(m => `${m.role}: ${m.content}`).join("\n")
+    : "";
+
+  const inputText = transcriptText || chatText;
+  if (inputText.length < 20) {
+    console.log("[Scrum Summary] Input too short");
+    return null;
+  }
+
+  const prompt = `${SCRUM_MASTER_SYSTEM_PROMPT}
+
+---
+
+## INPUT DATA
+
+Meeting: ${meetingTitle}
+
+### Meeting Transcript / Chat:
+${inputText.slice(0, 30000)}
+
+---
+
+## YOUR TASK
+Analyze this standup meeting and generate a structured JSON summary.
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "fullSummary": "2-3 sentence overview of the standup",
+  "scrumData": {
+    "participants": [
+      {
+        "name": "Person Name",
+        "yesterday": ["Task they completed or worked on"],
+        "today": ["Task they plan to work on"],
+        "blockers": ["Any blockers mentioned, empty array if none"]
+      }
+    ],
+    "blockers": [
+      {
+        "description": "Description of the blocker",
+        "owner": "Person responsible",
+        "severity": "low|medium|high",
+        "status": "active"
+      }
+    ],
+    "actionItems": [
+      {
+        "title": "Specific action to take",
+        "assignee": "Person responsible",
+        "priority": "low|medium|high"
+      }
+    ],
+    "teamMood": "Brief assessment of team energy/morale if discernible, or null",
+    "sprintGoalProgress": "Brief assessment of sprint progress if mentioned, or null"
+  }
+}
+
+IMPORTANT:
+- Extract REAL names from the transcript (use speaker labels)
+- Only include information that was actually discussed
+- If you can't identify a speaker, use "Unidentified"
+- Every blocker mentioned by anyone should appear in both their participant.blockers AND the top-level blockers array
+- Action items should be specific and actionable, not vague`;
+
+  try {
+    console.log("[Scrum Summary] Generating structured standup summary...");
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as ScrumSummaryResult;
+      console.log(`[Scrum Summary] Generated with ${parsed.scrumData?.participants?.length || 0} participants`);
+      return parsed;
+    }
+
+    console.log("[Scrum Summary] Failed to parse JSON response");
+    return null;
+  } catch (error) {
+    console.error("[Scrum Summary] Failed:", error);
+    return null;
+  }
+}
+
+export function getScrumMasterChatPrompt(): string {
+  return SCRUM_MASTER_SYSTEM_PROMPT;
+}

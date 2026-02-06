@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
+import { ScrumSummaryPanel } from "@/components/ScrumSummaryPanel";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -650,6 +651,8 @@ export default function RecordingDetail() {
             </div>
           </div>
         </div>
+
+        {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">

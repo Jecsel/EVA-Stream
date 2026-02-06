@@ -266,6 +266,7 @@ export const api = {
     eventType?: "event" | "task";
     isAllDay?: boolean;
     recurrence?: "none" | "daily" | "weekly" | "monthly" | "annually" | "weekdays" | "custom";
+    selectedAgents?: string[];
   }): Promise<{
     success: boolean;
     meeting: Meeting;
@@ -407,4 +408,34 @@ export const api = {
     }
     return response.json();
   },
+
+  async getScrumSummary(meetingId: string): Promise<{ summary: any; actionItems: any[] }> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/scrum-summary`);
+    if (!response.ok) throw new Error("No scrum summary found");
+    return response.json();
+  },
+
+  async getScrumActionItems(meetingId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/scrum-action-items`);
+    if (!response.ok) throw new Error("Failed to fetch action items");
+    return response.json();
+  },
+
+  async updateScrumActionItem(id: string, data: any): Promise<any> {
+    const response = await fetch(`${API_BASE}/scrum-action-items/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to update action item");
+    return response.json();
+  },
+
+  async deleteScrumActionItem(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/scrum-action-items/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("Failed to delete action item");
+  },
+
 };

@@ -694,16 +694,26 @@ export async function registerRoutes(
       const meeting = await storage.getMeeting(meetingId);
       const meetingContext = meeting ? `Meeting: ${meeting.title}` : "General Meeting";
 
-      // Get the EVA agent's prompt if one is selected for this meeting
+      // Get the agent's prompt if one is selected for this meeting
       let customPrompt: string | undefined;
       if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
         const agentsWithPrompts = await storage.listAgentsWithPrompts();
-        // Support both legacy "sop" type and new "eva" type for backward compatibility
-        const evaAgent = agentsWithPrompts.find(
-          a => (a.type === "eva" || a.type === "sop") && meeting.selectedAgents?.includes(a.id)
+        
+        // Check if Scrum Master agent is selected
+        const scrumAgent = agentsWithPrompts.find(
+          a => a.type === "scrum" && meeting.selectedAgents?.includes(a.id)
         );
-        if (evaAgent?.prompt?.content) {
-          customPrompt = evaAgent.prompt.content;
+        if (scrumAgent) {
+          const { getScrumMasterChatPrompt } = await import("./gemini");
+          customPrompt = scrumAgent.prompt?.content || getScrumMasterChatPrompt();
+        } else {
+          // Support both legacy "sop" type and new "eva" type for backward compatibility
+          const evaAgent = agentsWithPrompts.find(
+            a => (a.type === "eva" || a.type === "sop") && meeting.selectedAgents?.includes(a.id)
+          );
+          if (evaAgent?.prompt?.content) {
+            customPrompt = evaAgent.prompt.content;
+          }
         }
       }
 
@@ -855,17 +865,78 @@ export async function registerRoutes(
       // Get all chat messages and transcript segments for summary
       const messages = await storage.getChatMessagesByMeeting(meetingId);
       const transcriptSegments = await storage.getTranscriptsByMeeting(meetingId);
+
+      // Check if Scrum Master agent is selected for this meeting
+      let isScrumMeeting = false;
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        const allAgents = await storage.listAgents();
+        const scrumAgent = allAgents.find(a => a.type === "scrum");
+        if (scrumAgent && meeting.selectedAgents.includes(scrumAgent.id)) {
+          isScrumMeeting = true;
+        }
+      }
       
       // Generate AI summary of the meeting
       let summary = "Meeting ended without discussion.";
-      
-      // First try to use transcript segments (local speech-to-text)
+      let scrumResult = null;
+
+      // Build transcript text
+      let transcriptText = "";
       if (transcriptSegments.length > 0) {
-        const transcriptText = transcriptSegments
+        transcriptText = transcriptSegments
           .filter(t => t.isFinal && t.text.trim().length > 0)
           .map(t => `${t.speaker}: ${t.text}`)
           .join("\n");
+      }
+
+      if (isScrumMeeting) {
+        // Use Scrum Master summary generation
+        const { generateScrumSummary } = await import("./gemini");
+        scrumResult = await generateScrumSummary(
+          transcriptText,
+          meeting.title,
+          messages.length > 0 ? messages : undefined
+        );
         
+        if (scrumResult) {
+          summary = scrumResult.fullSummary;
+          
+          // Save structured scrum summary
+          try {
+            await storage.createMeetingSummary({
+              meetingId,
+              fullSummary: scrumResult.fullSummary,
+              summaryType: "scrum",
+              scrumData: scrumResult.scrumData,
+              keyTopics: scrumResult.scrumData.participants.map(p => `${p.name}'s update`),
+              decisions: [],
+              openQuestions: scrumResult.scrumData.blockers.filter(b => b.status === "active").map(b => `[BLOCKER] ${b.description} (${b.owner})`),
+            });
+          } catch (summaryError) {
+            console.error("[Meeting End] Failed to save scrum summary:", summaryError);
+          }
+
+          // Save action items from scrum data
+          if (scrumResult.scrumData.actionItems && scrumResult.scrumData.actionItems.length > 0) {
+            for (const item of scrumResult.scrumData.actionItems) {
+              try {
+                await storage.createScrumActionItem({
+                  meetingId,
+                  title: item.title,
+                  assignee: item.assignee,
+                  priority: item.priority,
+                  status: "open",
+                });
+              } catch (itemError) {
+                console.error("[Meeting End] Failed to save action item:", itemError);
+              }
+            }
+          }
+        }
+      }
+      
+      // Standard summary generation (for non-scrum meetings or as fallback)
+      if (!scrumResult) {
         if (transcriptText.length > 10) {
           const summaryResponse = await analyzeChat(
             `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${transcriptText.slice(0, 4000)}`,
@@ -873,23 +944,20 @@ export async function registerRoutes(
             false
           );
           summary = summaryResponse.message;
+        } else if (messages.length > 0) {
+          const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+          const summaryResponse = await analyzeChat(
+            `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,
+            `Meeting: ${meeting.title}`,
+            false
+          );
+          summary = summaryResponse.message;
         }
-      }
-      // Fall back to chat messages if no transcript
-      else if (messages.length > 0) {
-        const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
-        const summaryResponse = await analyzeChat(
-          `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,
-          `Meeting: ${meeting.title}`,
-          false
-        );
-        summary = summaryResponse.message;
       }
 
       // Generate CRO from chat messages if not provided and we have CRO interview data
       let finalCroContent = croContent || null;
       if (!finalCroContent && messages.length >= 5) {
-        // Check if messages look like a CRO interview (contains role/business/task questions)
         const messageText = messages.map(m => m.content.toLowerCase()).join(" ");
         const isCroInterview = messageText.includes("responsibilities") || 
                                messageText.includes("bottleneck") || 
@@ -907,8 +975,6 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      // Create recording - use CRO content as sopContent if no SOP was generated
-      // (both are stored in the same field for now)
       const documentContent = sopContent || finalCroContent || null;
       const recording = await storage.createRecording({
         meetingId,
@@ -918,10 +984,83 @@ export async function registerRoutes(
         sopContent: documentContent,
       });
 
-      res.json({ recording, summary, croGenerated: !!finalCroContent && !croContent });
+      res.json({ 
+        recording, 
+        summary, 
+        croGenerated: !!finalCroContent && !croContent,
+        isScrumMeeting,
+        scrumData: scrumResult?.scrumData || null,
+      });
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
+  // Get scrum summary for a meeting
+  app.get("/api/meetings/:meetingId/scrum-summary", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const summary = await storage.getMeetingSummary(meetingId);
+      
+      if (!summary || summary.summaryType !== "scrum") {
+        res.status(404).json({ error: "No scrum summary found for this meeting" });
+        return;
+      }
+
+      const actionItems = await storage.getScrumActionItemsByMeeting(meetingId);
+      
+      res.json({ summary, actionItems });
+    } catch (error) {
+      console.error("Get scrum summary error:", error);
+      res.status(500).json({ error: "Failed to get scrum summary" });
+    }
+  });
+
+  // Get scrum action items for a meeting
+  app.get("/api/meetings/:meetingId/scrum-action-items", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const actionItems = await storage.getScrumActionItemsByMeeting(meetingId);
+      res.json(actionItems);
+    } catch (error) {
+      console.error("Get scrum action items error:", error);
+      res.status(500).json({ error: "Failed to get action items" });
+    }
+  });
+
+  // Update a scrum action item
+  app.patch("/api/scrum-action-items/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, priority, assignee, notes, title } = req.body;
+      const updated = await storage.updateScrumActionItem(id, { 
+        status, priority, assignee, notes, title 
+      });
+      if (!updated) {
+        res.status(404).json({ error: "Action item not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update scrum action item error:", error);
+      res.status(500).json({ error: "Failed to update action item" });
+    }
+  });
+
+  // Delete a scrum action item
+  app.delete("/api/scrum-action-items/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteScrumActionItem(id);
+      if (!deleted) {
+        res.status(404).json({ error: "Action item not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete scrum action item error:", error);
+      res.status(500).json({ error: "Failed to delete action item" });
     }
   });
 
@@ -1081,6 +1220,7 @@ export async function registerRoutes(
     eventType: z.enum(["event", "task"]).optional().default("event"),
     isAllDay: z.boolean().optional().default(false),
     recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays", "custom"]).optional().default("none"),
+    selectedAgents: z.array(z.string()).optional(),
   });
 
   app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
@@ -1106,6 +1246,7 @@ export async function registerRoutes(
         scheduledDate: startTime,
         endDate: endTime,
         attendeeEmails: validated.attendeeEmails || null,
+        selectedAgents: validated.selectedAgents || null,
         eventType: validated.eventType,
         isAllDay: validated.isAllDay,
         recurrence: validated.recurrence,

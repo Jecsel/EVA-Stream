@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown, Paperclip, FileText, Trash2, List, Upload } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown, Paperclip, FileText, Trash2, List, Upload, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,11 +82,18 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   }>>([]);
   const [attendeeInput, setAttendeeInput] = useState("");
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ connected: false, email: null });
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isLoadingGoogleStatus, setIsLoadingGoogleStatus] = useState(true);
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+    enabled: open,
+  });
 
   useEffect(() => {
     if (open && initialDate) {
@@ -334,6 +342,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
         eventType,
         isAllDay,
         recurrence,
+        selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
       });
 
       toast({
@@ -354,6 +363,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
       setAgenda("");
       setAttachedFiles([]);
       setAttendeeEmails([]);
+      setSelectedAgentIds([]);
       setEventType("event");
       onOpenChange(false);
       onSuccess?.(result.link);
@@ -496,6 +506,60 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
               </SelectContent>
             </Select>
           </div>
+
+          {agents.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-gray-400" />
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Agent (Optional)</Label>
+              </div>
+              <div className="space-y-2">
+                {agents.filter((a: any) => a.status === "active").map((agent: any) => {
+                  const isSelected = selectedAgentIds.includes(agent.id);
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAgentIds(prev =>
+                          isSelected
+                            ? prev.filter(id => id !== agent.id)
+                            : [...prev, agent.id]
+                        );
+                      }}
+                      className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${
+                        isSelected
+                          ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                          : "border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600"
+                      }`}
+                      data-testid={`button-select-agent-${agent.id}`}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isSelected
+                          ? "bg-orange-500 text-white"
+                          : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400"
+                      }`}>
+                        {agent.type === "scrum" ? (
+                          <Users className="w-4 h-4" />
+                        ) : (
+                          <Bot className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{agent.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-orange-500" />}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
+                          {agent.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description (Optional)</Label>

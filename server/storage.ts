@@ -45,6 +45,8 @@ import {
   type InsertEvaSettings,
   type ApiKey,
   type InsertApiKey,
+  type ScrumActionItem,
+  type InsertScrumActionItem,
   users,
   meetings,
   recordings,
@@ -65,7 +67,8 @@ import {
   meetingFiles,
   meetingSummaries,
   evaSettings,
-  apiKeys
+  apiKeys,
+  scrumActionItems
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, ilike, or, and, gte } from "drizzle-orm";
@@ -193,6 +196,12 @@ export interface IStorage {
   getMeetingSummary(meetingId: string): Promise<MeetingSummary | undefined>;
   createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
   updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
+
+  // Scrum Action Items
+  createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem>;
+  getScrumActionItemsByMeeting(meetingId: string): Promise<ScrumActionItem[]>;
+  updateScrumActionItem(id: string, data: Partial<InsertScrumActionItem>): Promise<ScrumActionItem | undefined>;
+  deleteScrumActionItem(id: string): Promise<boolean>;
 
   // EVA - Settings
   getEvaSettings(userId: string): Promise<EvaSettings | undefined>;
@@ -853,6 +862,34 @@ export class DatabaseStorage implements IStorage {
       .where(eq(evaSettings.userId, userId))
       .returning();
     return result;
+  }
+
+  // Scrum Action Items
+  async createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem> {
+    const [result] = await db.insert(scrumActionItems).values(item).returning();
+    return result;
+  }
+
+  async getScrumActionItemsByMeeting(meetingId: string): Promise<ScrumActionItem[]> {
+    return db
+      .select()
+      .from(scrumActionItems)
+      .where(eq(scrumActionItems.meetingId, meetingId))
+      .orderBy(desc(scrumActionItems.createdAt));
+  }
+
+  async updateScrumActionItem(id: string, data: Partial<InsertScrumActionItem>): Promise<ScrumActionItem | undefined> {
+    const [result] = await db
+      .update(scrumActionItems)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumActionItems.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteScrumActionItem(id: string): Promise<boolean> {
+    const result = await db.delete(scrumActionItems).where(eq(scrumActionItems.id, id)).returning();
+    return result.length > 0;
   }
 
   // API Keys
