@@ -46,6 +46,7 @@ export default function MeetingRoom() {
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
+  const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
   const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
   
   // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
@@ -222,6 +223,10 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         if (selectedAgentTypes.some(t => t?.includes("cro"))) {
           setIsCROEnabled(true);
         }
+        // Check for Scrum Master agent
+        if (selectedAgentTypes.some(t => t === "scrum")) {
+          setIsScrumMasterEnabled(true);
+        }
       } else if (savedToggles) {
         // Returning to a meeting - restore from sessionStorage
         const allAgentIds = agents.map(a => a.id);
@@ -233,6 +238,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           }
           if (typeof parsed.cro === 'boolean') {
             setIsCROEnabled(parsed.cro);
+          }
+          if (typeof parsed.scrumMaster === 'boolean') {
+            setIsScrumMasterEnabled(parsed.scrumMaster);
           }
         } catch (e) {
           // ignore parse errors
@@ -329,10 +337,26 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       const key = `agent-toggles-${meeting.id}`;
       sessionStorage.setItem(key, JSON.stringify({
         screenObserver: isScreenObserverEnabled,
-        cro: isCROEnabled
+        cro: isCROEnabled,
+        scrumMaster: isScrumMasterEnabled
       }));
     }
-  }, [meeting?.id, isScreenObserverEnabled, isCROEnabled]);
+  }, [meeting?.id, isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled]);
+
+  const handleScrumMasterToggle = useCallback((enabled: boolean) => {
+    setIsScrumMasterEnabled(enabled);
+    if (!meeting?.id || agents.length === 0) return;
+    const scrumAgent = agents.find((a: any) => a.type === "scrum");
+    if (!scrumAgent) return;
+
+    const updated = enabled
+      ? [...selectedAgents.filter(id => id !== scrumAgent.id), scrumAgent.id]
+      : selectedAgents.filter(id => id !== scrumAgent.id);
+    setSelectedAgents(updated);
+    api.updateMeetingAgents(meeting.id, updated).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["meeting", roomId] });
+    }).catch(() => {});
+  }, [meeting?.id, agents, selectedAgents, queryClient, roomId]);
 
   
   const formatDuration = (seconds: number) => {
@@ -845,6 +869,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  onScreenObserverChange={setIsScreenObserverEnabled}
                  isCROEnabled={isCROEnabled}
                  onCROChange={setIsCROEnabled}
+                 isScrumMasterEnabled={isScrumMasterEnabled}
+                 onScrumMasterChange={handleScrumMasterToggle}
                />
              )}
              {hasJoinedMeeting && evaConnected && isModerator && (
