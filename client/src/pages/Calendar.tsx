@@ -108,12 +108,16 @@ export default function Calendar() {
             expanded.push(meeting);
             addedOriginals.add(meeting.id);
           } else {
+            const virtualDate = new Date(cursor);
+            virtualDate.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
+            const virtualId = `${meeting.id}_${format(cursor, 'yyyy-MM-dd')}`;
             expanded.push({
               ...meeting,
-              scheduledDate: new Date(cursor) as any,
+              id: virtualId,
+              scheduledDate: virtualDate as any,
               endDate: meeting.endDate
                 ? new Date(
-                    new Date(cursor).getTime() +
+                    virtualDate.getTime() +
                     (new Date(meeting.endDate as any).getTime() - originalDate.getTime())
                   ) as any
                 : meeting.endDate,
