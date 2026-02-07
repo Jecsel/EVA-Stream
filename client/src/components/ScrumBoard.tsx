@@ -115,20 +115,12 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
   return (
     <div className={`flex flex-col ${className}`} data-testid="scrum-board">
       <div className="px-4 pt-3 pb-2 border-b border-border/50">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-            <Users className="w-4 h-4 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-xs font-semibold">Scrum Board</h3>
-            {createdAt && (
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                <Calendar className="w-2.5 h-2.5" />
-                Last standup: {createdAt}
-              </p>
-            )}
-          </div>
-        </div>
+        {createdAt && (
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1 mb-2">
+            <Calendar className="w-2.5 h-2.5" />
+            Last standup: {createdAt}
+          </p>
+        )}
 
         <div className="flex gap-1 bg-muted/30 rounded-lg p-0.5">
           <button

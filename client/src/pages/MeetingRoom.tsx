@@ -10,7 +10,7 @@ import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { ScrumBoard } from "@/components/ScrumBoard";
 import { useAuth } from "@/contexts/AuthContext";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -48,6 +48,7 @@ export default function MeetingRoom() {
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
+  const [isScrumPanelMinimized, setIsScrumPanelMinimized] = useState(false);
   const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
   
   // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
@@ -1245,15 +1246,47 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           {isScrumMasterEnabled && meeting?.id && hasJoinedMeeting && (
             <div 
               className={`
-                transition-all duration-500 ease-in-out transform origin-right
-                w-[360px] opacity-100 translate-x-0
+                transition-all duration-300 ease-in-out transform origin-right
+                ${isScrumPanelMinimized ? 'w-[48px]' : 'w-[360px]'}
                 rounded-2xl overflow-hidden shadow-xl border border-indigo-500/20 bg-card
               `}
             >
-              <ScrumBoard
-                meetingId={meeting.id}
-                className="h-full"
-              />
+              {isScrumPanelMinimized ? (
+                <div className="h-full flex flex-col items-center py-3 gap-2">
+                  <button
+                    onClick={() => setIsScrumPanelMinimized(false)}
+                    className="p-2 rounded-lg hover:bg-indigo-500/10 text-indigo-400 transition-colors"
+                    data-testid="button-expand-scrum-panel"
+                    title="Expand Scrum Board"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                  <span className="text-[10px] font-medium text-indigo-400 [writing-mode:vertical-lr] tracking-wider">
+                    SCRUM BOARD
+                  </span>
+                </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-indigo-500/20">
+                    <div className="flex items-center gap-2">
+                      <ScrollText className="w-4 h-4 text-indigo-400" />
+                      <span className="text-sm font-medium text-indigo-400">Scrum Board</span>
+                    </div>
+                    <button
+                      onClick={() => setIsScrumPanelMinimized(true)}
+                      className="p-1.5 rounded-lg hover:bg-indigo-500/10 text-muted-foreground hover:text-indigo-400 transition-colors"
+                      data-testid="button-minimize-scrum-panel"
+                      title="Minimize Scrum Board"
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <ScrumBoard
+                    meetingId={meeting.id}
+                    className="flex-1 overflow-auto"
+                  />
+                </div>
+              )}
             </div>
           )}
 
