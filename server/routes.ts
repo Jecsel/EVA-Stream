@@ -1121,7 +1121,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get previous standup context for the Scrum Board (with history)
+  // Get consolidated scrum board data for the meeting guide
   app.get("/api/meetings/:meetingId/previous-standup", async (req, res) => {
     try {
       const meetingId = req.params.meetingId;
@@ -1132,47 +1132,120 @@ export async function registerRoutes(
       }
 
       if (!meeting.createdBy) {
-        res.json({ hasPreviousStandup: false, history: [] });
+        res.json({ hasPreviousStandup: false });
         return;
       }
 
       const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5);
 
       if (allSummaries.length === 0) {
-        res.json({ hasPreviousStandup: false, history: [] });
+        res.json({ hasPreviousStandup: false });
         return;
       }
 
-      const latestSummary = allSummaries[0];
-      const latestActionItems = latestSummary.meetingId
-        ? await storage.getScrumActionItemsByMeeting(latestSummary.meetingId)
-        : [];
+      const allActionItems: any[] = [];
+      for (const s of allSummaries) {
+        if (s.meetingId) {
+          const items = await storage.getScrumActionItemsByMeeting(s.meetingId);
+          allActionItems.push(...items);
+        }
+      }
 
-      const historyEntries = await Promise.all(
-        allSummaries.map(async (s) => {
-          const actionItems = s.meetingId
-            ? await storage.getScrumActionItemsByMeeting(s.meetingId)
-            : [];
-          const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
-          return {
+      const openActionItems = allActionItems.filter(a => a.status !== "done");
+      const doneActionItems = allActionItems.filter(a => a.status === "done");
+
+      const allBlockers: Array<{
+        description: string;
+        owner: string;
+        severity: string;
+        status: string;
+        firstSeen: string | null;
+        meetingTitle: string;
+      }> = [];
+      const personStatusMap: Record<string, {
+        name: string;
+        lastWorkingOn: string[];
+        lastCompleted: string[];
+        currentBlockers: string[];
+        lastSeen: string | null;
+        meetingTitle: string;
+      }> = {};
+      const discussionHistory: Array<{
+        date: string | null;
+        meetingTitle: string;
+        summary: string;
+        meetingId: string;
+      }> = [];
+
+      for (const s of allSummaries) {
+        const scrumData = s.scrumData as any;
+        const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
+        const meetingTitle = mtg?.title || "Standup";
+        const dateStr = s.createdAt ? new Date(s.createdAt).toISOString() : null;
+
+        if (s.fullSummary) {
+          discussionHistory.push({
+            date: dateStr,
+            meetingTitle,
             summary: s.fullSummary,
-            scrumData: s.scrumData,
-            actionItems,
-            meetingId: s.meetingId,
-            meetingTitle: mtg?.title || "Standup",
-            createdAt: s.createdAt,
-          };
-        })
-      );
+            meetingId: s.meetingId || "",
+          });
+        }
+
+        if (scrumData?.blockers?.length > 0) {
+          for (const b of scrumData.blockers) {
+            if (b.status === "active") {
+              const existing = allBlockers.find(
+                eb => eb.description.toLowerCase() === b.description.toLowerCase() && eb.owner === b.owner
+              );
+              if (existing) {
+                if (dateStr && (!existing.firstSeen || new Date(dateStr) < new Date(existing.firstSeen))) {
+                  existing.firstSeen = dateStr;
+                }
+              } else {
+                allBlockers.push({
+                  description: b.description,
+                  owner: b.owner,
+                  severity: b.severity || "medium",
+                  status: b.status,
+                  firstSeen: dateStr,
+                  meetingTitle,
+                });
+              }
+            }
+          }
+        }
+
+        if (scrumData?.participants?.length > 0) {
+          for (const p of scrumData.participants) {
+            if (!personStatusMap[p.name]) {
+              personStatusMap[p.name] = {
+                name: p.name,
+                lastWorkingOn: p.today || [],
+                lastCompleted: p.yesterday || [],
+                currentBlockers: p.blockers || [],
+                lastSeen: dateStr,
+                meetingTitle,
+              };
+            }
+          }
+        }
+      }
+
+      const totalStandups = allSummaries.length;
+      const lastStandupDate = allSummaries[0]?.createdAt
+        ? new Date(allSummaries[0].createdAt).toISOString()
+        : null;
 
       res.json({
         hasPreviousStandup: true,
-        summary: latestSummary.fullSummary,
-        scrumData: latestSummary.scrumData,
-        actionItems: latestActionItems,
-        meetingId: latestSummary.meetingId,
-        createdAt: latestSummary.createdAt,
-        history: historyEntries,
+        totalStandups,
+        lastStandupDate,
+        carryOverBlockers: allBlockers,
+        openActionItems,
+        completedActionItems: doneActionItems,
+        teamStatus: Object.values(personStatusMap),
+        discussionHistory,
       });
     } catch (error) {
       console.error("Get previous standup error:", error);
