@@ -3,7 +3,8 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText } from "lucide-react";
+import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -87,6 +88,7 @@ export default function RecordingDetail() {
   const [duration, setDuration] = useState(0);
   const [flowchartProgress, setFlowchartProgress] = useState<FlowchartProgressStep>('idle');
   const [shareLinkCopied, setShareLinkCopied] = useState(false);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -112,6 +114,17 @@ export default function RecordingDetail() {
     queryKey: ["localTranscripts", meetingId],
     queryFn: () => api.getTranscripts(meetingId!),
     enabled: !!meetingId,
+  });
+
+  const { data: meeting } = useQuery({
+    queryKey: ["meeting", meetingId],
+    queryFn: () => api.getMeeting(meetingId!),
+    enabled: !!meetingId,
+  });
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
   });
 
   // Fetch decision-based SOPs linked to this meeting
@@ -407,11 +420,48 @@ export default function RecordingDetail() {
                   <Clock className="w-3 h-3" />
                   {recording.duration}
                 </span>
+                {meeting?.selectedAgents && meeting.selectedAgents.length > 0 && (
+                  <div className="flex items-center gap-1.5 ml-1">
+                    {meeting.selectedAgents.map((agentId: string) => {
+                      const agent = agents.find((a: any) => a.id?.toString() === agentId);
+                      const agentType = agent?.type || "";
+                      const label = agent?.name || agentId;
+                      const config: Record<string, { icon: React.ReactNode; color: string }> = {
+                        eva: { icon: <Bot className="w-2.5 h-2.5" />, color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+                        sop: { icon: <FileText className="w-2.5 h-2.5" />, color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                        flowchart: { icon: <GitBranch className="w-2.5 h-2.5" />, color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                        cro: { icon: <Target className="w-2.5 h-2.5" />, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+                        scrum: { icon: <ScrollText className="w-2.5 h-2.5" />, color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" },
+                        screen_observer: { icon: <Eye className="w-2.5 h-2.5" />, color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
+                      };
+                      const c = config[agentType] || { icon: <Bot className="w-2.5 h-2.5" />, color: "bg-gray-500/20 text-gray-400 border-gray-500/30" };
+                      return (
+                        <span
+                          key={agentId}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${c.color}`}
+                          data-testid={`badge-agent-${agentId}`}
+                        >
+                          {c.icon}
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowScheduleDialog(true)}
+            data-testid="button-schedule-followup"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            New Meeting
+          </Button>
           <Button 
             variant="outline" 
             size="sm" 
@@ -1139,6 +1189,15 @@ export default function RecordingDetail() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <ScheduleMeetingDialog
+        open={showScheduleDialog}
+        onOpenChange={setShowScheduleDialog}
+        onSuccess={(meetingLink) => {
+          setShowScheduleDialog(false);
+          setLocation(meetingLink);
+        }}
+      />
     </div>
   );
 }
