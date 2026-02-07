@@ -1197,6 +1197,7 @@ export default function RecordingDetail() {
           setShowScheduleDialog(false);
           setLocation(meetingLink);
         }}
+        initialSelectedAgents={meeting?.selectedAgents || undefined}
       />
     </div>
   );

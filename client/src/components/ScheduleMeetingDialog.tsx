@@ -51,6 +51,7 @@ interface ScheduleMeetingDialogProps {
   onSuccess?: (meetingLink: string) => void;
   initialDate?: Date;
   editMeeting?: EditMeetingData | null;
+  initialSelectedAgents?: string[];
 }
 
 type EventType = "event" | "task";
@@ -74,7 +75,7 @@ function getWeekOrdinal(week: number): string {
   return ordinals[week - 1] || `${week}${getOrdinalSuffix(week)}`;
 }
 
-export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate, editMeeting }: ScheduleMeetingDialogProps) {
+export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate, editMeeting, initialSelectedAgents }: ScheduleMeetingDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const isEditMode = !!editMeeting;
@@ -135,10 +136,15 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           setEndTime(format(ed, "HH:mm"));
         }
       }
-    } else if (open && initialDate) {
-      setDate(format(initialDate, "yyyy-MM-dd"));
+    } else if (open) {
+      if (initialDate) {
+        setDate(format(initialDate, "yyyy-MM-dd"));
+      }
+      if (initialSelectedAgents && initialSelectedAgents.length > 0) {
+        setSelectedAgentIds(initialSelectedAgents);
+      }
     }
-  }, [initialDate, open, editMeeting]);
+  }, [initialDate, open, editMeeting, initialSelectedAgents]);
 
   const recurrenceOptions = useMemo(() => {
     if (!date) {
