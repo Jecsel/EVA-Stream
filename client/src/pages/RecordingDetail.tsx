@@ -502,7 +502,7 @@ export default function RecordingDetail() {
             disabled={!recording?.sopContent}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export SOP
+            Export
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
