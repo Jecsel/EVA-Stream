@@ -71,7 +71,7 @@ import {
   scrumActionItems
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, ne, desc, ilike, or, and, gte } from "drizzle-orm";
+import { eq, ne, not, desc, ilike, or, and, gte } from "drizzle-orm";
 
 export type AgentWithPrompt = Agent & { prompt?: Prompt | null };
 
@@ -853,21 +853,51 @@ export class DatabaseStorage implements IStorage {
       );
 
     const meetingIds = matchingMeetings.map(m => m.id).filter(id => id !== currentMeetingId);
-    if (meetingIds.length === 0) return undefined;
 
-    const results = await db
+    if (meetingIds.length > 0) {
+      const results = await db
+        .select()
+        .from(meetingSummaries)
+        .where(
+          and(
+            eq(meetingSummaries.summaryType, "scrum"),
+            or(...meetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+          )
+        )
+        .orderBy(desc(meetingSummaries.createdAt))
+        .limit(1);
+
+      if (results[0]) return results[0];
+    }
+
+    if (!createdBy) return undefined;
+
+    const userMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.createdBy, createdBy),
+          not(eq(meetings.id, currentMeetingId))
+        )
+      );
+
+    const userMeetingIds = userMeetings.map(m => m.id);
+    if (userMeetingIds.length === 0) return undefined;
+
+    const fallbackResults = await db
       .select()
       .from(meetingSummaries)
       .where(
         and(
           eq(meetingSummaries.summaryType, "scrum"),
-          or(...meetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+          or(...userMeetingIds.map(id => eq(meetingSummaries.meetingId, id)))
         )
       )
       .orderBy(desc(meetingSummaries.createdAt))
       .limit(1);
 
-    return results[0];
+    return fallbackResults[0];
   }
 
   // EVA - Settings
