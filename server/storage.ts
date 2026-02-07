@@ -197,6 +197,7 @@ export interface IStorage {
   createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
   updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
   getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined>;
+  getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit?: number): Promise<MeetingSummary[]>;
 
   // Scrum Action Items
   createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem>;
@@ -898,6 +899,35 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
 
     return fallbackResults[0];
+  }
+
+  async getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit: number = 5): Promise<MeetingSummary[]> {
+    const userMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.createdBy, createdBy),
+          not(eq(meetings.id, currentMeetingId))
+        )
+      );
+
+    const userMeetingIds = userMeetings.map(m => m.id);
+    if (userMeetingIds.length === 0) return [];
+
+    const results = await db
+      .select()
+      .from(meetingSummaries)
+      .where(
+        and(
+          eq(meetingSummaries.summaryType, "scrum"),
+          or(...userMeetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+        )
+      )
+      .orderBy(desc(meetingSummaries.createdAt))
+      .limit(limit);
+
+    return results;
   }
 
   // EVA - Settings

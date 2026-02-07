@@ -892,42 +892,54 @@ export async function registerRoutes(
       }
 
       if (isScrumMeeting) {
-        // Fetch previous standup context for continuity
+        // Fetch previous standup history for continuity (up to 5 past standups)
         let previousStandupContext: string | undefined;
         try {
-          const prevSummary = await storage.getPreviousScrumSummary(
-            meeting.title,
-            meetingId,
-            meeting.createdBy
-          );
-          if (prevSummary?.scrumData) {
-            const prevData = prevSummary.scrumData as any;
-            const parts: string[] = [];
-            if (prevSummary.fullSummary) {
-              parts.push(`Overview: ${prevSummary.fullSummary}`);
-            }
-            if (prevData.participants?.length > 0) {
-              parts.push("Per-person updates:");
-              for (const p of prevData.participants) {
-                parts.push(`  ${p.name}:`);
-                if (p.today?.length > 0) parts.push(`    Working on: ${p.today.join(", ")}`);
-                if (p.blockers?.length > 0) parts.push(`    Blockers: ${p.blockers.join(", ")}`);
+          const prevSummaries = meeting.createdBy
+            ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5)
+            : [];
+
+          if (prevSummaries.length > 0) {
+            const allParts: string[] = [];
+
+            for (let idx = 0; idx < prevSummaries.length; idx++) {
+              const prevSummary = prevSummaries[idx];
+              const prevData = prevSummary.scrumData as any;
+              const dateStr = prevSummary.createdAt
+                ? new Date(prevSummary.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : `Standup ${idx + 1}`;
+
+              const parts: string[] = [];
+              parts.push(`--- Standup ${idx === 0 ? "(Most Recent)" : `#${idx + 1}`}: ${dateStr} ---`);
+
+              if (prevSummary.fullSummary) {
+                parts.push(`Overview: ${prevSummary.fullSummary}`);
               }
-            }
-            if (prevData.blockers?.length > 0) {
-              parts.push("Active blockers:");
-              for (const b of prevData.blockers) {
-                parts.push(`  - ${b.description} (Owner: ${b.owner}, Severity: ${b.severity}, Status: ${b.status})`);
+              if (prevData?.participants?.length > 0) {
+                parts.push("Per-person updates:");
+                for (const p of prevData.participants) {
+                  parts.push(`  ${p.name}:`);
+                  if (p.today?.length > 0) parts.push(`    Working on: ${p.today.join(", ")}`);
+                  if (p.blockers?.length > 0) parts.push(`    Blockers: ${p.blockers.join(", ")}`);
+                }
               }
-            }
-            if (prevData.actionItems?.length > 0) {
-              parts.push("Action items:");
-              for (const a of prevData.actionItems) {
-                parts.push(`  - ${a.title} (Assigned to: ${a.assignee}, Priority: ${a.priority})`);
+              if (prevData?.blockers?.length > 0) {
+                parts.push("Active blockers:");
+                for (const b of prevData.blockers) {
+                  parts.push(`  - ${b.description} (Owner: ${b.owner}, Severity: ${b.severity}, Status: ${b.status})`);
+                }
               }
+              if (prevData?.actionItems?.length > 0) {
+                parts.push("Action items:");
+                for (const a of prevData.actionItems) {
+                  parts.push(`  - ${a.title} (Assigned to: ${a.assignee}, Priority: ${a.priority})`);
+                }
+              }
+              allParts.push(parts.join("\n"));
             }
-            previousStandupContext = parts.join("\n");
-            console.log(`[Meeting End] Found previous standup context (${previousStandupContext.length} chars)`);
+
+            previousStandupContext = allParts.join("\n\n");
+            console.log(`[Meeting End] Found ${prevSummaries.length} previous standup(s) for context (${previousStandupContext.length} chars)`);
           }
         } catch (err) {
           console.error("[Meeting End] Failed to fetch previous standup:", err);
@@ -1109,7 +1121,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get previous standup context for the Scrum Board
+  // Get previous standup context for the Scrum Board (with history)
   app.get("/api/meetings/:meetingId/previous-standup", async (req, res) => {
     try {
       const meetingId = req.params.meetingId;
@@ -1119,28 +1131,48 @@ export async function registerRoutes(
         return;
       }
 
-      const prevSummary = await storage.getPreviousScrumSummary(
-        meeting.title,
-        meetingId,
-        meeting.createdBy
-      );
-
-      if (!prevSummary?.scrumData) {
-        res.json({ hasPreviousStandup: false });
+      if (!meeting.createdBy) {
+        res.json({ hasPreviousStandup: false, history: [] });
         return;
       }
 
-      const prevActionItems = prevSummary.meetingId
-        ? await storage.getScrumActionItemsByMeeting(prevSummary.meetingId)
+      const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5);
+
+      if (allSummaries.length === 0) {
+        res.json({ hasPreviousStandup: false, history: [] });
+        return;
+      }
+
+      const latestSummary = allSummaries[0];
+      const latestActionItems = latestSummary.meetingId
+        ? await storage.getScrumActionItemsByMeeting(latestSummary.meetingId)
         : [];
+
+      const historyEntries = await Promise.all(
+        allSummaries.map(async (s) => {
+          const actionItems = s.meetingId
+            ? await storage.getScrumActionItemsByMeeting(s.meetingId)
+            : [];
+          const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
+          return {
+            summary: s.fullSummary,
+            scrumData: s.scrumData,
+            actionItems,
+            meetingId: s.meetingId,
+            meetingTitle: mtg?.title || "Standup",
+            createdAt: s.createdAt,
+          };
+        })
+      );
 
       res.json({
         hasPreviousStandup: true,
-        summary: prevSummary.fullSummary,
-        scrumData: prevSummary.scrumData,
-        actionItems: prevActionItems,
-        meetingId: prevSummary.meetingId,
-        createdAt: prevSummary.createdAt,
+        summary: latestSummary.fullSummary,
+        scrumData: latestSummary.scrumData,
+        actionItems: latestActionItems,
+        meetingId: latestSummary.meetingId,
+        createdAt: latestSummary.createdAt,
+        history: historyEntries,
       });
     } catch (error) {
       console.error("Get previous standup error:", error);
