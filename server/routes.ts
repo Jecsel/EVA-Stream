@@ -3299,6 +3299,119 @@ Format the response as JSON with these fields:
     }
   });
 
+  // ============================================================
+  // Scrum Master API Routes
+  // ============================================================
+
+  app.get("/api/scrum-master/sessions/:meetingId", async (req: Request, res: Response) => {
+    try {
+      const session = await storage.getScrumMasterSessionByMeeting(req.params.meetingId);
+      if (!session) {
+        return res.status(404).json({ error: "No active scrum master session" });
+      }
+      res.json(session);
+    } catch (error) {
+      console.error("Get scrum master session error:", error);
+      res.status(500).json({ error: "Failed to get session" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/interventions", async (req: Request, res: Response) => {
+    try {
+      const session = await storage.getScrumMasterSessionByMeeting(req.params.meetingId);
+      if (!session) {
+        return res.json([]);
+      }
+      const interventions = await storage.getScrumMasterInterventionsBySession(session.id);
+      res.json(interventions);
+    } catch (error) {
+      console.error("Get interventions error:", error);
+      res.status(500).json({ error: "Failed to get interventions" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/blockers", async (req: Request, res: Response) => {
+    try {
+      const blockers = await storage.getScrumMasterBlockersByMeeting(req.params.meetingId);
+      res.json(blockers);
+    } catch (error) {
+      console.error("Get blockers error:", error);
+      res.status(500).json({ error: "Failed to get blockers" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/actions", async (req: Request, res: Response) => {
+    try {
+      const actions = await storage.getScrumMasterActionsByMeeting(req.params.meetingId);
+      res.json(actions);
+    } catch (error) {
+      console.error("Get actions error:", error);
+      res.status(500).json({ error: "Failed to get actions" });
+    }
+  });
+
+  const updateBlockerSchema = z.object({
+    status: z.enum(["open", "resolved", "escalated", "wont_fix"]).optional(),
+    severity: z.enum(["critical", "high", "medium", "noise"]).optional(),
+    owner: z.string().min(1).optional(),
+    resolution: z.string().optional(),
+  });
+
+  app.patch("/api/scrum-master/blockers/:id", async (req: Request, res: Response) => {
+    try {
+      const parsed = updateBlockerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).message });
+      }
+      const updated = await storage.updateScrumMasterBlocker(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Blocker not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update blocker error:", error);
+      res.status(500).json({ error: "Failed to update blocker" });
+    }
+  });
+
+  const updateActionSchema = z.object({
+    status: z.enum(["open", "done", "overdue", "cancelled"]).optional(),
+    owner: z.string().min(1).optional(),
+    deadline: z.string().optional(),
+    description: z.string().min(1).optional(),
+  });
+
+  app.patch("/api/scrum-master/actions/:id", async (req: Request, res: Response) => {
+    try {
+      const parsed = updateActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).message });
+      }
+      const updated = await storage.updateScrumMasterAction(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Action not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update action error:", error);
+      res.status(500).json({ error: "Failed to update action" });
+    }
+  });
+
+  app.get("/api/scrum-master/history", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+      const sessions = await storage.getScrumMasterSessionsByCreator(userId, 20);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Get session history error:", error);
+      res.status(500).json({ error: "Failed to get history" });
+    }
+  });
+
   return httpServer;
 }
 

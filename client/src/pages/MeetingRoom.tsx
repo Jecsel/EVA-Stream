@@ -9,6 +9,7 @@ import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { ScrumBoard } from "@/components/ScrumBoard";
+import { ScrumMasterPanel, type TranscriptEvent } from "@/components/ScrumMasterPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -49,6 +50,8 @@ export default function MeetingRoom() {
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
   const [isScrumPanelMinimized, setIsScrumPanelMinimized] = useState(false);
+  const [scrumPanelView, setScrumPanelView] = useState<"live" | "board">("live");
+  const [latestScrumTranscript, setLatestScrumTranscript] = useState<TranscriptEvent | null>(null);
   const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
   
   // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
@@ -692,7 +695,15 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       return [...prev.filter(t => t.isFinal || t.speaker !== participant), transcriptEntry];
     });
     
-    // Save final transcripts to database and send to EVA for SOP/CRO generation
+    if (isScrumMasterEnabled) {
+      setLatestScrumTranscript({
+        text: text.trim(),
+        speaker: participant || "Unknown",
+        timestamp: Date.now(),
+        isFinal,
+      });
+    }
+
     if (isFinal && text.trim().length > 2) {
       try {
         await api.createTranscriptSegment(meeting.id, {
@@ -1268,23 +1279,51 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
               ) : (
                 <div className="h-full flex flex-col">
                   <div className="flex items-center justify-between px-3 py-2 border-b border-indigo-500/20">
-                    <div className="flex items-center gap-2">
-                      <ScrollText className="w-4 h-4 text-indigo-400" />
-                      <span className="text-sm font-medium text-indigo-400">Scrum Board</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setScrumPanelView("live")}
+                        className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                          scrumPanelView === "live"
+                            ? "bg-indigo-500/20 text-indigo-400"
+                            : "text-muted-foreground hover:text-indigo-400"
+                        }`}
+                        data-testid="btn-scrum-view-live"
+                      >
+                        Live Agent
+                      </button>
+                      <button
+                        onClick={() => setScrumPanelView("board")}
+                        className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                          scrumPanelView === "board"
+                            ? "bg-indigo-500/20 text-indigo-400"
+                            : "text-muted-foreground hover:text-indigo-400"
+                        }`}
+                        data-testid="btn-scrum-view-board"
+                      >
+                        Board
+                      </button>
                     </div>
                     <button
                       onClick={() => setIsScrumPanelMinimized(true)}
                       className="p-1.5 rounded-lg hover:bg-indigo-500/10 text-muted-foreground hover:text-indigo-400 transition-colors"
                       data-testid="button-minimize-scrum-panel"
-                      title="Minimize Scrum Board"
+                      title="Minimize Scrum Panel"
                     >
                       <Minimize2 className="w-4 h-4" />
                     </button>
                   </div>
-                  <ScrumBoard
-                    meetingId={meeting.id}
-                    className="flex-1 overflow-auto"
-                  />
+                  {scrumPanelView === "live" ? (
+                    <ScrumMasterPanel
+                      meetingId={meeting.id}
+                      className="flex-1 overflow-auto border-0 rounded-none shadow-none"
+                      latestTranscript={latestScrumTranscript}
+                    />
+                  ) : (
+                    <ScrumBoard
+                      meetingId={meeting.id}
+                      className="flex-1 overflow-auto"
+                    />
+                  )}
                 </div>
               )}
             </div>

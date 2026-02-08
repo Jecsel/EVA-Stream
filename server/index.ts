@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { processLiveInput, type GeminiLiveMessage, type GeminiLiveResponse } from "./gemini-live";
+import { startScrumMasterSession, stopScrumMasterSession, processTranscriptChunk, runPeriodicAnalysis, updateScrumMasterConfig, setSprintGoal, getSessionState, generatePostMeetingSummary } from "./scrum-master";
 import { seedAgents } from "./seed";
 import * as Sentry from "@sentry/node";
 
@@ -38,8 +39,14 @@ const httpServer = createServer(app);
 // WebSocket server for Gemini Live API
 const wss = new WebSocketServer({ server: httpServer, path: "/ws/eva" });
 
+// WebSocket server for Scrum Master real-time interventions
+const scrumWss = new WebSocketServer({ server: httpServer, path: "/ws/scrum-master" });
+
 // Track all WebSocket connections by meetingId for broadcasting SOP updates
 const meetingConnections = new Map<string, Set<WebSocket>>();
+
+// Track scrum master connections by meetingId
+const scrumMasterConnections = new Map<string, Set<WebSocket>>();
 
 // Broadcast message to all clients in a meeting
 function broadcastToMeeting(meetingId: string, message: object) {
@@ -122,6 +129,112 @@ wss.on("connection", (ws: WebSocket, req) => {
 
   // Send initial connection status
   ws.send(JSON.stringify({ type: "status", content: "EVA connected and ready" }));
+});
+
+// Scrum Master WebSocket handler
+function broadcastToScrumMaster(meetingId: string, message: object) {
+  const connections = scrumMasterConnections.get(meetingId);
+  if (connections) {
+    const data = JSON.stringify(message);
+    connections.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+}
+
+scrumWss.on("connection", (ws: WebSocket, req) => {
+  const url = new URL(req.url || "", `http://${req.headers.host}`);
+  const meetingId = url.searchParams.get("meetingId") || "unknown";
+
+  console.log(`Scrum Master WebSocket connected for meeting: ${meetingId}`);
+
+  if (!scrumMasterConnections.has(meetingId)) {
+    scrumMasterConnections.set(meetingId, new Set());
+  }
+  scrumMasterConnections.get(meetingId)!.add(ws);
+
+  ws.on("message", async (data: Buffer) => {
+    try {
+      const message = JSON.parse(data.toString());
+
+      switch (message.type) {
+        case "start_session": {
+          const sessionId = await startScrumMasterSession(meetingId, message.config);
+          broadcastToScrumMaster(meetingId, { type: "session_started", sessionId });
+          break;
+        }
+
+        case "stop_session": {
+          const summary = await generatePostMeetingSummary(meetingId);
+          stopScrumMasterSession(meetingId);
+          broadcastToScrumMaster(meetingId, { type: "session_ended", summary });
+          break;
+        }
+
+        case "update_config": {
+          const config = await updateScrumMasterConfig(meetingId, message.config);
+          broadcastToScrumMaster(meetingId, { type: "config_updated", config });
+          break;
+        }
+
+        case "set_sprint_goal": {
+          await setSprintGoal(meetingId, message.goal);
+          broadcastToScrumMaster(meetingId, { type: "sprint_goal_set", goal: message.goal });
+          break;
+        }
+
+        case "transcript": {
+          const interventions = processTranscriptChunk(meetingId, {
+            text: message.text,
+            speaker: message.speaker,
+            timestamp: message.timestamp || Date.now(),
+            isFinal: message.isFinal ?? true,
+          });
+
+          for (const intervention of interventions) {
+            broadcastToScrumMaster(meetingId, { ...intervention, msgType: "intervention" });
+          }
+
+          const aiInterventions = await runPeriodicAnalysis(meetingId);
+          for (const intervention of aiInterventions) {
+            broadcastToScrumMaster(meetingId, { ...intervention, msgType: "intervention" });
+          }
+          break;
+        }
+
+        case "get_state": {
+          const state = getSessionState(meetingId);
+          ws.send(JSON.stringify({ type: "state", ...state }));
+          break;
+        }
+
+        default:
+          ws.send(JSON.stringify({ type: "error", content: `Unknown message type: ${message.type}` }));
+      }
+    } catch (error) {
+      console.error("Scrum Master WebSocket error:", error);
+      ws.send(JSON.stringify({ type: "error", content: "Failed to process message" }));
+    }
+  });
+
+  ws.on("close", () => {
+    console.log(`Scrum Master WebSocket disconnected for meeting: ${meetingId}`);
+    const connections = scrumMasterConnections.get(meetingId);
+    if (connections) {
+      connections.delete(ws);
+      if (connections.size === 0) {
+        scrumMasterConnections.delete(meetingId);
+      }
+    }
+  });
+
+  ws.on("error", (error) => {
+    console.error(`Scrum Master WebSocket error for meeting ${meetingId}:`, error);
+  });
+
+  ws.send(JSON.stringify({ type: "status", content: "Scrum Master connected" }));
 });
 
 declare module "http" {

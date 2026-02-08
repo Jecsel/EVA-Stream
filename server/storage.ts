@@ -47,6 +47,14 @@ import {
   type InsertApiKey,
   type ScrumActionItem,
   type InsertScrumActionItem,
+  type ScrumMasterSession,
+  type InsertScrumMasterSession,
+  type ScrumMasterIntervention,
+  type InsertScrumMasterIntervention,
+  type ScrumMasterBlocker,
+  type InsertScrumMasterBlocker,
+  type ScrumMasterAction,
+  type InsertScrumMasterAction,
   users,
   meetings,
   recordings,
@@ -68,7 +76,11 @@ import {
   meetingSummaries,
   evaSettings,
   apiKeys,
-  scrumActionItems
+  scrumActionItems,
+  scrumMasterSessions,
+  scrumMasterInterventions,
+  scrumMasterBlockers,
+  scrumMasterActions,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, not, desc, ilike, or, and, gte } from "drizzle-orm";
@@ -216,6 +228,29 @@ export interface IStorage {
   listApiKeys(): Promise<ApiKey[]>;
   revokeApiKey(id: string): Promise<boolean>;
   updateApiKeyLastUsed(id: string): Promise<void>;
+
+  // Scrum Master Sessions
+  createScrumMasterSession(session: InsertScrumMasterSession): Promise<ScrumMasterSession>;
+  getScrumMasterSession(id: string): Promise<ScrumMasterSession | undefined>;
+  getScrumMasterSessionByMeeting(meetingId: string): Promise<ScrumMasterSession | undefined>;
+  updateScrumMasterSession(id: string, data: Partial<InsertScrumMasterSession>): Promise<ScrumMasterSession | undefined>;
+  getScrumMasterSessionsByCreator(createdBy: string, limit?: number): Promise<ScrumMasterSession[]>;
+
+  // Scrum Master Interventions
+  createScrumMasterIntervention(intervention: InsertScrumMasterIntervention): Promise<ScrumMasterIntervention>;
+  getScrumMasterInterventionsBySession(sessionId: string): Promise<ScrumMasterIntervention[]>;
+
+  // Scrum Master Blockers
+  createScrumMasterBlocker(blocker: InsertScrumMasterBlocker): Promise<ScrumMasterBlocker>;
+  getScrumMasterBlockersBySession(sessionId: string): Promise<ScrumMasterBlocker[]>;
+  getScrumMasterBlockersByMeeting(meetingId: string): Promise<ScrumMasterBlocker[]>;
+  updateScrumMasterBlocker(id: string, data: Partial<InsertScrumMasterBlocker>): Promise<ScrumMasterBlocker | undefined>;
+
+  // Scrum Master Actions
+  createScrumMasterAction(action: InsertScrumMasterAction): Promise<ScrumMasterAction>;
+  getScrumMasterActionsBySession(sessionId: string): Promise<ScrumMasterAction[]>;
+  getScrumMasterActionsByMeeting(meetingId: string): Promise<ScrumMasterAction[]>;
+  updateScrumMasterAction(id: string, data: Partial<InsertScrumMasterAction>): Promise<ScrumMasterAction | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1013,6 +1048,123 @@ export class DatabaseStorage implements IStorage {
       .update(apiKeys)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiKeys.id, id));
+  }
+
+  // Scrum Master Sessions
+  async createScrumMasterSession(session: InsertScrumMasterSession): Promise<ScrumMasterSession> {
+    const [result] = await db.insert(scrumMasterSessions).values(session).returning();
+    return result;
+  }
+
+  async getScrumMasterSession(id: string): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db.select().from(scrumMasterSessions).where(eq(scrumMasterSessions.id, id));
+    return result;
+  }
+
+  async getScrumMasterSessionByMeeting(meetingId: string): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db
+      .select()
+      .from(scrumMasterSessions)
+      .where(and(eq(scrumMasterSessions.meetingId, meetingId), eq(scrumMasterSessions.status, "active")))
+      .orderBy(desc(scrumMasterSessions.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async updateScrumMasterSession(id: string, data: Partial<InsertScrumMasterSession>): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db
+      .update(scrumMasterSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterSessions.id, id))
+      .returning();
+    return result;
+  }
+
+  async getScrumMasterSessionsByCreator(createdBy: string, limit = 10): Promise<ScrumMasterSession[]> {
+    return db
+      .select({ session: scrumMasterSessions })
+      .from(scrumMasterSessions)
+      .innerJoin(meetings, eq(scrumMasterSessions.meetingId, meetings.id))
+      .where(eq(meetings.createdBy, createdBy))
+      .orderBy(desc(scrumMasterSessions.createdAt))
+      .limit(limit)
+      .then(rows => rows.map(r => r.session));
+  }
+
+  // Scrum Master Interventions
+  async createScrumMasterIntervention(intervention: InsertScrumMasterIntervention): Promise<ScrumMasterIntervention> {
+    const [result] = await db.insert(scrumMasterInterventions).values(intervention).returning();
+    return result;
+  }
+
+  async getScrumMasterInterventionsBySession(sessionId: string): Promise<ScrumMasterIntervention[]> {
+    return db
+      .select()
+      .from(scrumMasterInterventions)
+      .where(eq(scrumMasterInterventions.sessionId, sessionId))
+      .orderBy(desc(scrumMasterInterventions.createdAt));
+  }
+
+  // Scrum Master Blockers
+  async createScrumMasterBlocker(blocker: InsertScrumMasterBlocker): Promise<ScrumMasterBlocker> {
+    const [result] = await db.insert(scrumMasterBlockers).values(blocker).returning();
+    return result;
+  }
+
+  async getScrumMasterBlockersBySession(sessionId: string): Promise<ScrumMasterBlocker[]> {
+    return db
+      .select()
+      .from(scrumMasterBlockers)
+      .where(eq(scrumMasterBlockers.sessionId, sessionId))
+      .orderBy(desc(scrumMasterBlockers.createdAt));
+  }
+
+  async getScrumMasterBlockersByMeeting(meetingId: string): Promise<ScrumMasterBlocker[]> {
+    return db
+      .select()
+      .from(scrumMasterBlockers)
+      .where(eq(scrumMasterBlockers.meetingId, meetingId))
+      .orderBy(desc(scrumMasterBlockers.createdAt));
+  }
+
+  async updateScrumMasterBlocker(id: string, data: Partial<InsertScrumMasterBlocker>): Promise<ScrumMasterBlocker | undefined> {
+    const [result] = await db
+      .update(scrumMasterBlockers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterBlockers.id, id))
+      .returning();
+    return result;
+  }
+
+  // Scrum Master Actions
+  async createScrumMasterAction(action: InsertScrumMasterAction): Promise<ScrumMasterAction> {
+    const [result] = await db.insert(scrumMasterActions).values(action).returning();
+    return result;
+  }
+
+  async getScrumMasterActionsBySession(sessionId: string): Promise<ScrumMasterAction[]> {
+    return db
+      .select()
+      .from(scrumMasterActions)
+      .where(eq(scrumMasterActions.sessionId, sessionId))
+      .orderBy(desc(scrumMasterActions.createdAt));
+  }
+
+  async getScrumMasterActionsByMeeting(meetingId: string): Promise<ScrumMasterAction[]> {
+    return db
+      .select()
+      .from(scrumMasterActions)
+      .where(eq(scrumMasterActions.meetingId, meetingId))
+      .orderBy(desc(scrumMasterActions.createdAt));
+  }
+
+  async updateScrumMasterAction(id: string, data: Partial<InsertScrumMasterAction>): Promise<ScrumMasterAction | undefined> {
+    const [result] = await db
+      .update(scrumMasterActions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterActions.id, id))
+      .returning();
+    return result;
   }
 }
 

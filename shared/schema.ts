@@ -522,3 +522,124 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
 
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type ApiKey = typeof apiKeys.$inferSelect;
+
+// Scrum Master Sessions - tracks an active scrum master session per meeting
+export const scrumMasterSessions = pgTable("scrum_master_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  meetingType: text("meeting_type").notNull().default("standup"), // standup, planning, retro, ad-hoc
+  mode: text("mode").notNull().default("enforcer"), // observer, enforcer, hardcore
+  sprintGoal: text("sprint_goal"),
+  timeboxPerSpeaker: text("timebox_per_speaker").notNull().default("90"), // seconds
+  status: text("status").notNull().default("active"), // active, completed
+  postMeetingSummary: jsonb("post_meeting_summary"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScrumMasterSessionSchema = createInsertSchema(scrumMasterSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScrumMasterSession = z.infer<typeof insertScrumMasterSessionSchema>;
+export type ScrumMasterSession = typeof scrumMasterSessions.$inferSelect;
+
+// Scrum Master Interventions - real-time interventions during meeting
+export const scrumMasterInterventions = pgTable("scrum_master_interventions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => scrumMasterSessions.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // time_warning, interrupt, blocker_detected, structure_enforce, rambling, scope_creep, action_needed, pattern_alert, escalation
+  severity: text("severity").notNull().default("info"), // info, warning, critical
+  message: text("message").notNull(),
+  speaker: text("speaker"),
+  context: text("context"), // what triggered it
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScrumMasterInterventionSchema = createInsertSchema(scrumMasterInterventions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertScrumMasterIntervention = z.infer<typeof insertScrumMasterInterventionSchema>;
+export type ScrumMasterIntervention = typeof scrumMasterInterventions.$inferSelect;
+
+// Scrum Master Blockers - detected and classified blockers
+export const scrumMasterBlockers = pgTable("scrum_master_blockers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => scrumMasterSessions.id, { onDelete: 'cascade' }),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  description: text("description").notNull(),
+  severity: text("severity").notNull().default("medium"), // critical, medium, noise
+  owner: text("owner"),
+  status: text("status").notNull().default("active"), // active, resolved, escalated
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  occurrenceCount: text("occurrence_count").notNull().default("1"),
+  threatensSprint: boolean("threatens_sprint").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScrumMasterBlockerSchema = createInsertSchema(scrumMasterBlockers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScrumMasterBlocker = z.infer<typeof insertScrumMasterBlockerSchema>;
+export type ScrumMasterBlocker = typeof scrumMasterBlockers.$inferSelect;
+
+// Scrum Master tracked action items with enforcement
+export const scrumMasterActions = pgTable("scrum_master_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => scrumMasterSessions.id, { onDelete: 'cascade' }),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  description: text("description").notNull(),
+  owner: text("owner"),
+  deadline: text("deadline"),
+  status: text("status").notNull().default("open"), // open, in_progress, done, overdue
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScrumMasterActionSchema = createInsertSchema(scrumMasterActions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScrumMasterAction = z.infer<typeof insertScrumMasterActionSchema>;
+export type ScrumMasterAction = typeof scrumMasterActions.$inferSelect;
+
+// TypeScript interfaces for Scrum Master real-time data
+export interface ScrumMasterConfig {
+  mode: "observer" | "enforcer" | "hardcore";
+  interruptions: boolean;
+  timeboxing: "strict" | "relaxed";
+  escalation: "auto" | "manual";
+  timeboxPerSpeaker: number; // seconds
+  warnAt: number; // seconds before timebox
+}
+
+export interface SpeakerTiming {
+  name: string;
+  startTime: number;
+  elapsed: number;
+  warned: boolean;
+  interrupted: boolean;
+  coveredYesterday: boolean;
+  coveredToday: boolean;
+  coveredBlockers: boolean;
+}
+
+export interface ScrumMasterPostMeetingSummary {
+  bullets: string[];
+  actionItems: Array<{ description: string; owner: string; deadline: string }>;
+  blockers: Array<{ description: string; severity: string; owner: string }>;
+  sprintGoalRisks: string[];
+  parkedTopics: string[];
+  patterns: string[];
+}
