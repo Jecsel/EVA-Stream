@@ -11,7 +11,7 @@ import { AgentSelector } from "@/components/AgentSelector";
 import { ScrumBoard } from "@/components/ScrumBoard";
 import { ScrumMasterPanel, type TranscriptEvent } from "@/components/ScrumMasterPanel";
 import { useAuth } from "@/contexts/AuthContext";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2 } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2, Monitor } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -47,6 +47,7 @@ export default function MeetingRoom() {
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
   const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
+  const [isAppObserving, setIsAppObserving] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
   const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
   const [isScrumPanelMinimized, setIsScrumPanelMinimized] = useState(false);
@@ -427,6 +428,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     try {
       stopObserving();
       stopScreenCapture();
+      stopAppCapture();
+      setIsAppObserving(false);
       
       const duration = formatDuration(meetingDuration);
       const result = await api.endMeeting(meeting.id, sopContent, duration);
@@ -490,6 +493,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     stopObserving,
     startScreenCapture,
     stopScreenCapture,
+    startAppCapture,
+    stopAppCapture,
     sendTextMessage,
     sendTranscript,
   } = useEvaLive({
@@ -654,6 +659,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         setHasJoinedMeeting(false);
         stopObserving();
         stopScreenCapture();
+        stopAppCapture();
+        setIsAppObserving(false);
         setIsJitsiTranscribing(false);
         setTranscriptStatus("idle");
       }
@@ -764,6 +771,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     if (isObserving) {
       stopObserving();
       stopScreenCapture();
+      stopAppCapture();
+      setIsAppObserving(false);
       setSopGeneratorState("stopped");
       addSystemMessage("Screen Observer stopped.");
     } else {
@@ -786,6 +795,23 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         stopObserving();
         setSopGeneratorState("stopped");
       }
+    }
+  };
+
+  const toggleAppObservation = () => {
+    if (isAppObserving) {
+      stopObserving();
+      stopAppCapture();
+      setIsAppObserving(false);
+      setSopGeneratorState("stopped");
+      addSystemMessage("App observation stopped.");
+    } else {
+      if (!evaConnected) return;
+      startObserving();
+      startAppCapture();
+      setIsAppObserving(true);
+      setSopGeneratorState("running");
+      addSystemMessage("EVA is now observing the app view directly - no screen sharing needed.");
     }
   };
 
@@ -815,6 +841,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const handleStopObservation = () => {
     stopObserving();
     stopScreenCapture();
+    stopAppCapture();
+    setIsAppObserving(false);
     setSopGeneratorState("stopped");
   };
 
@@ -887,25 +915,46 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                />
              )}
              {hasJoinedMeeting && evaConnected && isModerator && (
-               <Button
-                 size="sm"
-                 variant={isObserving ? "destructive" : "default"}
-                 onClick={isObserving ? handleStopObservation : handleStartObservation}
-                 className="gap-1.5"
-                 data-testid="button-observation-toggle"
-               >
-                 {isObserving ? (
-                   <>
-                     <EyeOff className="w-4 h-4" />
-                     <span className="hidden sm:inline">Stop Observing</span>
-                   </>
-                 ) : (
-                   <>
-                     <Eye className="w-4 h-4" />
-                     <span className="hidden sm:inline">Start Observing</span>
-                   </>
-                 )}
-               </Button>
+               <div className="flex gap-1">
+                 <Button
+                   size="sm"
+                   variant={isObserving && !isAppObserving ? "destructive" : "default"}
+                   onClick={isObserving && !isAppObserving ? handleStopObservation : handleStartObservation}
+                   className="gap-1.5"
+                   data-testid="button-observation-toggle"
+                 >
+                   {isObserving && !isAppObserving ? (
+                     <>
+                       <EyeOff className="w-4 h-4" />
+                       <span className="hidden sm:inline">Stop Screen</span>
+                     </>
+                   ) : (
+                     <>
+                       <Eye className="w-4 h-4" />
+                       <span className="hidden sm:inline">Share Screen</span>
+                     </>
+                   )}
+                 </Button>
+                 <Button
+                   size="sm"
+                   variant={isAppObserving ? "destructive" : "outline"}
+                   onClick={toggleAppObservation}
+                   className="gap-1.5"
+                   data-testid="button-app-observe-toggle"
+                 >
+                   {isAppObserving ? (
+                     <>
+                       <EyeOff className="w-4 h-4" />
+                       <span className="hidden sm:inline">Stop App View</span>
+                     </>
+                   ) : (
+                     <>
+                       <Monitor className="w-4 h-4" />
+                       <span className="hidden sm:inline">Observe App</span>
+                     </>
+                   )}
+                 </Button>
+               </div>
              )}
              {hasJoinedMeeting && isModerator && (
                <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${

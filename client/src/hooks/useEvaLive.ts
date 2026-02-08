@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import html2canvas from "html2canvas";
 
 interface EvaLiveMessage {
   type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status";
@@ -36,6 +37,7 @@ export function useEvaLive({
   const observingRef = useRef(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appFrameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -109,6 +111,9 @@ export function useEvaLive({
     }
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
+    }
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
     }
     wsRef.current?.close();
     wsRef.current = null;
@@ -200,6 +205,55 @@ export function useEvaLive({
     }
   }, []);
 
+  const startAppCapture = useCallback(() => {
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
+    }
+
+    const captureAndSend = async () => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+      try {
+        const target = document.querySelector("main") || document.body;
+        const canvas = await html2canvas(target as HTMLElement, {
+          scale: 0.5,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: "#1a1a2e",
+          ignoreElements: (el) => {
+            return el.getAttribute("data-testid") === "button-open-dev-agent" ||
+                   el.classList.contains("DevAgentWidget");
+          },
+        });
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        const base64Data = dataUrl.split(",")[1];
+
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log("[EVA] Sending app view capture...");
+          wsRef.current.send(JSON.stringify({
+            type: "video",
+            data: base64Data,
+            mimeType: "image/jpeg",
+          }));
+        }
+      } catch (err) {
+        console.error("[EVA] App capture error:", err);
+      }
+    };
+
+    captureAndSend();
+    appFrameIntervalRef.current = setInterval(captureAndSend, 10000);
+  }, []);
+
+  const stopAppCapture = useCallback(() => {
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
+      appFrameIntervalRef.current = null;
+    }
+  }, []);
+
   const sendTextMessage = useCallback((text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -242,6 +296,8 @@ export function useEvaLive({
     stopObserving,
     startScreenCapture,
     stopScreenCapture,
+    startAppCapture,
+    stopAppCapture,
     sendTextMessage,
     sendTranscript,
     disconnect,
