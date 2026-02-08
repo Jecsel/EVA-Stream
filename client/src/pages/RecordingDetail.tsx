@@ -15,6 +15,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
 import { ScrumSummaryPanel } from "@/components/ScrumSummaryPanel";
+import { ScrumMeetingRecordTab } from "@/components/ScrumMeetingRecordTab";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -722,6 +723,12 @@ export default function RecordingDetail() {
               <ClipboardList className="w-4 h-4" />
               Meeting Notes
             </TabsTrigger>
+            {meetingId && (
+              <TabsTrigger value="meeting-record" className="flex items-center gap-2" data-testid="tab-meeting-record">
+                <ScrollText className="w-4 h-4" />
+                Meeting Record
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="sop" className="mt-0">
@@ -1187,6 +1194,12 @@ export default function RecordingDetail() {
               </ScrollArea>
             </div>
           </TabsContent>
+
+          {meetingId && (
+            <TabsContent value="meeting-record" className="mt-0">
+              <ScrumMeetingRecordTab meetingId={meetingId} />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
 

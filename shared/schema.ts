@@ -92,6 +92,8 @@ export const meetings = pgTable("meetings", {
   recurrenceEndDate: timestamp("recurrence_end_date"), // when the recurrence ends
   createdBy: text("created_by"), // Firebase UID of the meeting creator (moderator)
   moderatorCode: text("moderator_code"), // Secret code for moderator access without login
+  previousMeetingId: varchar("previous_meeting_id"), // Links to previous meeting in a recurring series
+  meetingSeriesId: varchar("meeting_series_id"), // Groups all meetings in a recurring series together
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -613,6 +615,40 @@ export const insertScrumMasterActionSchema = createInsertSchema(scrumMasterActio
 
 export type InsertScrumMasterAction = z.infer<typeof insertScrumMasterActionSchema>;
 export type ScrumMasterAction = typeof scrumMasterActions.$inferSelect;
+
+// Scrum Meeting Records - generated Daily Scrum Meeting Record documents
+export const scrumMeetingRecords = pgTable("scrum_meeting_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  sessionId: varchar("session_id").references(() => scrumMasterSessions.id, { onDelete: 'set null' }),
+  previousRecordId: varchar("previous_record_id"), // Links to previous meeting record in series
+  meetingSeriesId: varchar("meeting_series_id"), // Groups all records in a recurring series
+  teamName: text("team_name"),
+  sprintName: text("sprint_name"),
+  participants: text("participants").array(),
+  absentMembers: text("absent_members").array(),
+  carriedOverItems: jsonb("carried_over_items"), // Items from previous meeting
+  teamUpdates: jsonb("team_updates"), // Per-member updates (completed, in progress, blocked)
+  blockers: jsonb("blockers"), // Blocker table data
+  decisionsMade: text("decisions_made").array(),
+  actionItems: jsonb("action_items"), // Action items with owner and due date
+  risks: text("risks").array(),
+  notesForNextMeeting: jsonb("notes_for_next_meeting"), // Follow-ups and open questions
+  documentMarkdown: text("document_markdown"), // Full formatted document
+  meetingDate: timestamp("meeting_date"),
+  meetingDuration: text("meeting_duration"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScrumMeetingRecordSchema = createInsertSchema(scrumMeetingRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScrumMeetingRecord = z.infer<typeof insertScrumMeetingRecordSchema>;
+export type ScrumMeetingRecord = typeof scrumMeetingRecords.$inferSelect;
 
 // TypeScript interfaces for Scrum Master real-time data
 export interface ScrumMasterConfig {

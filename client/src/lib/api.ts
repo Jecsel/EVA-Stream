@@ -445,4 +445,41 @@ export const api = {
     if (!response.ok) throw new Error("Failed to delete action item");
   },
 
+  async generateMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to generate meeting record");
+    return response.json();
+  },
+
+  async getMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record`);
+    if (!response.ok) throw new Error("No meeting record found");
+    return response.json();
+  },
+
+  async getMeetingRecordsBySeries(seriesId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/meeting-records/series/${seriesId}`);
+    if (!response.ok) throw new Error("Failed to fetch series records");
+    return response.json();
+  },
+
+  async getPreviousMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record/previous`);
+    if (!response.ok) throw new Error("No previous meeting record found");
+    return response.json();
+  },
+
+  async linkMeeting(meetingId: string, data: { previousMeetingId?: string; meetingSeriesId?: string }): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to link meeting");
+    return response.json();
+  },
+
 };

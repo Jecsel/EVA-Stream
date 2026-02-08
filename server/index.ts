@@ -83,8 +83,10 @@ wss.on("connection", (ws: WebSocket, req) => {
           }
           case "stop_session": {
             const summary = await generatePostMeetingSummary(meetingId);
+            const { generateScrumMeetingRecord } = await import("./scrum-master");
+            const meetingRecord = await generateScrumMeetingRecord(meetingId);
             stopScrumMasterSession(meetingId);
-            broadcastToMeeting(meetingId, { type: "scrum_session_ended", summary });
+            broadcastToMeeting(meetingId, { type: "scrum_session_ended", summary, meetingRecordId: meetingRecord?.id || null });
             break;
           }
           case "update_config": {

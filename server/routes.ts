@@ -1090,12 +1090,60 @@ export async function registerRoutes(
         sopContent: documentContent,
       });
 
+      if (isScrumMeeting && !meeting.meetingSeriesId && meeting.recurrence && meeting.recurrence !== "none") {
+        const seriesId = `series_${meetingId}`;
+        await storage.updateMeeting(meetingId, { meetingSeriesId: seriesId });
+      }
+
+      if (isScrumMeeting && !meeting.previousMeetingId && meeting.createdBy) {
+        try {
+          const allMeetings = await storage.listMeetings();
+          const candidates = allMeetings
+            .filter(m => 
+              m.id !== meetingId && 
+              m.title === meeting.title && 
+              m.createdBy === meeting.createdBy &&
+              m.status === "completed"
+            )
+            .sort((a, b) => {
+              const dateA = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+              const dateB = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+              return dateB - dateA;
+            });
+          const previousMeeting = candidates[0];
+          if (previousMeeting) {
+            const seriesId = previousMeeting.meetingSeriesId || meeting.meetingSeriesId || `series_${previousMeeting.id}`;
+            await storage.updateMeeting(meetingId, { 
+              previousMeetingId: previousMeeting.id,
+              meetingSeriesId: seriesId,
+            });
+            if (!previousMeeting.meetingSeriesId) {
+              await storage.updateMeeting(previousMeeting.id, { meetingSeriesId: seriesId });
+            }
+          }
+        } catch (err) {
+          console.error("[Meeting End] Failed to auto-link meeting:", err);
+        }
+      }
+
+      let meetingRecordId = null;
+      if (isScrumMeeting) {
+        try {
+          const { generateScrumMeetingRecord } = await import("./scrum-master");
+          const record = await generateScrumMeetingRecord(meetingId);
+          meetingRecordId = record?.id || null;
+        } catch (err) {
+          console.error("[Meeting End] Failed to generate meeting record:", err);
+        }
+      }
+
       res.json({ 
         recording, 
         summary, 
         croGenerated: !!finalCroContent && !croContent,
         isScrumMeeting,
         scrumData: scrumResult?.scrumData || null,
+        meetingRecordId,
       });
     } catch (error) {
       console.error("End meeting error:", error);
@@ -3522,6 +3570,106 @@ Format the response as JSON with these fields:
     } catch (error) {
       console.error("Get session history error:", error);
       res.status(500).json({ error: "Failed to get history" });
+    }
+  });
+
+  // ============================================================
+  // Scrum Meeting Records API Routes
+  // ============================================================
+
+  app.post("/api/meetings/:meetingId/meeting-record/generate", async (req: Request, res: Response) => {
+    try {
+      const { meetingId } = req.params;
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      const existing = await storage.getScrumMeetingRecordByMeeting(meetingId);
+      if (existing) {
+        return res.json(existing);
+      }
+
+      const { generateScrumMeetingRecord } = await import("./scrum-master");
+      const record = await generateScrumMeetingRecord(meetingId);
+      if (!record) {
+        return res.status(500).json({ error: "Failed to generate meeting record" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Generate meeting record error:", error);
+      res.status(500).json({ error: "Failed to generate meeting record" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/meeting-record", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getScrumMeetingRecordByMeeting(req.params.meetingId);
+      if (!record) {
+        return res.status(404).json({ error: "No meeting record found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get meeting record error:", error);
+      res.status(500).json({ error: "Failed to get meeting record" });
+    }
+  });
+
+  app.get("/api/meeting-records/:id", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getScrumMeetingRecord(req.params.id);
+      if (!record) {
+        return res.status(404).json({ error: "Meeting record not found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get meeting record by ID error:", error);
+      res.status(500).json({ error: "Failed to get meeting record" });
+    }
+  });
+
+  app.get("/api/meeting-records/series/:seriesId", async (req: Request, res: Response) => {
+    try {
+      const records = await storage.getScrumMeetingRecordsBySeries(req.params.seriesId);
+      res.json(records);
+    } catch (error) {
+      console.error("Get meeting records by series error:", error);
+      res.status(500).json({ error: "Failed to get meeting records" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/meeting-record/previous", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getPreviousScrumMeetingRecord(req.params.meetingId);
+      if (!record) {
+        return res.status(404).json({ error: "No previous meeting record found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get previous meeting record error:", error);
+      res.status(500).json({ error: "Failed to get previous meeting record" });
+    }
+  });
+
+  app.post("/api/meetings/:meetingId/link", async (req: Request, res: Response) => {
+    try {
+      const { meetingId } = req.params;
+      const { previousMeetingId, meetingSeriesId } = req.body;
+      
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      const updateData: any = {};
+      if (previousMeetingId) updateData.previousMeetingId = previousMeetingId;
+      if (meetingSeriesId) updateData.meetingSeriesId = meetingSeriesId;
+
+      const updated = await storage.updateMeeting(meetingId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Link meeting error:", error);
+      res.status(500).json({ error: "Failed to link meeting" });
     }
   });
 
