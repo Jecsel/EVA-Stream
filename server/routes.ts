@@ -3230,6 +3230,11 @@ Format the response as JSON with these fields:
       const notes = meetingId ? await storage.getMeetingNotes(meetingId) : [];
       const files = meetingId ? await storage.getMeetingFiles(meetingId) : [];
       const transcripts = meetingId ? await storage.getTranscriptsByMeeting(meetingId) : [];
+      const scrumActionItemsList = meetingId ? await storage.getScrumActionItemsByMeeting(meetingId) : [];
+      const currentScrumSummary = meetingId ? await storage.getMeetingSummary(meetingId) : undefined;
+      const scrumSummaries = (meetingId && meeting?.createdBy)
+        ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5)
+        : [];
 
       // Build context for AI
       let fullContext = "";
@@ -3273,6 +3278,143 @@ Format the response as JSON with these fields:
           fullContext += `${t.speaker}: ${t.text}\n`;
         });
         fullContext += "\n";
+      }
+
+      const allScrumSummaries = currentScrumSummary
+        ? [currentScrumSummary, ...scrumSummaries.filter(s => s.id !== currentScrumSummary.id)]
+        : scrumSummaries;
+
+      if (scrumActionItemsList.length > 0 || allScrumSummaries.length > 0) {
+        fullContext += "=== SCRUM BOARD DATA ===\n\n";
+
+        const safeDate = (val: any): string => {
+          if (!val) return "unknown";
+          const d = new Date(val);
+          return isNaN(d.getTime()) ? "unknown" : d.toLocaleDateString();
+        };
+
+        const allActionItems: typeof scrumActionItemsList = [...scrumActionItemsList];
+        for (const s of allScrumSummaries) {
+          if (s.meetingId && s.meetingId !== meetingId) {
+            const items = await storage.getScrumActionItemsByMeeting(s.meetingId);
+            allActionItems.push(...items);
+          }
+        }
+        const seenIds = new Set<string>();
+        const uniqueActionItems = allActionItems.filter(a => {
+          if (seenIds.has(a.id)) return false;
+          seenIds.add(a.id);
+          return true;
+        });
+        const openItems = uniqueActionItems.filter(a => a.status !== "done");
+        const doneItems = uniqueActionItems.filter(a => a.status === "done");
+
+        const carryOverBlockers: Array<{ description: string; owner: string; severity: string; status: string; firstSeen: string | null; meetingTitle: string }> = [];
+        const personStatusMap: Record<string, { name: string; lastWorkingOn: string[]; lastCompleted: string[]; currentBlockers: string[]; lastSeen: string | null; meetingTitle: string }> = {};
+        const discussionHistory: Array<{ date: string | null; meetingTitle: string; summary: string }> = [];
+
+        for (const s of allScrumSummaries) {
+          const scrumData = s.scrumData as any;
+          const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
+          const meetingTitle = mtg?.title || "Standup";
+          const dateStr = s.createdAt ? new Date(s.createdAt).toISOString() : null;
+
+          if (s.fullSummary) {
+            discussionHistory.push({ date: dateStr, meetingTitle, summary: s.fullSummary });
+          }
+
+          if (scrumData?.blockers?.length > 0) {
+            for (const b of scrumData.blockers) {
+              if (b.status === "active") {
+                const existing = carryOverBlockers.find(
+                  eb => eb.description.toLowerCase() === b.description.toLowerCase() && eb.owner === b.owner
+                );
+                if (existing) {
+                  if (dateStr && (!existing.firstSeen || new Date(dateStr) < new Date(existing.firstSeen))) {
+                    existing.firstSeen = dateStr;
+                  }
+                } else {
+                  carryOverBlockers.push({
+                    description: b.description,
+                    owner: b.owner,
+                    severity: b.severity || "medium",
+                    status: b.status,
+                    firstSeen: dateStr,
+                    meetingTitle,
+                  });
+                }
+              }
+            }
+          }
+
+          if (scrumData?.participants?.length > 0) {
+            for (const p of scrumData.participants) {
+              if (!personStatusMap[p.name]) {
+                personStatusMap[p.name] = {
+                  name: p.name,
+                  lastWorkingOn: p.today || [],
+                  lastCompleted: p.yesterday || [],
+                  currentBlockers: p.blockers || [],
+                  lastSeen: dateStr,
+                  meetingTitle,
+                };
+              }
+            }
+          }
+        }
+
+        if (allScrumSummaries.length > 0) {
+          fullContext += `Total Standups: ${allScrumSummaries.length} | Last Standup: ${safeDate(allScrumSummaries[0]?.createdAt)}\n\n`;
+        }
+
+        if (carryOverBlockers.length > 0) {
+          fullContext += `CARRY-OVER BLOCKERS (${carryOverBlockers.length} active):\n`;
+          carryOverBlockers.forEach(b => {
+            const firstSeenStr = b.firstSeen ? `, first seen: ${safeDate(b.firstSeen)}` : "";
+            fullContext += `- [${b.severity.toUpperCase()}] ${b.description} (Owner: ${b.owner}, from: ${b.meetingTitle}${firstSeenStr})\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (openItems.length > 0) {
+          fullContext += `ACTION ITEMS - OPEN/IN PROGRESS (${openItems.length}):\n`;
+          openItems.forEach(item => {
+            const dueStr = item.dueDate ? ` Due: ${safeDate(item.dueDate)}` : "";
+            fullContext += `- [${item.status.toUpperCase()}] ${item.title}${item.assignee ? ` (Assigned: ${item.assignee})` : ""}${item.priority ? ` Priority: ${item.priority}` : ""}${dueStr}${item.notes ? ` - ${item.notes}` : ""}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (doneItems.length > 0) {
+          fullContext += `COMPLETED ITEMS (${doneItems.length}):\n`;
+          doneItems.forEach(item => {
+            fullContext += `- [DONE] ${item.title}${item.assignee ? ` (${item.assignee})` : ""}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        const teamMembers = Object.values(personStatusMap);
+        if (teamMembers.length > 0) {
+          fullContext += `TEAM STATUS (${teamMembers.length} members):\n`;
+          teamMembers.forEach(m => {
+            fullContext += `  ${m.name} (last seen: ${safeDate(m.lastSeen)}, meeting: ${m.meetingTitle}):\n`;
+            if (m.lastWorkingOn.length) fullContext += `    Working on: ${m.lastWorkingOn.join("; ")}\n`;
+            if (m.lastCompleted.length) fullContext += `    Completed: ${m.lastCompleted.join("; ")}\n`;
+            if (m.currentBlockers.length) fullContext += `    Blockers: ${m.currentBlockers.join("; ")}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (discussionHistory.length > 0) {
+          fullContext += `DISCUSSION HISTORY (${discussionHistory.length} sessions):\n`;
+          discussionHistory.forEach(d => {
+            fullContext += `\n--- ${d.meetingTitle} (${safeDate(d.date)}) ---\n${d.summary}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        fullContext += "=== END SCRUM BOARD DATA ===\n\n";
+        fullContext += "Note: You have direct access to the scrum board data above. You can answer questions about action items, blockers, team status, and standup history without needing to see the screen.\n\n";
       }
 
       if (context) {
