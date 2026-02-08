@@ -94,18 +94,23 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const modCodeFromUrlRef = useRef<string | null>(null);
   const meetingStartTime = useRef(Date.now());
   
-  // Read ?mod= query parameter from URL for auto-moderator access
+  // Read query parameters from URL
+  const followUpMeetingIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const modParam = urlParams.get('mod');
+    const followUpParam = urlParams.get('followUp');
     if (modParam) {
       modCodeFromUrlRef.current = modParam;
       setModeratorCode(modParam);
       setWantsModerator(true);
-      // Clean URL without reloading the page (remove the mod param for security)
-      // Done after state is set so the token fetch will use the stored moderatorCode
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
+    }
+    if (followUpParam) {
+      followUpMeetingIdRef.current = followUpParam;
+    }
+    // Clean URL without reloading the page
+    if (modParam || followUpParam) {
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
   const [sopContent, setSopContent] = useState(`# Live SOP Document
@@ -151,7 +156,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     queryKey: ["meeting", roomId, user?.uid, authReady],
     queryFn: async () => {
       console.log(`[Meeting Query] Fetching meeting for room: ${roomId}, userId: ${user?.uid || 'anonymous'}, authReady: ${authReady}`);
-      const result = await api.getMeetingByRoomId(roomId, user?.uid);
+      const result = await api.getMeetingByRoomId(roomId, user?.uid, followUpMeetingIdRef.current);
       console.log(`[Meeting Query] Got meeting:`, result?.id, 'createdBy:', result?.createdBy);
       return result;
     },

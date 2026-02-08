@@ -3,12 +3,13 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -90,6 +91,7 @@ export default function RecordingDetail() {
   const [flowchartProgress, setFlowchartProgress] = useState<FlowchartProgressStep>('idle');
   const [shareLinkCopied, setShareLinkCopied] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showNewMeetingPopover, setShowNewMeetingPopover] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -454,15 +456,51 @@ export default function RecordingDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowScheduleDialog(true)}
-            data-testid="button-schedule-followup"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            New Meeting
-          </Button>
+          <Popover open={showNewMeetingPopover} onOpenChange={setShowNewMeetingPopover}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-new-meeting"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Meeting
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="end">
+              <div className="space-y-1">
+                <button
+                  className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left"
+                  data-testid="button-instant-meeting"
+                  onClick={() => {
+                    setShowNewMeetingPopover(false);
+                    const randomId = Math.random().toString(36).substring(7);
+                    setLocation(`/meeting/${randomId}?followUp=${meetingId}`);
+                  }}
+                >
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  <div>
+                    <div className="font-medium">Start Instant Meeting</div>
+                    <div className="text-xs text-muted-foreground">Begin a meeting right now</div>
+                  </div>
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left"
+                  data-testid="button-schedule-followup"
+                  onClick={() => {
+                    setShowNewMeetingPopover(false);
+                    setShowScheduleDialog(true);
+                  }}
+                >
+                  <CalendarPlus className="w-4 h-4 text-blue-500" />
+                  <div>
+                    <div className="font-medium">Schedule Meeting</div>
+                    <div className="text-xs text-muted-foreground">Pick a date and time</div>
+                  </div>
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button 
             variant="outline" 
             size="sm" 
@@ -1208,9 +1246,15 @@ export default function RecordingDetail() {
         onOpenChange={setShowScheduleDialog}
         onSuccess={(meetingLink) => {
           setShowScheduleDialog(false);
-          setLocation(meetingLink);
+          if (meetingLink) setLocation(meetingLink);
         }}
         initialSelectedAgents={meeting?.selectedAgents || undefined}
+        initialTitle={recording?.title || meeting?.title || ""}
+        followUpContext={{
+          previousMeetingId: meetingId,
+          meetingSeriesId: meeting?.meetingSeriesId || undefined,
+          documentContext: recording?.sopContent || undefined,
+        }}
       />
     </div>
   );

@@ -45,6 +45,12 @@ interface EditMeetingData {
   description?: string | null;
 }
 
+interface FollowUpContext {
+  previousMeetingId?: string;
+  meetingSeriesId?: string;
+  documentContext?: string;
+}
+
 interface ScheduleMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +58,8 @@ interface ScheduleMeetingDialogProps {
   initialDate?: Date;
   editMeeting?: EditMeetingData | null;
   initialSelectedAgents?: string[];
+  initialTitle?: string;
+  followUpContext?: FollowUpContext;
 }
 
 type EventType = "event" | "task";
@@ -75,7 +83,7 @@ function getWeekOrdinal(week: number): string {
   return ordinals[week - 1] || `${week}${getOrdinalSuffix(week)}`;
 }
 
-export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate, editMeeting, initialSelectedAgents }: ScheduleMeetingDialogProps) {
+export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate, editMeeting, initialSelectedAgents, initialTitle, followUpContext }: ScheduleMeetingDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const isEditMode = !!editMeeting;
@@ -143,8 +151,11 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
       if (initialSelectedAgents && initialSelectedAgents.length > 0) {
         setSelectedAgentIds(initialSelectedAgents);
       }
+      if (initialTitle) {
+        setTitle(initialTitle);
+      }
     }
-  }, [initialDate, open, editMeeting, initialSelectedAgents]);
+  }, [initialDate, open, editMeeting, initialSelectedAgents, initialTitle]);
 
   const recurrenceOptions = useMemo(() => {
     if (!date) {
@@ -398,7 +409,9 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           endDate: endDate?.toISOString(),
           attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
           description: description || (agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined),
-          agenda: agenda || undefined,
+          agenda: followUpContext?.documentContext
+            ? `[Previous Meeting Context]\n${followUpContext.documentContext}\n\n${agenda || ''}`
+            : (agenda || undefined),
           files: attachedFiles.length > 0 ? attachedFiles : undefined,
           userId: user?.uid,
           userEmail: user?.email || undefined,
@@ -406,6 +419,8 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
           isAllDay,
           recurrence,
           selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
+          previousMeetingId: followUpContext?.previousMeetingId,
+          meetingSeriesId: followUpContext?.meetingSeriesId,
         });
 
         toast({

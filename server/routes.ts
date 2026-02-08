@@ -494,18 +494,61 @@ export async function registerRoutes(
       
       // Auto-create meeting if it doesn't exist (for ad-hoc meetings)
       if (!meeting) {
-        // Auto-select all agents when creating a new meeting
-        const allAgents = await storage.listAgents();
-        const allAgentIds = allAgents.map(agent => agent.id);
+        const followUpMeetingId = req.query.followUp as string | undefined;
+        let meetingTitle = `Meeting ${req.params.roomId}`;
+        let selectedAgentIds: string[] | null = null;
+        let previousMeetingId: string | null = null;
+        let meetingSeriesId: string | null = null;
+
+        let meetingDescription: string | null = null;
+
+        if (followUpMeetingId) {
+          const previousMeeting = await storage.getMeeting(followUpMeetingId);
+          if (previousMeeting) {
+            meetingTitle = previousMeeting.title;
+            selectedAgentIds = previousMeeting.selectedAgents || null;
+            previousMeetingId = previousMeeting.id;
+            meetingSeriesId = previousMeeting.meetingSeriesId || `series_${previousMeeting.id}`;
+            if (!previousMeeting.meetingSeriesId) {
+              await storage.updateMeeting(previousMeeting.id, { meetingSeriesId });
+            }
+            // Fetch document context from previous meeting's recording
+            const recordings = await storage.getRecordingsByMeeting(followUpMeetingId);
+            const lastRecording = recordings[0];
+            if (lastRecording?.sopContent) {
+              meetingDescription = `[Previous Meeting Context]\n${lastRecording.sopContent}`;
+            }
+          }
+        }
+
+        if (!selectedAgentIds) {
+          const allAgents = await storage.listAgents();
+          selectedAgentIds = allAgents.map(agent => agent.id);
+        }
         
         meeting = await storage.createMeeting({
-          title: `Meeting ${req.params.roomId}`,
+          title: meetingTitle,
           roomId: req.params.roomId,
           status: "live",
           scheduledDate: new Date(),
-          selectedAgents: allAgentIds.length > 0 ? allAgentIds : null,
+          selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : null,
           createdBy: userId || null,
+          previousMeetingId,
+          meetingSeriesId,
         });
+
+        // Store document context from previous meeting as an agenda entry
+        if (meetingDescription) {
+          try {
+            await storage.createMeetingAgenda({
+              meetingId: meeting.id,
+              items: [],
+              content: meetingDescription,
+            });
+          } catch (agendaError) {
+            console.error("Failed to create follow-up agenda context:", agendaError);
+          }
+        }
       } else if (!meeting.createdBy && userId) {
         // Atomically claim moderator role for API-created meetings (first authenticated user)
         meeting = await storage.updateMeeting(meeting.id, { createdBy: userId }) || meeting;
@@ -1522,6 +1565,8 @@ export async function registerRoutes(
     isAllDay: z.boolean().optional().default(false),
     recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays", "custom"]).optional().default("none"),
     selectedAgents: z.array(z.string()).optional(),
+    previousMeetingId: z.string().optional(),
+    meetingSeriesId: z.string().optional(),
   });
 
   app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
@@ -1552,6 +1597,8 @@ export async function registerRoutes(
         isAllDay: validated.isAllDay,
         recurrence: validated.recurrence,
         createdBy: validated.userId || null,
+        previousMeetingId: validated.previousMeetingId || null,
+        meetingSeriesId: validated.meetingSeriesId || null,
       });
 
       let calendarEvent = null;
@@ -3229,12 +3276,17 @@ Format the response as JSON with these fields:
         fullContext += `Status: ${meeting.status}\n\n`;
       }
       
-      if (agenda && Array.isArray(agenda.items)) {
-        fullContext += "Agenda Items:\n";
-        (agenda.items as any[]).forEach((item: any, i: number) => {
-          fullContext += `${i + 1}. ${item.title} (${item.covered ? "Covered" : "Not covered"})\n`;
-        });
-        fullContext += "\n";
+      if (agenda) {
+        if (Array.isArray(agenda.items) && (agenda.items as any[]).length > 0) {
+          fullContext += "Agenda Items:\n";
+          (agenda.items as any[]).forEach((item: any, i: number) => {
+            fullContext += `${i + 1}. ${item.title} (${item.covered ? "Covered" : "Not covered"})\n`;
+          });
+          fullContext += "\n";
+        }
+        if (agenda.content) {
+          fullContext += `Meeting Context/Agenda:\n${agenda.content}\n\n`;
+        }
       }
       
       if (notes.length > 0) {

@@ -26,10 +26,12 @@ export const api = {
     return response.json();
   },
 
-  async getMeetingByRoomId(roomId: string, userId?: string): Promise<Meeting> {
-    const url = userId 
-      ? `${API_BASE}/meetings/room/${roomId}?userId=${encodeURIComponent(userId)}`
-      : `${API_BASE}/meetings/room/${roomId}`;
+  async getMeetingByRoomId(roomId: string, userId?: string, followUp?: string): Promise<Meeting> {
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (followUp) params.set('followUp', followUp);
+    const queryStr = params.toString();
+    const url = `${API_BASE}/meetings/room/${roomId}${queryStr ? `?${queryStr}` : ''}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch meeting by room ID");
     return response.json();
@@ -274,6 +276,8 @@ export const api = {
     isAllDay?: boolean;
     recurrence?: "none" | "daily" | "weekly" | "monthly" | "annually" | "weekdays" | "custom";
     selectedAgents?: string[];
+    previousMeetingId?: string;
+    meetingSeriesId?: string;
   }): Promise<{
     success: boolean;
     meeting: Meeting;
