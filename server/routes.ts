@@ -1293,7 +1293,24 @@ export async function registerRoutes(
 
       const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting.title, meeting.meetingSeriesId);
 
-      if (allSummaries.length === 0) {
+      // Also try to get scrum meeting records (from the meeting record generator)
+      let scrumRecords: any[] = [];
+      if (meeting.meetingSeriesId) {
+        scrumRecords = await storage.getScrumMeetingRecordsBySeries(meeting.meetingSeriesId);
+        scrumRecords = scrumRecords.filter(r => r.meetingId !== meetingId);
+      }
+      if (scrumRecords.length === 0 && meeting.previousMeetingId) {
+        const prevRecord = await storage.getScrumMeetingRecordByMeeting(meeting.previousMeetingId);
+        if (prevRecord) scrumRecords = [prevRecord];
+      }
+      // Sort records newest-first
+      scrumRecords.sort((a: any, b: any) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      if (allSummaries.length === 0 && scrumRecords.length === 0) {
         res.json({ hasPreviousStandup: false });
         return;
       }
@@ -1387,10 +1404,128 @@ export async function registerRoutes(
         }
       }
 
-      const totalStandups = allSummaries.length;
+      // Supplement with data from scrum meeting records (fallback when meeting_summaries are empty)
+      for (const record of scrumRecords) {
+        const recordMtg = record.meetingId ? await storage.getMeeting(record.meetingId) : null;
+        const meetingTitle = recordMtg?.title || "Standup";
+        const dateStr = record.createdAt ? new Date(record.createdAt).toISOString() : null;
+
+        if (record.documentMarkdown && !discussionHistory.find((d: any) => d.meetingId === record.meetingId)) {
+          const docPreview = record.documentMarkdown.substring(0, 500);
+          discussionHistory.push({
+            date: dateStr,
+            meetingTitle,
+            summary: docPreview,
+            meetingId: record.meetingId || "",
+          });
+        }
+
+        const recordBlockers = Array.isArray(record.blockers) ? record.blockers : [];
+        for (const b of recordBlockers) {
+          if (typeof b !== 'object' || !b) continue;
+          if (b.status !== "resolved") {
+            const desc = b.blocker || b.description || b.item || "";
+            const owner = b.owner || "Unknown";
+            if (desc && !allBlockers.find(eb => eb.description.toLowerCase() === desc.toLowerCase() && eb.owner.toLowerCase() === owner.toLowerCase())) {
+              allBlockers.push({
+                description: desc,
+                owner,
+                severity: b.severity || "medium",
+                status: b.status || "active",
+                firstSeen: dateStr,
+                meetingTitle,
+              });
+            }
+          }
+        }
+
+        const recordActions = Array.isArray(record.actionItems) ? record.actionItems : [];
+        for (let ai = 0; ai < recordActions.length; ai++) {
+          const a = recordActions[ai];
+          if (typeof a !== 'object' || !a) continue;
+          const actionTitle = a.action || a.description || a.item || "";
+          if (!actionTitle) continue;
+          if (a.status !== "done" && a.status !== "completed") {
+            openActionItems.push({
+              id: `record_${record.id}_action_${ai}`,
+              title: actionTitle,
+              assignee: a.owner || null,
+              status: a.status || "open",
+              priority: a.priority || null,
+              meetingId: record.meetingId,
+            });
+          } else {
+            doneActionItems.push({
+              id: `record_${record.id}_action_${ai}`,
+              title: actionTitle,
+              assignee: a.owner || null,
+              status: a.status || "done",
+              priority: a.priority || null,
+              meetingId: record.meetingId,
+            });
+          }
+        }
+
+        const recordTeamUpdates = Array.isArray(record.teamUpdates) ? record.teamUpdates : [];
+        for (const t of recordTeamUpdates) {
+          if (typeof t !== 'object' || !t) continue;
+          const name = t.name || t.member || "";
+          if (name && !personStatusMap[name]) {
+            personStatusMap[name] = {
+              name,
+              lastWorkingOn: Array.isArray(t.workingOn) ? t.workingOn : (Array.isArray(t.today) ? t.today : []),
+              lastCompleted: Array.isArray(t.completed) ? t.completed : (Array.isArray(t.yesterday) ? t.yesterday : []),
+              currentBlockers: Array.isArray(t.blockers) ? t.blockers : [],
+              lastSeen: dateStr,
+              meetingTitle,
+            };
+          }
+        }
+
+        // Extract participants as team members if team_updates is empty
+        const recordParticipants = Array.isArray(record.participants) ? record.participants : [];
+        if (recordTeamUpdates.length === 0 && recordParticipants.length > 0) {
+          for (const pName of recordParticipants) {
+            const name = typeof pName === 'string' ? pName : (typeof pName === 'object' && pName ? (pName.name || "") : "");
+            if (name && !personStatusMap[name]) {
+              personStatusMap[name] = {
+                name,
+                lastWorkingOn: [],
+                lastCompleted: [],
+                currentBlockers: [],
+                lastSeen: dateStr,
+                meetingTitle,
+              };
+            }
+          }
+        }
+
+        const carriedOver = Array.isArray(record.carriedOverItems) ? record.carriedOverItems : [];
+        for (let ci = 0; ci < carriedOver.length; ci++) {
+          const c = carriedOver[ci];
+          if (typeof c !== 'object' || !c) continue;
+          const itemDesc = c.item || c.description || "";
+          if (itemDesc && !openActionItems.find((a: any) => a.title === itemDesc)) {
+            openActionItems.push({
+              id: `carry_${record.id}_${ci}`,
+              title: itemDesc,
+              assignee: c.owner || null,
+              status: c.status || "carried-over",
+              priority: null,
+              meetingId: record.meetingId,
+            });
+          }
+        }
+      }
+
+      // Count distinct meetings across both sources
+      const meetingIds = new Set<string>();
+      allSummaries.forEach(s => { if (s.meetingId) meetingIds.add(s.meetingId); });
+      scrumRecords.forEach(r => { if (r.meetingId) meetingIds.add(r.meetingId); });
+      const totalStandups = meetingIds.size;
       const lastStandupDate = allSummaries[0]?.createdAt
         ? new Date(allSummaries[0].createdAt).toISOString()
-        : null;
+        : (scrumRecords[0]?.createdAt ? new Date(scrumRecords[0].createdAt).toISOString() : null);
 
       res.json({
         hasPreviousStandup: true,
