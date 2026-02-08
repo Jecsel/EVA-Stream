@@ -45,6 +45,7 @@ interface EVAMeetingAssistantProps {
   meetingStatus?: string;
   className?: string;
   onRequestScreenObserver?: () => void;
+  onStartAppObserve?: () => void;
   currentSopContent?: string;
   messages: EvaMessage[];
   setMessages: React.Dispatch<React.SetStateAction<EvaMessage[]>>;
@@ -63,6 +64,7 @@ export function EVAMeetingAssistant({
   meetingStatus,
   className,
   onRequestScreenObserver,
+  onStartAppObserve,
   currentSopContent,
   messages,
   setMessages,
@@ -162,19 +164,17 @@ export function EVAMeetingAssistant({
       };
       setMessages(prev => [...prev, userMessage]);
       
-      // Check if this is a screen share request
       if (checkScreenShareRequest(text)) {
         const aiMessage: EvaMessage = {
           id: (Date.now() + 1).toString(),
           role: "ai",
-          content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+          content: "I'm now observing your screen. I can see what's on your app and will help document what you're showing.",
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, aiMessage]);
         
-        // Trigger the screen observer panel
-        if (onRequestScreenObserver) {
-          onRequestScreenObserver();
+        if (onStartAppObserve) {
+          onStartAppObserve();
         }
         return;
       }
@@ -182,7 +182,7 @@ export function EVAMeetingAssistant({
       setIsTyping(true);
       askEvaMutationRef.current?.(text);
     }
-  }, [checkScreenShareRequest, onRequestScreenObserver]);
+  }, [checkScreenShareRequest, onStartAppObserve]);
 
   // Track wakeup call state to prevent rapid repeated triggers
   const wakeupInFlightRef = useRef(false);
@@ -314,10 +314,9 @@ export function EVAMeetingAssistant({
         sendTranscriptRef.current(text, "User", isSopEnabledRef.current, isCroEnabledRef.current);
       }
       
-      // Check if this is a screen share request
       if (checkScreenShareRequest(text)) {
-        if (onRequestScreenObserver) {
-          onRequestScreenObserver();
+        if (onStartAppObserve) {
+          onStartAppObserve();
         }
       }
     },
@@ -672,15 +671,15 @@ export function EVAMeetingAssistant({
                   // Check if this is an explicit screen share request (not just asking about SOP)
                   const isScreenShareReq = checkScreenShareRequest(data.text);
                   
-                  if (isScreenShareReq && onRequestScreenObserver) {
+                  if (isScreenShareReq && onStartAppObserve) {
                     const aiMessage: EvaMessage = {
                       id: (Date.now() + 1).toString(),
                       role: "ai",
-                      content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+                      content: "I'm now observing your screen. I can see what's on your app and will help document what you're showing.",
                       timestamp: new Date(),
                     };
                     setMessages(prev => [...prev, aiMessage]);
-                    onRequestScreenObserver();
+                    onStartAppObserve();
                   } else {
                     setIsTyping(true);
                     askEvaMutationRef.current?.(data.text);
@@ -714,7 +713,7 @@ export function EVAMeetingAssistant({
         startListening();
       }
     }
-  }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening, onRequestScreenObserver]);
+  }, [isPushToTalkActive, wakeWordEnabled, isListening, stopListening, startListening, onStartAppObserve]);
 
   // Handle sending message to EVA
   const handleSend = () => {
@@ -728,21 +727,18 @@ export function EVAMeetingAssistant({
     };
     setMessages(prev => [...prev, userMessage]);
     
-    // Check if this is a screen share request
     if (checkScreenShareRequest(inputValue)) {
-      // Add a helpful response and trigger screen observer
       const aiMessage: EvaMessage = {
         id: (Date.now() + 1).toString(),
         role: "ai",
-        content: "I'll switch you to the Screen Observer! Click 'Start Observing' to share your screen, and I'll help document what you're showing.",
+        content: "I'm now observing your screen. I can see what's on your app and will help document what you're showing.",
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, aiMessage]);
       setInputValue("");
       
-      // Trigger the screen observer panel
-      if (onRequestScreenObserver) {
-        onRequestScreenObserver();
+      if (onStartAppObserve) {
+        onStartAppObserve();
       }
       return;
     }

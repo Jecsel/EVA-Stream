@@ -490,12 +490,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     console.log(`[EVA Command] Received: ${action}`);
     if (action === "start_app_observe") {
       setIsAppObserving(true);
-      setSopGeneratorState("running");
-      addSystemMessage("EVA has started observing the app view automatically.");
     } else if (action === "stop_app_observe") {
       setIsAppObserving(false);
-      setSopGeneratorState("stopped");
-      addSystemMessage("EVA has stopped observing the app view.");
     }
   }, []);
 
@@ -827,12 +823,10 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const toggleAppObservation = () => {
     if (isAppObserving) {
       setIsAppObserving(false);
-      setSopGeneratorState("stopped");
       addSystemMessage("App observation stopped.");
     } else {
       if (!evaConnected) return;
       setIsAppObserving(true);
-      setSopGeneratorState("running");
       addSystemMessage("EVA is now observing the app view directly - no screen sharing needed.");
     }
   };
@@ -1168,6 +1162,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   onRequestScreenObserver={() => {
                     if (isScreenObserverEnabled) {
                       setEvaPanelMode("observe");
+                    }
+                  }}
+                  onStartAppObserve={() => {
+                    if (!isAppObserving) {
+                      if (evaConnected) {
+                        setIsAppObserving(true);
+                        addSystemMessage("EVA is now observing the app view.");
+                      } else {
+                        addSystemMessage("EVA is not connected yet. Please wait for the connection.");
+                      }
                     }
                   }}
                   currentSopContent={sopContent}
