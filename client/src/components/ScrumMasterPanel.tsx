@@ -167,28 +167,31 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
 
   const connectWebSocket = useCallback(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/scrum-master?meetingId=${meetingId}`);
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/eva?meetingId=${meetingId}`);
 
     ws.onopen = () => {
-      console.log("Scrum Master WebSocket connected");
+      console.log("Scrum Master connected (via EVA WebSocket)");
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
 
-        switch (msg.type || msg.msgType) {
-          case "session_started":
+        // Only handle scrum_* prefixed messages
+        if (!msg.type || !msg.type.startsWith("scrum_")) return;
+
+        switch (msg.type) {
+          case "scrum_session_started":
             setSessionId(msg.sessionId);
             setIsActive(true);
             break;
 
-          case "session_ended":
+          case "scrum_session_ended":
             setIsActive(false);
             setSessionId(null);
             break;
 
-          case "intervention":
+          case "scrum_intervention":
             setInterventions(prev => [{
               id: msg.id || `int-${Date.now()}`,
               type: msg.interventionType || msg.type || "unknown",
@@ -200,15 +203,15 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
             }, ...prev].slice(0, 50));
             break;
 
-          case "config_updated":
+          case "scrum_config_updated":
             if (msg.config) setConfig(prev => ({ ...prev, ...msg.config }));
             break;
 
-          case "sprint_goal_set":
+          case "scrum_sprint_goal_set":
             setConfig(prev => ({ ...prev, sprintGoal: msg.goal }));
             break;
 
-          case "state":
+          case "scrum_state":
             if (msg.speakerTimes) {
               const times: SpeakerTime[] = [];
               for (const [name, data] of Object.entries(msg.speakerTimes as Record<string, any>)) {
@@ -219,6 +222,17 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
             if (msg.interventions) setInterventions(msg.interventions);
             if (msg.blockers) setBlockers(msg.blockers);
             if (msg.actions) setActions(msg.actions);
+            break;
+
+          case "scrum_error":
+            console.warn("Scrum Master error:", msg.content);
+            setInterventions(prev => [{
+              id: `err-${Date.now()}`,
+              type: "system_error",
+              severity: "medium",
+              message: msg.content || "An error occurred",
+              timestamp: Date.now(),
+            }, ...prev].slice(0, 50));
             break;
         }
       } catch (err) {
@@ -246,7 +260,7 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
   useEffect(() => {
     if (latestTranscript && isActive && wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
-        type: "transcript",
+        type: "scrum_transcript",
         text: latestTranscript.text,
         speaker: latestTranscript.speaker,
         timestamp: latestTranscript.timestamp || Date.now(),
@@ -267,7 +281,7 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
 
   const startSession = () => {
     sendMessage({
-      type: "start_session",
+      type: "scrum_start_session",
       config: {
         mode: config.mode,
         timeboxMinutes: config.timeboxMinutes,
@@ -277,18 +291,18 @@ export function ScrumMasterPanel({ meetingId, className, latestTranscript }: Scr
   };
 
   const stopSession = () => {
-    sendMessage({ type: "stop_session" });
+    sendMessage({ type: "scrum_stop_session" });
   };
 
   const updateMode = (mode: ScrumMode) => {
     setConfig(prev => ({ ...prev, mode }));
-    sendMessage({ type: "update_config", config: { mode } });
+    sendMessage({ type: "scrum_update_config", config: { mode } });
   };
 
   const submitSprintGoal = () => {
     if (!sprintGoalInput.trim()) return;
     setConfig(prev => ({ ...prev, sprintGoal: sprintGoalInput }));
-    sendMessage({ type: "set_sprint_goal", goal: sprintGoalInput });
+    sendMessage({ type: "scrum_set_sprint_goal", goal: sprintGoalInput });
     setSprintGoalInput("");
   };
 

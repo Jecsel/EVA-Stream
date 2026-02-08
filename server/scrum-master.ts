@@ -53,16 +53,23 @@ export async function startScrumMasterSession(
     warnAt: config.warnAt || 75,
   };
 
-  const session = await storage.createScrumMasterSession({
-    meetingId,
-    meetingType: "standup",
-    mode: fullConfig.mode,
-    timeboxPerSpeaker: String(fullConfig.timeboxPerSpeaker),
-    status: "active",
-  });
+  let sessionId: string;
+  try {
+    const session = await storage.createScrumMasterSession({
+      meetingId,
+      meetingType: "standup",
+      mode: fullConfig.mode,
+      timeboxPerSpeaker: String(fullConfig.timeboxPerSpeaker),
+      status: "active",
+    });
+    sessionId = session.id;
+  } catch (error) {
+    console.warn(`Could not persist scrum session to DB for meeting ${meetingId}, running in-memory only:`, (error as Error).message);
+    sessionId = `mem-${Date.now()}`;
+  }
 
   const activeSession: ActiveSession = {
-    sessionId: session.id,
+    sessionId,
     meetingId,
     config: fullConfig,
     speakers: new Map(),
@@ -79,7 +86,7 @@ export async function startScrumMasterSession(
   };
 
   activeSessions.set(meetingId, activeSession);
-  return session.id;
+  return sessionId;
 }
 
 export function stopScrumMasterSession(meetingId: string): void {
@@ -95,10 +102,16 @@ export async function updateScrumMasterConfig(
 
   Object.assign(session.config, config);
 
-  await storage.updateScrumMasterSession(session.sessionId, {
-    mode: session.config.mode,
-    timeboxPerSpeaker: String(session.config.timeboxPerSpeaker),
-  });
+  if (!session.sessionId.startsWith("mem-")) {
+    try {
+      await storage.updateScrumMasterSession(session.sessionId, {
+        mode: session.config.mode,
+        timeboxPerSpeaker: String(session.config.timeboxPerSpeaker),
+      });
+    } catch (error) {
+      console.warn(`Could not persist config update for session ${session.sessionId}:`, (error as Error).message);
+    }
+  }
 
   return session.config;
 }
@@ -107,9 +120,15 @@ export async function setSprintGoal(meetingId: string, goal: string): Promise<vo
   const session = activeSessions.get(meetingId);
   if (session) {
     session.sprintGoal = goal;
-    await storage.updateScrumMasterSession(session.sessionId, {
-      sprintGoal: goal,
-    });
+    if (!session.sessionId.startsWith("mem-")) {
+      try {
+        await storage.updateScrumMasterSession(session.sessionId, {
+          sprintGoal: goal,
+        });
+      } catch (error) {
+        console.warn(`Could not persist sprint goal for session ${session.sessionId}:`, (error as Error).message);
+      }
+    }
   }
 }
 
@@ -230,18 +249,18 @@ export function processTranscriptChunk(
     }
   }
 
-  // Store interventions
   for (const intervention of interventions) {
     session.interventionQueue.push(intervention);
-    // Async save to DB - don't await
-    storage.createScrumMasterIntervention({
-      sessionId: session.sessionId,
-      type: intervention.type,
-      severity: intervention.severity,
-      message: intervention.message,
-      speaker: intervention.speaker || null,
-      context: intervention.context || null,
-    }).catch(err => console.error("Failed to save intervention:", err));
+    if (!session.sessionId.startsWith("mem-")) {
+      storage.createScrumMasterIntervention({
+        sessionId: session.sessionId,
+        type: intervention.type,
+        severity: intervention.severity,
+        message: intervention.message,
+        speaker: intervention.speaker || null,
+        context: intervention.context || null,
+      }).catch(err => console.error("Failed to save intervention:", err));
+    }
   }
 
   return interventions;
@@ -343,19 +362,19 @@ Respond ONLY with valid JSON array.`;
               session.detectedBlockers.set(key, { count: 1, description: item.context });
             }
 
-            // Save blocker to DB
-            storage.createScrumMasterBlocker({
-              sessionId: session.sessionId,
-              meetingId: session.meetingId,
-              description: item.context || item.message,
-              severity: item.severity === "critical" ? "critical" : item.severity === "warning" ? "medium" : "noise",
-              owner: item.speaker || null,
-              threatensSprint: item.severity === "critical",
-            }).catch(err => console.error("Failed to save blocker:", err));
+            if (!session.sessionId.startsWith("mem-")) {
+              storage.createScrumMasterBlocker({
+                sessionId: session.sessionId,
+                meetingId: session.meetingId,
+                description: item.context || item.message,
+                severity: item.severity === "critical" ? "critical" : item.severity === "warning" ? "medium" : "noise",
+                owner: item.speaker || null,
+                threatensSprint: item.severity === "critical",
+              }).catch(err => console.error("Failed to save blocker:", err));
+            }
           }
 
-          // Track action items
-          if (item.type === "action_needed") {
+          if (item.type === "action_needed" && !session.sessionId.startsWith("mem-")) {
             storage.createScrumMasterAction({
               sessionId: session.sessionId,
               meetingId: session.meetingId,
@@ -364,15 +383,16 @@ Respond ONLY with valid JSON array.`;
             }).catch(err => console.error("Failed to save action:", err));
           }
 
-          // Save intervention
-          storage.createScrumMasterIntervention({
-            sessionId: session.sessionId,
-            type: item.type,
-            severity: item.severity || "info",
-            message: item.message,
-            speaker: item.speaker || null,
-            context: item.context || null,
-          }).catch(err => console.error("Failed to save intervention:", err));
+          if (!session.sessionId.startsWith("mem-")) {
+            storage.createScrumMasterIntervention({
+              sessionId: session.sessionId,
+              type: item.type,
+              severity: item.severity || "info",
+              message: item.message,
+              speaker: item.speaker || null,
+              context: item.context || null,
+            }).catch(err => console.error("Failed to save intervention:", err));
+          }
         }
       }
     }
@@ -400,8 +420,9 @@ export async function generatePostMeetingSummary(meetingId: string): Promise<Scr
   }
 
   try {
-    const blockers = await storage.getScrumMasterBlockersBySession(session.sessionId);
-    const actions = await storage.getScrumMasterActionsBySession(session.sessionId);
+    const isMemSession = session.sessionId.startsWith("mem-");
+    const blockers = isMemSession ? [] : await storage.getScrumMasterBlockersBySession(session.sessionId);
+    const actions = isMemSession ? [] : await storage.getScrumMasterActionsBySession(session.sessionId);
 
     const prompt = `You are a Scrum Master generating a post-meeting summary. Be brutally concise. No fluff. No motivational talk.
 
@@ -435,11 +456,12 @@ Respond ONLY with valid JSON.`;
     const cleaned = responseText.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
     const summary: ScrumMasterPostMeetingSummary = JSON.parse(cleaned);
 
-    // Save to session
-    await storage.updateScrumMasterSession(session.sessionId, {
-      status: "completed",
-      postMeetingSummary: summary,
-    });
+    if (!isMemSession) {
+      await storage.updateScrumMasterSession(session.sessionId, {
+        status: "completed",
+        postMeetingSummary: summary,
+      });
+    }
 
     return summary;
   } catch (error) {
