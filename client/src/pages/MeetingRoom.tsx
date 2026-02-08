@@ -1161,8 +1161,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   sendTranscript={sendTranscript}
                   isCroEnabled={isCROEnabled}
                   isSopEnabled={isScreenObserverEnabled}
-                  autoStartVoice={!!(meeting.selectedAgents && meeting.selectedAgents.length > 0)}
-                  hasJoinedMeeting={hasJoinedMeeting}
                 />
               )}
               

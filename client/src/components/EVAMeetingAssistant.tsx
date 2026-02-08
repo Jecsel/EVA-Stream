@@ -3,7 +3,7 @@ import {
   Send, Bot, User, Volume2, VolumeX, Mic, MicOff,
   Plus, Trash2, Check, X, FileText, List, Files, 
   MessageSquare, ClipboardList, Loader2, Play, Square,
-  Upload, File as FileIcon, ChevronDown, Radio, Phone, PhoneOff
+  Upload, File as FileIcon, ChevronDown, Radio
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useElevenLabsAudio } from "@/hooks/useElevenLabsAudio";
-import { useElevenLabsAgent } from "@/hooks/useElevenLabsAgent";
 import { api } from "@/lib/api";
 import type { MeetingNote, MeetingFile, MeetingSummary } from "@shared/schema";
 
@@ -52,8 +51,6 @@ interface EVAMeetingAssistantProps {
   sendTranscript?: (text: string, speaker: string, enableSop: boolean, enableCro: boolean) => void;
   isCroEnabled?: boolean;
   isSopEnabled?: boolean;
-  autoStartVoice?: boolean;
-  hasJoinedMeeting?: boolean;
 }
 
 export function EVAMeetingAssistant({
@@ -69,8 +66,6 @@ export function EVAMeetingAssistant({
   sendTranscript,
   isCroEnabled = false,
   isSopEnabled = false,
-  autoStartVoice = false,
-  hasJoinedMeeting = false,
 }: EVAMeetingAssistantProps) {
   const [activeTab, setActiveTab] = useState<"ask" | "notes" | "agenda" | "files" | "summary">("ask");
   const [inputValue, setInputValue] = useState("");
@@ -83,7 +78,6 @@ export function EVAMeetingAssistant({
   const [isUploading, setIsUploading] = useState(false);
   const [wakeWordTriggered, setWakeWordTriggered] = useState(false);
   const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
-  const [useConversationalAgent, setUseConversationalAgent] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const pushToTalkMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -258,143 +252,12 @@ export function EVAMeetingAssistant({
       }
     },
     onCommand: handleVoiceSpeechResult,
-    enabled: wakeWordEnabled && !useConversationalAgent,
+    enabled: wakeWordEnabled,
   });
 
-  // ElevenLabs Conversational AI Agent (new mode - handles listening + responding)
-  const {
-    isConnected: isAgentConnected,
-    isListening: isAgentListening,
-    isSpeaking: isAgentSpeaking,
-    connect: connectAgent,
-    disconnect: disconnectAgent,
-    startListening: startAgentListening,
-    stopListening: stopAgentListening,
-    stopAudio: stopAgentAudio,
-    sendContextUpdate: sendAgentContextUpdate,
-  } = useElevenLabsAgent({
-    onUserTranscript: async (text) => {
-      console.log("[EVA Agent] User said:", text);
-      const userMessage: EvaMessage = {
-        id: Date.now().toString(),
-        role: "user",
-        content: text,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Save voice message to database for chat history
-      // Note: User transcripts are NOT saved as transcript segments here to avoid duplication
-      // with local speech-to-text (Jitsi transcription) which already captures user speech
-      if (meetingId && text.trim().length > 2) {
-        try {
-          // Save to chat messages only (for EVA panel history)
-          await api.createChatMessage(meetingId, {
-            role: "user",
-            content: text,
-            context: "Voice (ElevenLabs)",
-          });
-        } catch (error) {
-          console.error("Failed to save voice message:", error);
-        }
-      }
-      
-      // Send transcript to EVA for CRO/SOP generation when using specialized agents
-      if (sendTranscriptRef.current && text.trim().length > 2) {
-        console.log("[EVA Agent] Sending user transcript to EVA WebSocket", { isSop: isSopEnabledRef.current, isCro: isCroEnabledRef.current });
-        sendTranscriptRef.current(text, "User", isSopEnabledRef.current, isCroEnabledRef.current);
-      }
-      
-      if (checkScreenShareRequest(text)) {
-        if (onStartAppObserve) {
-          onStartAppObserve();
-        }
-      }
-    },
-    onAgentResponse: async (text) => {
-      console.log("[EVA Agent] Response:", text);
-      const aiMessage: EvaMessage = {
-        id: Date.now().toString(),
-        role: "ai",
-        content: text,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, aiMessage]);
-      
-      // Determine the agent label based on current voice agent type
-      const agentLabel = "EVA";
-      
-      // Save AI response to database for chat history AND transcript
-      if (meetingId && text.trim().length > 2) {
-        try {
-          // Save to chat messages (for EVA panel history)
-          await api.createChatMessage(meetingId, {
-            role: "ai",
-            content: text,
-            context: "Voice (ElevenLabs)",
-          });
-          
-          // Also save as transcript segment (for Recording Detail view)
-          await api.createTranscriptSegment(meetingId, {
-            speaker: agentLabel,
-            text: text,
-            isFinal: true,
-          });
-        } catch (error) {
-          console.error("Failed to save AI response:", error);
-        }
-      }
-      
-      // Send transcript to EVA for CRO/SOP generation when using specialized agents
-      if (sendTranscriptRef.current && text.trim().length > 2) {
-        console.log("[EVA Agent] Sending agent response to EVA WebSocket", { agentLabel, isSop: isSopEnabledRef.current, isCro: isCroEnabledRef.current });
-        sendTranscriptRef.current(text, agentLabel, isSopEnabledRef.current, isCroEnabledRef.current);
-      }
-    },
-    onError: (error) => {
-      console.error("[EVA Agent] Error:", error);
-    },
-    enabled: useConversationalAgent,
-    // Pass SOP content as dynamic context for the voice agent
-    dynamicContext: currentSopContent && !currentSopContent.includes("Waiting for screen observations") 
-      ? `=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n${currentSopContent}\n=== END SOP DOCUMENT ===\n\nYou have access to this SOP document. When users ask about the SOP, refer to this content.`
-      : undefined,
-  });
-  
-  // Auto-start voice agent for API-created meetings with pre-selected agents
-  // Only auto-start after user has joined the meeting to ensure proper permissions
-  const [hasAutoStarted, setHasAutoStarted] = useState(false);
-  useEffect(() => {
-    if (autoStartVoice && hasJoinedMeeting && useConversationalAgent && !isAgentConnected && !hasAutoStarted) {
-      setHasAutoStarted(true);
-      // Delay to ensure Jitsi is fully ready after join
-      const timer = setTimeout(async () => {
-        try {
-          console.log("[EVA] Auto-starting voice agent for API-created meeting");
-          await connectAgent();
-          await startAgentListening();
-        } catch (error) {
-          console.error("[EVA] Failed to auto-start voice agent:", error);
-          // Reset flag to allow retry on next join or manual trigger
-          setHasAutoStarted(false);
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [autoStartVoice, hasJoinedMeeting, useConversationalAgent, isAgentConnected, hasAutoStarted, connectAgent, startAgentListening]);
-
-  // Unified listening state
-  const isListening = useConversationalAgent ? isAgentListening : isLegacyListening;
-  const startListening = useConversationalAgent ? startAgentListening : startLegacyListening;
-  const stopListening = useConversationalAgent ? stopAgentListening : stopLegacyListening;
-
-  // Update agent context when SOP content changes (during active conversation)
-  useEffect(() => {
-    if (useConversationalAgent && isAgentConnected && currentSopContent && !currentSopContent.includes("Waiting for screen observations")) {
-      const contextMessage = `=== CURRENT SOP DOCUMENT (Generated from Screen Observer) ===\n${currentSopContent}\n=== END SOP DOCUMENT ===\n\nYou have access to this SOP document. When users ask about the SOP, refer to this content.`;
-      sendAgentContextUpdate(contextMessage);
-    }
-  }, [currentSopContent, isAgentConnected, sendAgentContextUpdate, useConversationalAgent]);
+  const isListening = isLegacyListening;
+  const startListening = startLegacyListening;
+  const stopListening = stopLegacyListening;
 
   // Fetch agenda
   const { data: agenda, isLoading: agendaLoading } = useQuery({
@@ -819,7 +682,7 @@ export function EVAMeetingAssistant({
               {/* Voice status badges on third line */}
               <div className="flex items-center gap-1 flex-wrap">
                 {/* Wake word status - ElevenLabs STT */}
-                {!useConversationalAgent && isListening && (
+                {isListening && (
                   <Badge 
                     variant="outline" 
                     className={cn(
@@ -835,94 +698,10 @@ export function EVAMeetingAssistant({
                     {wakeWordTriggered ? "Listening..." : isProcessing ? "Processing..." : "Say 'Hey EVA'"}
                   </Badge>
                 )}
-                {/* Conversational Agent Status Badge */}
-                {useConversationalAgent && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-xs font-normal",
-                      isAgentListening
-                        ? isAgentSpeaking
-                          ? "bg-purple-500/10 text-purple-500"
-                          : "bg-green-500/10 text-green-500"
-                        : isAgentConnected
-                        ? "bg-amber-500/10 text-amber-500"
-                        : "bg-gray-500/10 text-gray-500"
-                    )}
-                  >
-                    <Mic className={cn("w-3 h-3 mr-1", isAgentListening && "animate-pulse")} />
-                    {isAgentSpeaking 
-                      ? 'Speaking...'
-                      : isAgentListening ? "Listening..." : isAgentConnected ? "Connected" : "Click to talk"}
-                  </Badge>
-                )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Voice Agent Toggle - Call EVA */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={async () => {
-                if (useConversationalAgent) {
-                  if (isAgentListening) {
-                    stopAgentListening();
-                    disconnectAgent();
-                  } else {
-                    await connectAgent();
-                    await startAgentListening();
-                  }
-                } else {
-                  if (wakeWordEnabled) {
-                    stopListening();
-                    setWakeWordEnabled(false);
-                  } else {
-                    setWakeWordEnabled(true);
-                    startListening();
-                  }
-                }
-              }}
-              className={cn(
-                "h-8 w-8",
-                useConversationalAgent 
-                  ? isAgentConnected && isAgentListening 
-                    ? "text-green-500 animate-pulse" 
-                    : isAgentConnected 
-                      ? "text-green-400"
-                      : ""
-                  : wakeWordEnabled && isListening && "text-green-500"
-              )}
-              data-testid="button-toggle-voice-agent"
-              title={
-                useConversationalAgent 
-                  ? isAgentListening 
-                    ? "End conversation with EVA" 
-                    : "Start conversation with EVA"
-                  : wakeWordEnabled 
-                    ? "Disable wake word" 
-                    : "Enable wake word"
-              }
-            >
-              {useConversationalAgent ? (
-                isAgentConnected && isAgentListening ? <PhoneOff className="w-4 h-4" /> : <Phone className="w-4 h-4" />
-              ) : (
-                wakeWordEnabled && isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />
-              )}
-            </Button>
-            {/* Speaking indicator */}
-            {isAgentSpeaking && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={stopAgentAudio}
-                className="h-8 w-8 text-purple-500 animate-pulse"
-                data-testid="button-stop-agent-audio"
-                title="Stop EVA speaking"
-              >
-                <Volume2 className="w-4 h-4" />
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="icon"
@@ -985,9 +764,7 @@ export function EVAMeetingAssistant({
                     Hi! I'm EVA, your meeting assistant.
                   </p>
                   <p className="text-xs text-muted-foreground mb-4">
-                    {useConversationalAgent 
-                      ? "Click the phone button above to start a voice conversation with me!"
-                      : "Just say \"Hey EVA\" followed by your question - I'm always listening!"}
+                    Just say "Hey EVA" followed by your question - I'm always listening!
                   </p>
                   <div className="space-y-2">
                     {[
