@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { MessageSquareCode, Send, X, Minimize2, Maximize2, Bot, User, Wrench, ChevronDown, Loader2, Terminal, Database, FileCode, FolderTree, Search, ScrollText } from "lucide-react";
+import { MessageSquareCode, Send, X, Minimize2, Maximize2, Bot, User, Wrench, ChevronDown, Loader2, Terminal, Database, FileCode, FolderTree, Search, ScrollText, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -47,8 +47,12 @@ export function DevAgentWidget() {
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const [isRecording, setIsRecording] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -78,6 +82,82 @@ export function DevAgentWidget() {
       return next;
     });
   };
+
+  const startRecording = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      let final = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      setLiveTranscript(final + interim);
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+      setLiveTranscript("");
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+    setLiveTranscript("");
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+    if (liveTranscript.trim()) {
+      setInputValue(prev => (prev ? prev + " " : "") + liveTranscript.trim());
+    }
+    setLiveTranscript("");
+  }, [liveTranscript]);
+
+  const handleMicPointerDown = useCallback(() => {
+    if (isStreaming) return;
+    startRecording();
+  }, [isStreaming, startRecording]);
+
+  const handleMicPointerUp = useCallback(() => {
+    if (isRecording) {
+      recordingTimeoutRef.current = setTimeout(() => stopRecording(), 300);
+    }
+  }, [isRecording, stopRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const sendMessage = async (directMessage?: string) => {
     const messageText = directMessage || inputValue.trim();
@@ -402,6 +482,14 @@ export function DevAgentWidget() {
             </div>
 
             <div className="p-3 border-t border-border/50 bg-zinc-950">
+              {isRecording && (
+                <div className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-xs text-red-400 flex-1">
+                    {liveTranscript || "Listening... hold mic to speak"}
+                  </span>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}
@@ -419,6 +507,22 @@ export function DevAgentWidget() {
                     target.style.height = Math.min(target.scrollHeight, 120) + "px";
                   }}
                 />
+                <Button
+                  data-testid="button-mic"
+                  onPointerDown={handleMicPointerDown}
+                  onPointerUp={handleMicPointerUp}
+                  onPointerLeave={handleMicPointerUp}
+                  onContextMenu={(e) => e.preventDefault()}
+                  disabled={isStreaming}
+                  size="icon"
+                  className={`h-10 w-10 rounded-xl flex-shrink-0 select-none touch-none transition-all ${
+                    isRecording
+                      ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30 scale-110"
+                      : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-30"
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
+                </Button>
                 <Button
                   data-testid="button-send-message"
                   onClick={() => sendMessage()}
