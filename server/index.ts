@@ -128,6 +128,11 @@ wss.on("connection", (ws: WebSocket, req) => {
       const evaMessage: GeminiLiveMessage = message;
       evaMessage.meetingId = meetingId;
       
+      if (message.type === "control" && message.command === "start") {
+        ws.send(JSON.stringify({ type: "command", action: "start_app_observe" }));
+        console.log(`[EVA] Sent start_app_observe command to client for meeting ${meetingId}`);
+      }
+
       const response = await processLiveInput(meetingId, evaMessage);
       
       const shouldSend = response.type === "sop_update" || 

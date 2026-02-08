@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import html2canvas from "html2canvas";
 
 interface EvaLiveMessage {
-  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status" | "command";
   content: string;
+  action?: string;
   audioData?: string;
   observationCount?: number;
   sopVersion?: number;
@@ -20,6 +21,7 @@ interface UseEvaLiveOptions {
   onCroUpdate?: (content: string, croVersion?: number) => void;
   onCroStatus?: (croVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
+  onCommand?: (action: string) => void;
 }
 
 export function useEvaLive({
@@ -30,6 +32,7 @@ export function useEvaLive({
   onCroUpdate,
   onCroStatus,
   onStatusChange,
+  onCommand,
 }: UseEvaLiveOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -67,9 +70,14 @@ export function useEvaLive({
       try {
         const message: EvaLiveMessage = JSON.parse(event.data);
         
+        if (message.type === "command" && message.action) {
+          console.log(`[EVA] Received command: ${message.action}`);
+          onCommand?.(message.action);
+          return;
+        }
+
         if (message.type === "sop_update") {
           onSopUpdate?.(message.content, message.observationCount, message.sopVersion, message.flowchartCode);
-          // Also check for CRO content in combined updates
           if (message.croContent) {
             onCroUpdate?.(message.croContent, message.croVersion);
           }
@@ -103,7 +111,7 @@ export function useEvaLive({
     ws.onerror = (error) => {
       console.error("EVA WebSocket error:", error);
     };
-  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange]);
+  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange, onCommand]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

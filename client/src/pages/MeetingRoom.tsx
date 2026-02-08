@@ -486,6 +486,19 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     console.log(`[CRO] Updated to v${version || 1}`);
   }, []);
 
+  const handleEvaCommand = useCallback((action: string) => {
+    console.log(`[EVA Command] Received: ${action}`);
+    if (action === "start_app_observe") {
+      setIsAppObserving(true);
+      setSopGeneratorState("running");
+      addSystemMessage("EVA has started observing the app view automatically.");
+    } else if (action === "stop_app_observe") {
+      setIsAppObserving(false);
+      setSopGeneratorState("stopped");
+      addSystemMessage("EVA has stopped observing the app view.");
+    }
+  }, []);
+
   const {
     isConnected: evaConnected,
     isObserving,
@@ -504,6 +517,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     onSopStatus: handleSopStatus,
     onCroUpdate: handleCroUpdate,
     onStatusChange: setEvaStatus,
+    onCommand: handleEvaCommand,
   });
 
   // Keep ref in sync with evaConnected for use in callbacks that may have stale closures
@@ -529,6 +543,18 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       stopScreenCapture();
     }
   }, [isScreenObserverEnabled, isObserving, stopObserving, stopScreenCapture]);
+
+  const prevAppObservingRef = useRef(isAppObserving);
+  useEffect(() => {
+    if (isAppObserving && !prevAppObservingRef.current) {
+      startObserving();
+      startAppCapture();
+    } else if (!isAppObserving && prevAppObservingRef.current) {
+      stopObserving();
+      stopAppCapture();
+    }
+    prevAppObservingRef.current = isAppObserving;
+  }, [isAppObserving, startObserving, stopObserving, startAppCapture, stopAppCapture]);
 
 
   useEffect(() => {
@@ -800,15 +826,11 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
   const toggleAppObservation = () => {
     if (isAppObserving) {
-      stopObserving();
-      stopAppCapture();
       setIsAppObserving(false);
       setSopGeneratorState("stopped");
       addSystemMessage("App observation stopped.");
     } else {
       if (!evaConnected) return;
-      startObserving();
-      startAppCapture();
       setIsAppObserving(true);
       setSopGeneratorState("running");
       addSystemMessage("EVA is now observing the app view directly - no screen sharing needed.");
