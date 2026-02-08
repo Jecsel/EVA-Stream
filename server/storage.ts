@@ -212,7 +212,7 @@ export interface IStorage {
   createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
   updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
   getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined>;
-  getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit?: number): Promise<MeetingSummary[]>;
+  getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit?: number, meetingTitle?: string, meetingSeriesId?: string | null): Promise<MeetingSummary[]>;
 
   // Scrum Action Items
   createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem>;
@@ -948,16 +948,21 @@ export class DatabaseStorage implements IStorage {
     return fallbackResults[0];
   }
 
-  async getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit: number = 5): Promise<MeetingSummary[]> {
+  async getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit: number = 5, meetingTitle?: string, meetingSeriesId?: string | null): Promise<MeetingSummary[]> {
+    const conditions = [
+      eq(meetings.createdBy, createdBy),
+      not(eq(meetings.id, currentMeetingId)),
+    ];
+    if (meetingSeriesId) {
+      conditions.push(eq(meetings.meetingSeriesId, meetingSeriesId));
+    } else if (meetingTitle) {
+      conditions.push(eq(meetings.title, meetingTitle));
+    }
+
     const userMeetings = await db
       .select({ id: meetings.id })
       .from(meetings)
-      .where(
-        and(
-          eq(meetings.createdBy, createdBy),
-          not(eq(meetings.id, currentMeetingId))
-        )
-      );
+      .where(and(...conditions));
 
     const userMeetingIds = userMeetings.map(m => m.id);
     if (userMeetingIds.length === 0) return [];

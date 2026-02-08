@@ -945,7 +945,7 @@ export async function registerRoutes(
         let previousStandupContext: string | undefined;
         try {
           const prevSummaries = meeting.createdBy
-            ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5)
+            ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting.title, meeting.meetingSeriesId)
             : [];
 
           if (prevSummaries.length > 0) {
@@ -1233,7 +1233,7 @@ export async function registerRoutes(
         return;
       }
 
-      const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5);
+      const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting.title, meeting.meetingSeriesId);
 
       if (allSummaries.length === 0) {
         res.json({ hasPreviousStandup: false });
@@ -3203,7 +3203,7 @@ Format the response as JSON with these fields:
       const scrumActionItemsList = meetingId ? await storage.getScrumActionItemsByMeeting(meetingId) : [];
       const currentScrumSummary = meetingId ? await storage.getMeetingSummary(meetingId) : undefined;
       const scrumSummaries = (meetingId && meeting?.createdBy)
-        ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5)
+        ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting?.title, meeting?.meetingSeriesId)
         : [];
 
       // Build context for AI
