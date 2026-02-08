@@ -42,6 +42,16 @@ Every feature, UI/UX and design should be mobile-first.
 - **Capabilities**: Screen analysis, conversation understanding, SOP generation, and post-meeting video transcription.
 - **Post-Meeting Transcription**: Automated transcription and summarization of recorded meetings, including speaker identification and action items.
 
+### Developer AI Agent
+- **Provider**: Anthropic Claude (via Replit AI Integrations).
+- **Model**: claude-sonnet-4-5.
+- **UI**: Floating chat widget (`DevAgentWidget.tsx`) available on all pages.
+- **Backend**: `server/dev-agent.ts` - Agent with tool use capabilities.
+- **API Endpoint**: `POST /api/dev-agent/chat` - SSE streaming endpoint.
+- **Tools**: read_file, list_files, search_code, query_database, get_database_schema, read_logs, get_project_overview.
+- **Security**: Path traversal protection, safe shell execution (execFileSync), read-only DB queries.
+- **Screen Context**: Sends current page URL/path for context-aware assistance.
+
 ### Meeting Agents System
 The platform supports configurable AI agents and generators:
 - **EVA Assistant**: An always-on assistant providing chat, notes, and screen observation.

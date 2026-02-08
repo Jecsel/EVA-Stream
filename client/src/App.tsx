@@ -13,6 +13,7 @@ import RecordingDetail from "@/pages/RecordingDetail";
 import Admin from "@/pages/Admin";
 import Calendar from "@/pages/Calendar";
 import SOPView from "@/pages/SOPView";
+import { DevAgentWidget } from "@/components/DevAgentWidget";
 
 
 function ProtectedRecordingDetail() {
@@ -57,6 +58,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <DevAgentWidget />
         </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>

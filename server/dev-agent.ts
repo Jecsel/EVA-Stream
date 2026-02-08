@@ -23,6 +23,7 @@ function isPathSafe(filePath: string): boolean {
 
 function listFilesRecursive(dir: string, prefix = "", maxDepth = 4, depth = 0): string[] {
   if (depth >= maxDepth) return [];
+  if (!isPathSafe(dir || ".")) return [];
   const results: string[] = [];
   try {
     const entries = fs.readdirSync(path.join(PROJECT_ROOT, dir), { withFileTypes: true });
@@ -31,7 +32,7 @@ function listFilesRecursive(dir: string, prefix = "", maxDepth = 4, depth = 0): 
       if (entry.isDirectory()) {
         if (!IGNORED_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
           results.push(`${relPath}/`);
-          results.push(...listFilesRecursive(dir, relPath, maxDepth, depth + 1));
+          results.push(...listFilesRecursive(path.join(dir, entry.name), relPath, maxDepth, depth + 1));
         }
       } else {
         results.push(relPath);
@@ -152,6 +153,7 @@ async function executeTool(name: string, input: Record<string, any>): Promise<st
   switch (name) {
     case "list_files": {
       const dir = input.directory || "";
+      if (dir && !isPathSafe(dir)) return "Error: Access denied - path is outside project.";
       const files = listFilesRecursive(dir, dir);
       if (files.length === 0) return "No files found in the specified directory.";
       return files.join("\n");
@@ -177,14 +179,18 @@ async function executeTool(name: string, input: Record<string, any>): Promise<st
     case "search_code": {
       const { pattern, file_glob } = input;
       try {
-        const { execSync } = await import("child_process");
-        let cmd = `grep -rn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --include='*.json' --include='*.css' --include='*.html'`;
-        if (file_glob) {
-          cmd = `grep -rn --include='${file_glob}'`;
+        const { execFileSync } = await import("child_process");
+        const args = ["-rn"];
+        if (file_glob && /^[\w.*?]+$/.test(file_glob)) {
+          args.push(`--include=${file_glob}`);
+        } else {
+          args.push("--include=*.ts", "--include=*.tsx", "--include=*.js", "--include=*.jsx", "--include=*.json", "--include=*.css", "--include=*.html");
         }
-        cmd += ` '${pattern.replace(/'/g, "'\\''")}'  ${PROJECT_ROOT} --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.cache 2>/dev/null | head -50`;
-        const result = execSync(cmd, { encoding: "utf-8", timeout: 10000 });
-        const cleaned = result.replace(new RegExp(PROJECT_ROOT + "/", "g"), "");
+        args.push("--exclude-dir=node_modules", "--exclude-dir=.git", "--exclude-dir=dist", "--exclude-dir=.cache");
+        args.push("--", pattern, PROJECT_ROOT);
+        const result = execFileSync("grep", args, { encoding: "utf-8", timeout: 10000, maxBuffer: 1024 * 1024 });
+        const lines = result.split("\n").slice(0, 50);
+        const cleaned = lines.join("\n").replace(new RegExp(PROJECT_ROOT + "/", "g"), "");
         return cleaned || "No matches found.";
       } catch {
         return "No matches found.";
