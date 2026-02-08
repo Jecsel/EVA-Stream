@@ -296,6 +296,171 @@ function TeamStatusSection({ members }: { members: TeamMember[] }) {
   );
 }
 
+function LastMeetingRecap({ 
+  teamStatus, 
+  openActionItems, 
+  lastStandupDate,
+  discussionHistory 
+}: { 
+  teamStatus: TeamMember[]; 
+  openActionItems: ActionItem[];
+  lastStandupDate: string | null;
+  discussionHistory: DiscussionEntry[];
+}) {
+  const lastDiscussion = discussionHistory.length > 0 ? discussionHistory[0] : null;
+  const membersWithCommitments = teamStatus.filter(
+    m => m.lastWorkingOn.length > 0 || m.lastCompleted.length > 0
+  );
+
+  if (membersWithCommitments.length === 0 && openActionItems.length === 0 && !lastDiscussion) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3" data-testid="section-recap">
+      {lastDiscussion && (
+        <div className="p-2.5 bg-indigo-500/5 border border-indigo-500/15 rounded-lg">
+          <p className="text-[9px] uppercase tracking-wide text-indigo-400/80 font-semibold mb-1 flex items-center gap-1">
+            <MessageSquare className="w-2.5 h-2.5" />
+            Meeting Summary
+          </p>
+          <p className="text-[11px] text-foreground/80 leading-relaxed line-clamp-4">{lastDiscussion.summary}</p>
+        </div>
+      )}
+
+      {membersWithCommitments.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] uppercase tracking-wide text-muted-foreground/80 font-semibold flex items-center gap-1">
+            <Users className="w-2.5 h-2.5" />
+            What everyone committed to
+          </p>
+          {membersWithCommitments.map((member, idx) => {
+            const memberActions = openActionItems.filter(
+              a => a.assignee?.toLowerCase() === member.name.toLowerCase()
+            );
+            const hasBlockers = member.currentBlockers.length > 0;
+            return (
+              <div
+                key={idx}
+                className={`p-2.5 rounded-lg border ${hasBlockers ? "border-red-500/20 bg-red-500/3" : "border-border/50 bg-background/60"}`}
+                data-testid={`recap-member-${idx}`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-medium ${
+                    hasBlockers ? "bg-red-500/20 text-red-400" : "bg-indigo-500/20 text-indigo-400"
+                  }`}>
+                    {member.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] font-medium">{member.name}</span>
+                  {hasBlockers && (
+                    <Badge variant="outline" className="text-[7px] h-3 border-red-500/30 text-red-400">blocked</Badge>
+                  )}
+                </div>
+
+                {member.lastWorkingOn.length > 0 && (
+                  <div className="ml-7 mb-1">
+                    <p className="text-[8px] uppercase tracking-wide text-blue-400/70 font-semibold mb-0.5">Said they'd work on</p>
+                    <ul className="space-y-0.5">
+                      {member.lastWorkingOn.map((item, i) => (
+                        <li key={i} className="text-[10px] text-foreground/80 flex items-start gap-1">
+                          <ArrowRight className="w-2.5 h-2.5 text-blue-400/60 mt-0.5 flex-shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {member.lastCompleted.length > 0 && (
+                  <div className="ml-7 mb-1">
+                    <p className="text-[8px] uppercase tracking-wide text-green-400/70 font-semibold mb-0.5">Had completed</p>
+                    <ul className="space-y-0.5">
+                      {member.lastCompleted.map((item, i) => (
+                        <li key={i} className="text-[10px] text-foreground/60 flex items-start gap-1">
+                          <CheckCircle className="w-2.5 h-2.5 text-green-400/50 mt-0.5 flex-shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {memberActions.length > 0 && (
+                  <div className="ml-7">
+                    <p className="text-[8px] uppercase tracking-wide text-orange-400/70 font-semibold mb-0.5">Open action items</p>
+                    <ul className="space-y-0.5">
+                      {memberActions.map((a, i) => (
+                        <li key={i} className="text-[10px] text-foreground/80 flex items-start gap-1">
+                          <Circle className="w-2.5 h-2.5 text-orange-400/60 mt-0.5 flex-shrink-0" />
+                          {a.title}
+                          <Badge variant="outline" className={`text-[7px] h-3 ml-auto flex-shrink-0 ${
+                            a.status === "blocked" ? "border-red-500/30 text-red-400" :
+                            a.status === "in_progress" ? "border-blue-500/30 text-blue-400" :
+                            "border-border text-muted-foreground"
+                          }`}>
+                            {a.status.replace("_", " ")}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {member.currentBlockers.length > 0 && (
+                  <div className="ml-7 mt-1">
+                    <p className="text-[8px] uppercase tracking-wide text-red-400/70 font-semibold mb-0.5">Blockers</p>
+                    <ul className="space-y-0.5">
+                      {member.currentBlockers.map((b, i) => (
+                        <li key={i} className="text-[10px] text-red-300/80 flex items-start gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5 text-red-400/60 mt-0.5 flex-shrink-0" />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {openActionItems.filter(a => !membersWithCommitments.some(
+        m => m.name.toLowerCase() === a.assignee?.toLowerCase()
+      )).length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[9px] uppercase tracking-wide text-orange-400/80 font-semibold flex items-center gap-1">
+            <Target className="w-2.5 h-2.5" />
+            Unassigned / other action items
+          </p>
+          {openActionItems
+            .filter(a => !membersWithCommitments.some(
+              m => m.name.toLowerCase() === a.assignee?.toLowerCase()
+            ))
+            .map((a, i) => (
+              <div key={i} className="flex items-start gap-2 p-2 bg-background/60 rounded-lg border border-border/50">
+                <Circle className="w-3 h-3 text-orange-400/60 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-foreground/80">{a.title}</p>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {a.assignee && (
+                      <span className="text-[8px] text-muted-foreground flex items-center gap-0.5">
+                        <User className="w-2 h-2" /> {a.assignee}
+                      </span>
+                    )}
+                    <Badge variant="outline" className="text-[7px] h-3 border-border text-muted-foreground">
+                      {a.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DiscussionHistorySection({ history }: { history: DiscussionEntry[] }) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? history : history.slice(0, 2);
@@ -340,7 +505,7 @@ function DiscussionHistorySection({ history }: { history: DiscussionEntry[] }) {
 }
 
 export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
-  const [activeSection, setActiveSection] = useState<"blockers" | "actions" | "team" | "history">("blockers");
+  const [activeSection, setActiveSection] = useState<"recap" | "blockers" | "actions" | "team" | "history">("recap");
 
   const { data, isLoading } = useQuery({
     queryKey: ["previousStandup", meetingId],
@@ -380,6 +545,13 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
   const teamCount = board.teamStatus?.length || 0;
 
   const sections = [
+    {
+      id: "recap" as const,
+      label: "Recap",
+      icon: ClipboardList,
+      count: teamCount,
+      countColor: "bg-indigo-500/20 text-indigo-400",
+    },
     {
       id: "blockers" as const,
       label: "Blockers",
@@ -431,7 +603,7 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
           </div>
         )}
 
-        <div className="grid grid-cols-4 gap-1 bg-muted/30 rounded-lg p-0.5">
+        <div className="grid grid-cols-5 gap-0.5 bg-muted/30 rounded-lg p-0.5">
           {sections.map(({ id, label, count, countColor }) => (
             <button
               key={id}
@@ -453,6 +625,14 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
+        {activeSection === "recap" && (
+          <LastMeetingRecap
+            teamStatus={board.teamStatus || []}
+            openActionItems={board.openActionItems || []}
+            lastStandupDate={board.lastStandupDate || null}
+            discussionHistory={board.discussionHistory || []}
+          />
+        )}
         {activeSection === "blockers" && (
           <BlockersSection blockers={board.carryOverBlockers || []} />
         )}
