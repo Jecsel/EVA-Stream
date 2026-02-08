@@ -336,7 +336,7 @@ function LastMeetingRecap({
             <MessageSquare className="w-2.5 h-2.5" />
             Meeting Summary
           </p>
-          <p className="text-[11px] text-foreground/80 leading-relaxed line-clamp-4">{lastDiscussion.summary}</p>
+          <p className="text-[11px] text-foreground/80 leading-relaxed">{lastDiscussion.summary}</p>
         </div>
       )}
 
