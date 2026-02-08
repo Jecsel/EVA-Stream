@@ -1312,18 +1312,19 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       <Minimize2 className="w-4 h-4" />
                     </button>
                   </div>
-                  {scrumPanelView === "live" ? (
+                  <div className={scrumPanelView === "live" ? "flex-1 overflow-auto flex flex-col" : "hidden"}>
                     <ScrumMasterPanel
                       meetingId={meeting.id}
                       className="flex-1 overflow-auto border-0 rounded-none shadow-none"
                       latestTranscript={latestScrumTranscript}
                     />
-                  ) : (
+                  </div>
+                  <div className={scrumPanelView === "board" ? "flex-1 overflow-auto flex flex-col" : "hidden"}>
                     <ScrumBoard
                       meetingId={meeting.id}
                       className="flex-1 overflow-auto"
                     />
-                  )}
+                  </div>
                 </div>
               )}
             </div>
