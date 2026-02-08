@@ -891,6 +891,21 @@ export async function registerRoutes(
       });
 
       console.log(`Meeting ${meetingId} auto-saved via beacon`);
+
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        const allAgents = await storage.listAgentsWithPrompts();
+        const scrumAgent = allAgents.find(a => a.type === "scrum");
+        if (scrumAgent && meeting.selectedAgents.includes(scrumAgent.id)) {
+          try {
+            const { generateScrumMeetingRecord } = await import("./scrum-master");
+            const record = await generateScrumMeetingRecord(meetingId);
+            if (record) console.log(`[Beacon] Generated scrum meeting record for ${meetingId}`);
+          } catch (err) {
+            console.error("[Beacon] Failed to generate meeting record:", err);
+          }
+        }
+      }
+
       res.status(200).json({ success: true });
     } catch (error) {
       console.error("End meeting (beacon) error:", error);

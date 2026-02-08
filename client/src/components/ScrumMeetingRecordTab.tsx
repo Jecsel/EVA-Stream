@@ -54,7 +54,7 @@ export function ScrumMeetingRecordTab({ meetingId }: ScrumMeetingRecordTabProps)
   });
 
   const activeRecord = viewingRecordId && viewingRecordId !== meetingId ? viewingRecord : record;
-  const documentContent = activeRecord?.document || activeRecord?.content || "";
+  const documentContent = activeRecord?.documentMarkdown || activeRecord?.document || activeRecord?.content || "";
 
   const handleCopy = async () => {
     try {
