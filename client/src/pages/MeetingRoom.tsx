@@ -216,28 +216,56 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         }
       } else if (savedToggles) {
         // Returning to a meeting - restore from sessionStorage
-        const allAgentIds = agents.map(a => a.id);
-        setSelectedAgents(allAgentIds);
         try {
           const parsed = JSON.parse(savedToggles);
-          if (typeof parsed.screenObserver === 'boolean') {
-            setIsScreenObserverEnabled(parsed.screenObserver);
+          const restoredScreenObserver = typeof parsed.screenObserver === 'boolean' ? parsed.screenObserver : false;
+          const restoredCro = typeof parsed.cro === 'boolean' ? parsed.cro : false;
+          const restoredScrum = typeof parsed.scrumMaster === 'boolean' ? parsed.scrumMaster : false;
+          
+          setIsScreenObserverEnabled(restoredScreenObserver);
+          setIsCROEnabled(restoredCro);
+          setIsScrumMasterEnabled(restoredScrum);
+          
+          // Build selectedAgents based on restored toggle states
+          const evaAgent = agents.find(a => a.type === "eva");
+          const effectiveAgents: string[] = evaAgent ? [evaAgent.id] : [];
+          if (restoredScreenObserver) {
+            const sopAgent = agents.find(a => a.type === "sop");
+            if (sopAgent) effectiveAgents.push(sopAgent.id);
           }
-          if (typeof parsed.cro === 'boolean') {
-            setIsCROEnabled(parsed.cro);
+          if (restoredCro) {
+            const croAgent = agents.find(a => a.type?.toLowerCase().includes("cro"));
+            if (croAgent) effectiveAgents.push(croAgent.id);
           }
-          if (typeof parsed.scrumMaster === 'boolean') {
-            setIsScrumMasterEnabled(parsed.scrumMaster);
+          if (restoredScrum) {
+            const scrumAgent = agents.find(a => a.type === "scrum");
+            if (scrumAgent) effectiveAgents.push(scrumAgent.id);
+          }
+          setSelectedAgents(effectiveAgents);
+          // Persist restored selection to server
+          if (meeting?.id) {
+            api.updateMeetingAgents(meeting.id, effectiveAgents).catch(() => {});
           }
         } catch (e) {
-          // ignore parse errors
+          // Fallback: just EVA assistant
+          const evaAgent = agents.find(a => a.type === "eva");
+          const fallbackAgents = evaAgent ? [evaAgent.id] : [];
+          setSelectedAgents(fallbackAgents);
+          if (meeting?.id) {
+            api.updateMeetingAgents(meeting.id, fallbackAgents).catch(() => {});
+          }
         }
       } else {
-        // New meeting without pre-selected agents - select all agents, disable generators
-        const allAgentIds = agents.map(a => a.id);
-        setSelectedAgents(allAgentIds);
+        // New meeting without pre-selected agents - only EVA assistant is always on
+        const evaAgent = agents.find(a => a.type === "eva");
+        const initialAgents = evaAgent ? [evaAgent.id] : [];
+        setSelectedAgents(initialAgents);
         setIsScreenObserverEnabled(false);
         setIsCROEnabled(false);
+        // Save initial agent selection to server
+        if (meeting?.id) {
+          api.updateMeetingAgents(meeting.id, initialAgents).catch(() => {});
+        }
       }
       
       setHasInitializedAgents(true);
@@ -330,20 +358,48 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     }
   }, [meeting?.id, isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled]);
 
-  const handleScrumMasterToggle = useCallback((enabled: boolean) => {
-    setIsScrumMasterEnabled(enabled);
+  const syncAgentsWithToggles = useCallback((overrides?: { screenObserver?: boolean; cro?: boolean; scrum?: boolean }) => {
     if (!meeting?.id || agents.length === 0) return;
-    const scrumAgent = agents.find((a: any) => a.type === "scrum");
-    if (!scrumAgent) return;
+    const sopEnabled = overrides?.screenObserver ?? isScreenObserverEnabled;
+    const croEnabled = overrides?.cro ?? isCROEnabled;
+    const scrumEnabled = overrides?.scrum ?? isScrumMasterEnabled;
 
-    const updated = enabled
-      ? [...selectedAgents.filter(id => id !== scrumAgent.id), scrumAgent.id]
-      : selectedAgents.filter(id => id !== scrumAgent.id);
-    setSelectedAgents(updated);
-    api.updateMeetingAgents(meeting.id, updated).then(() => {
+    const evaAgent = agents.find(a => a.type === "eva");
+    const effectiveAgents: string[] = evaAgent ? [evaAgent.id] : [];
+
+    if (sopEnabled) {
+      const sopAgent = agents.find(a => a.type === "sop");
+      if (sopAgent) effectiveAgents.push(sopAgent.id);
+    }
+    if (croEnabled) {
+      const croAgent = agents.find(a => a.type?.toLowerCase().includes("cro"));
+      if (croAgent) effectiveAgents.push(croAgent.id);
+    }
+    if (scrumEnabled) {
+      const scrumAgent = agents.find(a => a.type === "scrum");
+      if (scrumAgent) effectiveAgents.push(scrumAgent.id);
+    }
+
+    setSelectedAgents(effectiveAgents);
+    api.updateMeetingAgents(meeting.id, effectiveAgents).then(() => {
       queryClient.invalidateQueries({ queryKey: ["meeting", roomId] });
     }).catch(() => {});
-  }, [meeting?.id, agents, selectedAgents, queryClient, roomId]);
+  }, [meeting?.id, agents, isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled, queryClient, roomId]);
+
+  const handleScrumMasterToggle = useCallback((enabled: boolean) => {
+    setIsScrumMasterEnabled(enabled);
+    syncAgentsWithToggles({ scrum: enabled });
+  }, [syncAgentsWithToggles]);
+
+  const handleScreenObserverToggle = useCallback((enabled: boolean) => {
+    setIsScreenObserverEnabled(enabled);
+    syncAgentsWithToggles({ screenObserver: enabled });
+  }, [syncAgentsWithToggles]);
+
+  const handleCROToggle = useCallback((enabled: boolean) => {
+    setIsCROEnabled(enabled);
+    syncAgentsWithToggles({ cro: enabled });
+  }, [syncAgentsWithToggles]);
 
   
   const formatDuration = (seconds: number) => {
@@ -904,9 +960,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  selectedAgents={selectedAgents}
                  onAgentsChange={setSelectedAgents}
                  isScreenObserverEnabled={isScreenObserverEnabled}
-                 onScreenObserverChange={setIsScreenObserverEnabled}
+                 onScreenObserverChange={handleScreenObserverToggle}
                  isCROEnabled={isCROEnabled}
-                 onCROChange={setIsCROEnabled}
+                 onCROChange={handleCROToggle}
                  isScrumMasterEnabled={isScrumMasterEnabled}
                  onScrumMasterChange={handleScrumMasterToggle}
                />
