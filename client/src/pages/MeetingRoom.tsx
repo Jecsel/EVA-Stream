@@ -3,7 +3,6 @@ import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { EVAPanel } from "@/components/EVAPanel";
 import { EVAMeetingAssistant, type EvaMessage } from "@/components/EVAMeetingAssistant";
-import { type ElevenLabsAgentType } from "@/hooks/useElevenLabsAgent";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
@@ -53,24 +52,6 @@ export default function MeetingRoom() {
   const [isScrumPanelMinimized, setIsScrumPanelMinimized] = useState(false);
   const [scrumPanelView, setScrumPanelView] = useState<"live" | "board">("live");
   const [latestScrumTranscript, setLatestScrumTranscript] = useState<TranscriptEvent | null>(null);
-  const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
-  
-  // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
-  const handleVoiceAgentTypeChange = useCallback((type: ElevenLabsAgentType) => {
-    setVoiceAgentType(type);
-    // 1:1 relationship: enable the matching generator, disable the other
-    if (type === 'sop') {
-      setIsScreenObserverEnabled(true);
-      setIsCROEnabled(false);
-    } else if (type === 'cro_interview') {
-      setIsCROEnabled(true);
-      setIsScreenObserverEnabled(false);
-    } else {
-      // EVA agent - turn off both specialized generators
-      setIsScreenObserverEnabled(false);
-      setIsCROEnabled(false);
-    }
-  }, []);
   const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
 
 *Waiting to analyze interview/transcript...*
@@ -1177,8 +1158,6 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   currentSopContent={sopContent}
                   messages={evaMessages}
                   setMessages={setEvaMessages}
-                  voiceAgentType={voiceAgentType}
-                  onVoiceAgentTypeChange={handleVoiceAgentTypeChange}
                   sendTranscript={sendTranscript}
                   isCroEnabled={isCROEnabled}
                   isSopEnabled={isScreenObserverEnabled}

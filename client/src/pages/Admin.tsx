@@ -414,10 +414,7 @@ offset=0                             // optional, for pagination`,
       { method: "POST", path: "/api/generate-flowchart", description: "Generate Mermaid flowchart from text", auth: "None" },
       { method: "POST", path: "/api/jaas/token", description: "Generate JaaS (Jitsi) token", auth: "None" },
       { method: "POST", path: "/api/jaas/webhook", description: "JaaS webhook endpoint", auth: "None" },
-      { method: "GET", path: "/api/elevenlabs/signed-url", description: "Get ElevenLabs signed URL", auth: "None" },
-      { method: "GET", path: "/api/elevenlabs/agents", description: "Get ElevenLabs agents", auth: "None" },
-      { method: "GET", path: "/api/elevenlabs/cro-interview-questions", description: "Get CRO interview questions", auth: "None" },
-      { method: "GET", path: "/api/elevenlabs/cro-interview-prompt", description: "Get CRO interview prompt", auth: "None" }
+      { method: "GET", path: "/api/elevenlabs/signed-url", description: "Get ElevenLabs signed URL", auth: "None" }
     ]
   }
 ];

@@ -3096,102 +3096,24 @@ Format the response as JSON with these fields:
   });
 
   // ElevenLabs Conversational AI - get signed URL for WebSocket connection
-  // Supports multiple agent types: eva (default), sop, cro_interview
   app.get("/api/elevenlabs/signed-url", async (req, res) => {
     try {
-      const agentType = (req.query.agentType as string) || 'eva';
-      
-      // Map agent types to their respective environment variable agent IDs
-      let agentId: string | undefined;
-      switch (agentType) {
-        case 'sop':
-          agentId = process.env.ELEVENLABS_SOP_AGENT_ID;
-          break;
-        case 'cro_interview':
-          agentId = process.env.ELEVENLABS_CRO_INTERVIEW_AGENT_ID;
-          break;
-        case 'eva':
-        default:
-          agentId = process.env.ELEVENLABS_AGENT_ID;
-          break;
-      }
+      const agentId = process.env.ELEVENLABS_AGENT_ID;
       
       if (!agentId) {
         res.status(400).json({ 
-          error: `ElevenLabs Agent ID not configured for type: ${agentType}`,
-          hint: agentType === 'sop' 
-            ? 'Set ELEVENLABS_SOP_AGENT_ID environment variable'
-            : agentType === 'cro_interview'
-              ? 'Set ELEVENLABS_CRO_INTERVIEW_AGENT_ID environment variable'
-              : 'Set ELEVENLABS_AGENT_ID environment variable'
+          error: 'ElevenLabs Agent ID not configured',
+          hint: 'Set ELEVENLABS_AGENT_ID environment variable'
         });
         return;
       }
 
       const { getConversationalAgentSignedUrl } = await import('./elevenlabs');
       const signedUrl = await getConversationalAgentSignedUrl(agentId);
-      res.json({ signedUrl, agentType });
+      res.json({ signedUrl });
     } catch (error: any) {
       console.error("Failed to get signed URL:", error);
       res.status(500).json({ error: error.message || "Failed to get signed URL" });
-    }
-  });
-  
-  // Get available 11Labs agent types and their configuration status
-  app.get("/api/elevenlabs/agents", async (req, res) => {
-    try {
-      const agents = [
-        {
-          type: 'eva',
-          name: 'EVA Meeting Assistant',
-          description: 'General meeting help, Q&A, and document analysis',
-          configured: !!process.env.ELEVENLABS_AGENT_ID,
-        },
-        {
-          type: 'sop',
-          name: 'SOP Voice Agent',
-          description: 'Guides screen sharing and process documentation',
-          configured: !!process.env.ELEVENLABS_SOP_AGENT_ID,
-        },
-        {
-          type: 'cro_interview',
-          name: 'CRO Interview Agent',
-          description: 'Conducts business discovery interviews for role definition',
-          configured: !!process.env.ELEVENLABS_CRO_INTERVIEW_AGENT_ID,
-        },
-      ];
-      res.json({ agents });
-    } catch (error: any) {
-      console.error("Failed to get agents:", error);
-      res.status(500).json({ error: error.message || "Failed to get agents" });
-    }
-  });
-  
-  // Get CRO Interview questions for the CRO Interview Agent
-  app.get("/api/elevenlabs/cro-interview-questions", async (req, res) => {
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const questionsPath = path.join(process.cwd(), 'server', 'data', 'cro-interview-questions.json');
-      const questions = JSON.parse(fs.readFileSync(questionsPath, 'utf-8'));
-      res.json({ questions });
-    } catch (error: any) {
-      console.error("Failed to get CRO interview questions:", error);
-      res.status(500).json({ error: error.message || "Failed to get interview questions" });
-    }
-  });
-  
-  // Get CRO Interview prompt for reference
-  app.get("/api/elevenlabs/cro-interview-prompt", async (req, res) => {
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const promptPath = path.join(process.cwd(), 'server', 'data', 'cro-interview-prompt.txt');
-      const prompt = fs.readFileSync(promptPath, 'utf-8');
-      res.json({ prompt });
-    } catch (error: any) {
-      console.error("Failed to get CRO interview prompt:", error);
-      res.status(500).json({ error: error.message || "Failed to get interview prompt" });
     }
   });
 
