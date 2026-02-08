@@ -148,7 +148,7 @@ function SpeakerTimerBar({ speaker }: { speaker: SpeakerTime }) {
 export function ScrumMasterPanel({ meetingId, className, latestTranscript }: ScrumMasterPanelProps) {
   const [isActive, setIsActive] = useState(false);
   const [config, setConfig] = useState<SessionConfig>({
-    mode: "enforcer",
+    mode: "observer",
     timeboxMinutes: 2,
     sprintGoal: "",
     enableSoundAlerts: true,
