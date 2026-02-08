@@ -643,3 +643,5 @@ export interface ScrumMasterPostMeetingSummary {
   parkedTopics: string[];
   patterns: string[];
 }
+
+export * from "./models/chat";

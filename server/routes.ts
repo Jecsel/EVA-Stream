@@ -11,6 +11,7 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
 import admin from "firebase-admin";
+import { runDevAgent, type AgentMessage } from "./dev-agent";
 
 // Initialize Firebase Admin SDK for token verification
 if (!admin.apps.length) {
@@ -76,6 +77,54 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Developer AI Agent - Chat endpoint with streaming
+  app.post("/api/dev-agent/chat", async (req, res) => {
+    try {
+      const { messages, screenContext } = req.body as {
+        messages: AgentMessage[];
+        screenContext?: string;
+      };
+
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        res.status(400).json({ error: "Messages array is required" });
+        return;
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      await runDevAgent(messages, screenContext || null, {
+        onText: (text) => {
+          res.write(`data: ${JSON.stringify({ type: "text", content: text })}\n\n`);
+        },
+        onToolUse: (toolName, input) => {
+          res.write(`data: ${JSON.stringify({ type: "tool_use", tool: toolName, input })}\n\n`);
+        },
+        onToolResult: (toolName, result) => {
+          const truncated = result.length > 2000 ? result.slice(0, 2000) + "..." : result;
+          res.write(`data: ${JSON.stringify({ type: "tool_result", tool: toolName, result: truncated })}\n\n`);
+        },
+        onDone: (fullResponse) => {
+          res.write(`data: ${JSON.stringify({ type: "done", content: fullResponse })}\n\n`);
+          res.end();
+        },
+        onError: (error) => {
+          res.write(`data: ${JSON.stringify({ type: "error", content: error.message })}\n\n`);
+          res.end();
+        },
+      });
+    } catch (error: any) {
+      console.error("Dev agent error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to process dev agent request" });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: "error", content: error.message })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
   // Sentry config endpoint for frontend (production only)
   app.get("/api/config/sentry", (req, res) => {
     if (process.env.NODE_ENV === "production" && process.env.SENTRY_DSN) {
