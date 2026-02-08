@@ -139,17 +139,13 @@ export function processTranscriptChunk(
   const session = activeSessions.get(meetingId);
   if (!session) return [];
 
-  if (session.config.mode === "observer") {
-    session.transcriptBuffer.push(chunk);
-    if (chunk.isFinal) {
-      session.fullTranscript.push(`${chunk.speaker}: ${chunk.text}`);
-    }
-    return [];
+  // Buffer transcript in all modes
+  session.transcriptBuffer.push(chunk);
+  if (chunk.isFinal) {
+    session.fullTranscript.push(`${chunk.speaker}: ${chunk.text}`);
   }
 
-  const interventions: Array<{ type: string; severity: string; message: string; speaker?: string; context?: string }> = [];
-
-  // Track speaker timing
+  // Track speaker timing in all modes
   if (chunk.speaker && chunk.speaker !== session.currentSpeaker) {
     if (session.currentSpeaker) {
       const prev = session.speakers.get(session.currentSpeaker);
@@ -177,6 +173,21 @@ export function processTranscriptChunk(
       existing.interrupted = false;
     }
   }
+
+  if (session.config.mode === "observer") {
+    if (chunk.isFinal && chunk.text.trim().length > 2) {
+      return [{
+        type: "transcript_logged",
+        severity: "info",
+        message: chunk.text.trim(),
+        speaker: chunk.speaker,
+        context: "Observer mode — logged for review",
+      }];
+    }
+    return [];
+  }
+
+  const interventions: Array<{ type: string; severity: string; message: string; speaker?: string; context?: string }> = [];
 
   // Check timebox for current speaker
   if (session.currentSpeaker) {
@@ -210,12 +221,6 @@ export function processTranscriptChunk(
         });
       }
     }
-  }
-
-  // Buffer transcript
-  session.transcriptBuffer.push(chunk);
-  if (chunk.isFinal) {
-    session.fullTranscript.push(`${chunk.speaker}: ${chunk.text}`);
   }
 
   // Quick text-based pattern detection (no AI needed)
@@ -509,20 +514,23 @@ export function getSessionState(meetingId: string) {
   const session = activeSessions.get(meetingId);
   if (!session) return null;
 
+  const speakerTimes: Record<string, { totalSeconds: number; limit: number; warned: boolean }> = {};
+  session.speakers.forEach((s, name) => {
+    const currentElapsed = name === session.currentSpeaker 
+      ? Math.round((Date.now() - s.startTime) / 1000) 
+      : 0;
+    speakerTimes[name] = {
+      totalSeconds: Math.round(s.elapsed) + currentElapsed,
+      limit: session.config.timeboxPerSpeaker || 90,
+      warned: s.warned,
+    };
+  });
+
   return {
     sessionId: session.sessionId,
     config: session.config,
     sprintGoal: session.sprintGoal,
-    speakers: Array.from(session.speakers.entries()).map(([name, s]) => ({
-      name,
-      elapsed: Math.round((Date.now() - s.startTime) / 1000),
-      totalElapsed: Math.round(s.elapsed),
-      warned: s.warned,
-      interrupted: s.interrupted,
-      coveredYesterday: s.coveredYesterday,
-      coveredToday: s.coveredToday,
-      coveredBlockers: s.coveredBlockers,
-    })),
+    speakerTimes,
     blockerCount: session.detectedBlockers.size,
     transcriptLength: session.fullTranscript.length,
     meetingDuration: Math.round((Date.now() - session.meetingStartTime) / 60000),

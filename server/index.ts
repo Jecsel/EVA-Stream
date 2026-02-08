@@ -105,11 +105,11 @@ wss.on("connection", (ws: WebSocket, req) => {
               isFinal: message.isFinal ?? true,
             });
             for (const intervention of interventions) {
-              broadcastToMeeting(meetingId, { ...intervention, type: "scrum_intervention" });
+              broadcastToMeeting(meetingId, { ...intervention, interventionType: intervention.type, type: "scrum_intervention" });
             }
             const aiInterventions = await runPeriodicAnalysis(meetingId);
             for (const intervention of aiInterventions) {
-              broadcastToMeeting(meetingId, { ...intervention, type: "scrum_intervention" });
+              broadcastToMeeting(meetingId, { ...intervention, interventionType: intervention.type, type: "scrum_intervention" });
             }
             break;
           }
