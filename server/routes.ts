@@ -1533,6 +1533,38 @@ export async function registerRoutes(
         ? new Date(allSummaries[0].createdAt).toISOString()
         : (scrumRecords[0]?.createdAt ? new Date(scrumRecords[0].createdAt).toISOString() : null);
 
+      // Fetch generated documents from the most recent previous meeting's recording
+      let documents: { sopContent: string | null; croContent: string | null; meetingRecordMarkdown: string | null; meetingTitle: string } | null = null;
+      const prevMeetingIds = Array.from(meetingIds);
+      for (const pmId of prevMeetingIds) {
+        const recs = await storage.getRecordingsByMeeting(pmId);
+        const rec = recs[0];
+        if (rec && (rec.sopContent || rec.croContent)) {
+          const pmtg = await storage.getMeeting(pmId);
+          documents = {
+            sopContent: rec.sopContent || null,
+            croContent: rec.croContent || null,
+            meetingRecordMarkdown: null,
+            meetingTitle: pmtg?.title || "Previous Meeting",
+          };
+          break;
+        }
+      }
+      // Also fetch the latest scrum meeting record document
+      if (scrumRecords.length > 0 && scrumRecords[0].documentMarkdown) {
+        if (!documents) {
+          const recordMtg = scrumRecords[0].meetingId ? await storage.getMeeting(scrumRecords[0].meetingId) : null;
+          documents = {
+            sopContent: null,
+            croContent: null,
+            meetingRecordMarkdown: scrumRecords[0].documentMarkdown,
+            meetingTitle: recordMtg?.title || "Previous Meeting",
+          };
+        } else {
+          documents.meetingRecordMarkdown = scrumRecords[0].documentMarkdown;
+        }
+      }
+
       res.json({
         hasPreviousStandup: true,
         totalStandups,
@@ -1542,6 +1574,7 @@ export async function registerRoutes(
         completedActionItems: doneActionItems,
         teamStatus: Object.values(personStatusMap),
         discussionHistory,
+        documents,
       });
     } catch (error) {
       console.error("Get previous standup error:", error);

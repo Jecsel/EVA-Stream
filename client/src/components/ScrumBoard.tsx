@@ -5,9 +5,13 @@ import {
   AlertTriangle, CheckCircle, Circle, Clock,
   ChevronDown, ChevronUp, User, ArrowRight,
   Calendar, ClipboardList, Loader2, Target,
-  MessageSquare, Shield, Users, Flame
+  MessageSquare, Shield, Users, Flame, FileText,
+  Download
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface CarryOverBlocker {
   description: string;
@@ -43,6 +47,13 @@ interface DiscussionEntry {
   meetingId: string;
 }
 
+interface DocumentsData {
+  sopContent: string | null;
+  croContent: string | null;
+  meetingRecordMarkdown: string | null;
+  meetingTitle: string;
+}
+
 interface ConsolidatedData {
   hasPreviousStandup: boolean;
   totalStandups: number;
@@ -52,6 +63,7 @@ interface ConsolidatedData {
   completedActionItems: ActionItem[];
   teamStatus: TeamMember[];
   discussionHistory: DiscussionEntry[];
+  documents: DocumentsData | null;
 }
 
 interface ScrumBoardProps {
@@ -504,8 +516,105 @@ function DiscussionHistorySection({ history }: { history: DiscussionEntry[] }) {
   );
 }
 
+function DocumentsSection({ documents }: { documents: DocumentsData | null }) {
+  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
+
+  if (!documents || (!documents.sopContent && !documents.croContent && !documents.meetingRecordMarkdown)) {
+    return (
+      <div className="flex flex-col items-center gap-2 p-4 text-center">
+        <FileText className="w-5 h-5 text-muted-foreground/50" />
+        <p className="text-xs text-muted-foreground">No documents generated from previous meetings yet</p>
+      </div>
+    );
+  }
+
+  const docs = [
+    { id: "sop", label: "SOP Document", content: documents.sopContent, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+    { id: "cro", label: "CRO Document", content: documents.croContent, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
+    { id: "record", label: "Meeting Record", content: documents.meetingRecordMarkdown, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+  ].filter(d => d.content);
+
+  function handleDownload(title: string, content: string, type: string) {
+    const blob = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}-${type}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="space-y-2" data-testid="section-documents">
+      <p className="text-[9px] uppercase tracking-wide text-muted-foreground/80 font-semibold mb-1">
+        From: {documents.meetingTitle}
+      </p>
+      {docs.map((doc) => {
+        const isExpanded = expandedDoc === doc.id;
+        return (
+          <div
+            key={doc.id}
+            className={`rounded-lg border overflow-hidden ${doc.bg}`}
+            data-testid={`doc-${doc.id}`}
+          >
+            <button
+              onClick={() => setExpandedDoc(isExpanded ? null : doc.id)}
+              className="w-full flex items-center justify-between p-2.5 hover:bg-background/20 transition-colors"
+              data-testid={`btn-expand-doc-${doc.id}`}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className={`w-4 h-4 ${doc.color}`} />
+                <span className="text-xs font-medium">{doc.label}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {isExpanded && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(documents.meetingTitle, doc.content!, doc.id);
+                    }}
+                    data-testid={`btn-download-${doc.id}`}
+                  >
+                    <Download className="w-3 h-3 text-muted-foreground" />
+                  </Button>
+                )}
+                {isExpanded ? (
+                  <ChevronUp className="w-3 h-3 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                )}
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="px-3 pb-3 border-t border-border/30">
+                <div className="pt-2 prose prose-invert prose-xs max-w-none overflow-y-auto max-h-[400px]
+                  prose-headings:text-xs prose-headings:font-semibold prose-headings:text-foreground prose-headings:mt-3 prose-headings:mb-1
+                  prose-p:text-[11px] prose-p:leading-relaxed prose-p:text-foreground/80 prose-p:my-1
+                  prose-li:text-[11px] prose-li:text-foreground/80 prose-li:my-0
+                  prose-ul:my-1 prose-ol:my-1
+                  prose-strong:text-foreground prose-strong:font-semibold
+                  prose-table:text-[10px]
+                  prose-th:text-[10px] prose-th:p-1 prose-th:text-foreground/80
+                  prose-td:text-[10px] prose-td:p-1 prose-td:text-foreground/60
+                ">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {doc.content!}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
-  const [activeSection, setActiveSection] = useState<"recap" | "blockers" | "actions" | "team" | "history">("recap");
+  const [activeSection, setActiveSection] = useState<"recap" | "blockers" | "actions" | "team" | "history" | "docs">("recap");
 
   const { data, isLoading } = useQuery({
     queryKey: ["previousStandup", meetingId],
@@ -580,6 +689,13 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
       count: board.discussionHistory?.length || 0,
       countColor: "bg-slate-500/20 text-slate-400",
     },
+    {
+      id: "docs" as const,
+      label: "Docs",
+      icon: FileText,
+      count: [board.documents?.sopContent, board.documents?.croContent, board.documents?.meetingRecordMarkdown].filter(Boolean).length,
+      countColor: board.documents ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/20 text-slate-400",
+    },
   ];
 
   return (
@@ -603,7 +719,7 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
           </div>
         )}
 
-        <div className="grid grid-cols-5 gap-0.5 bg-muted/30 rounded-lg p-0.5">
+        <div className="grid grid-cols-6 gap-0.5 bg-muted/30 rounded-lg p-0.5">
           {sections.map(({ id, label, count, countColor }) => (
             <button
               key={id}
@@ -644,6 +760,9 @@ export function ScrumBoard({ meetingId, className }: ScrumBoardProps) {
         )}
         {activeSection === "history" && (
           <DiscussionHistorySection history={board.discussionHistory || []} />
+        )}
+        {activeSection === "docs" && (
+          <DocumentsSection documents={board.documents || null} />
         )}
       </div>
     </div>
