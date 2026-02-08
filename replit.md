@@ -74,7 +74,7 @@ User interaction initiates meeting creation/joining. Jitsi handles media streami
 ### Third-Party Services
 - **Google Gemini API**: For AI analysis and SOP generation.
 - **Jitsi Meet**: For video conferencing.
-- **11Labs API**: For the AI Voice Assistant, providing text-to-speech capabilities and specialized voice agents (EVA Meeting Assistant, SOP Voice Agent, CRO Interview Agent).
+- **11Labs API**: For the AI Voice Assistant (EVA), providing text-to-speech capabilities and conversational voice interactions.
 - **Sentry**: Production-only error tracking and monitoring for both frontend and backend.
 
 ### Key NPM Dependencies
@@ -90,7 +90,7 @@ User interaction initiates meeting creation/joining. Jitsi handles media streami
 - `DATABASE_URL`: PostgreSQL connection string.
 - `GEMINI_API_KEY`: Google Gemini API key.
 - `ELEVENLABS_API_KEY`: 11Labs API key.
-- `ELEVENLABS_AGENT_ID`, `ELEVENLABS_SOP_AGENT_ID`, `ELEVENLABS_CRO_INTERVIEW_AGENT_ID`: IDs for specific 11Labs voice agents.
+- `ELEVENLABS_AGENT_ID`: ID for the EVA voice agent.
 - `EXTERNAL_API_KEY`: Optional API key for external meeting creation.
 - `SENTRY_DSN`: Sentry DSN for error tracking (only active in production).
 
