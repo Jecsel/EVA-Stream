@@ -474,7 +474,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       setIsAppObserving(false);
       
       const duration = formatDuration(meetingDuration);
-      const result = await api.endMeeting(meeting.id, sopContent, duration);
+      const result = await api.endMeeting(meeting.id, sopContent, duration, croContent);
       
       if (result.recording) {
         hasEndedMeetingRef.current = true;

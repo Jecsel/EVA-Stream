@@ -115,9 +115,10 @@ export const recordings = pgTable("recordings", {
   duration: text("duration").notNull(),
   summary: text("summary"),
   sopContent: text("sop_content"),
+  croContent: text("cro_content"),
   flowchartCode: text("flowchart_code"),
   videoUrl: text("video_url"),
-  shareToken: text("share_token").unique(), // Unique token for public SOP sharing
+  shareToken: text("share_token").unique(),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 });
 

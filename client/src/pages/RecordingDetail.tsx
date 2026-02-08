@@ -747,8 +747,14 @@ export default function RecordingDetail() {
           <TabsList className="mb-4">
             <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
               <FileText className="w-4 h-4" />
-              Document
+              SOP
             </TabsTrigger>
+            {recording.croContent && (
+              <TabsTrigger value="cro" className="flex items-center gap-2" data-testid="tab-cro">
+                <Target className="w-4 h-4" />
+                CRO
+              </TabsTrigger>
+            )}
             <TabsTrigger value="flowchart" className="flex items-center gap-2" data-testid="tab-flowchart">
               <GitBranch className="w-4 h-4" />
               Flowchart
@@ -923,6 +929,45 @@ export default function RecordingDetail() {
               )}
             </div>
           </TabsContent>
+
+          {recording.croContent && (
+            <TabsContent value="cro" className="mt-0">
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Target className="w-4 h-4 text-primary" />
+                    Core Role Outcomes (CRO)
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const blob = new Blob([recording.croContent!], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${recording.title}-CRO.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      data-testid="button-download-cro"
+                    >
+                      <Download className="w-4 h-4 mr-1" />
+                      Download
+                    </Button>
+                  </div>
+                </div>
+                <ScrollArea className="h-[calc(100vh-350px)]">
+                  <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-cro">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {recording.croContent}
+                    </ReactMarkdown>
+                  </div>
+                </ScrollArea>
+              </div>
+            </TabsContent>
+          )}
 
           <TabsContent value="flowchart" className="mt-0" forceMount style={{ display: activeTab === "flowchart" ? "block" : "none" }}>
             <div className="bg-card border border-border rounded-xl overflow-hidden">

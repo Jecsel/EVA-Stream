@@ -512,11 +512,17 @@ export async function registerRoutes(
             if (!previousMeeting.meetingSeriesId) {
               await storage.updateMeeting(previousMeeting.id, { meetingSeriesId });
             }
-            // Fetch document context from previous meeting's recording
             const recordings = await storage.getRecordingsByMeeting(followUpMeetingId);
             const lastRecording = recordings[0];
-            if (lastRecording?.sopContent) {
-              meetingDescription = `[Previous Meeting Context]\n${lastRecording.sopContent}`;
+            if (lastRecording?.sopContent || lastRecording?.croContent) {
+              const parts: string[] = [];
+              if (lastRecording.sopContent) {
+                parts.push(`[Previous SOP Content]\n${lastRecording.sopContent}`);
+              }
+              if (lastRecording.croContent) {
+                parts.push(`[Previous CRO Content]\n${lastRecording.croContent}`);
+              }
+              meetingDescription = parts.join("\n\n---\n\n");
             }
           }
         }
@@ -1139,13 +1145,13 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      const documentContent = sopContent || finalCroContent || null;
       const recording = await storage.createRecording({
         meetingId,
         title: meeting.title,
         duration: duration || "00:00",
         summary,
-        sopContent: documentContent,
+        sopContent: sopContent || null,
+        croContent: finalCroContent || null,
       });
 
       if (isScrumMeeting && !meeting.meetingSeriesId && meeting.recurrence && meeting.recurrence !== "none") {

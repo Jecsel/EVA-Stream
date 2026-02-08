@@ -163,11 +163,11 @@ export const api = {
   },
 
   // End meeting and create recording
-  async endMeeting(meetingId: string, sopContent?: string, duration?: string): Promise<{ recording: Recording; summary: string }> {
+  async endMeeting(meetingId: string, sopContent?: string, duration?: string, croContent?: string): Promise<{ recording: Recording; summary: string }> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sopContent, duration }),
+      body: JSON.stringify({ sopContent, croContent, duration }),
     });
     if (!response.ok) throw new Error("Failed to end meeting");
     return response.json();
