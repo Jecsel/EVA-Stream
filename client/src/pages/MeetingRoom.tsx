@@ -541,6 +541,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   const {
     isConnected: evaConnected,
     isObserving,
+    isTeamActiveRef,
     startObserving,
     stopObserving,
     startScreenCapture,
@@ -576,6 +577,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     croGeneratorStateRef.current = croGeneratorState;
     console.log(`[CRO Generator] State changed to: ${croGeneratorState}`);
   }, [croGeneratorState]);
+
 
   useEffect(() => {
     if (!isScreenObserverEnabled && isObserving) {
@@ -785,11 +787,12 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           isFinal: true,
         });
         
-        // Send transcript to EVA for processing (SOP/CRO generation)
+        // Send transcript to EVA for processing (SOP/CRO generation or Agent Team)
         // Use refs to get latest status (callbacks may have stale closures)
         const isConnected = evaConnectedRef.current;
         const currentSopState = sopGeneratorStateRef.current;
         const currentCroState = croGeneratorStateRef.current;
+        const isTeamActive = isTeamActiveRef.current;
         
         // Check if either generator is in "running" state (active generation)
         const isSopGeneratorRunning = currentSopState === "running";
@@ -797,16 +800,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
         const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
         
-        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}`);
+        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}, teamActive=${isTeamActive}`);
         console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
         
-        if (isConnected && (shouldSendToSop || shouldSendToCro)) {
+        if (isConnected && (shouldSendToSop || shouldSendToCro || isTeamActive)) {
           if (shouldSendToSop) setIsSopUpdating(true);
           if (shouldSendToCro) setIsCroUpdating(true);
           sendTranscript(text.trim(), participant || "Unknown", shouldSendToSop, shouldSendToCro);
-          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}`);
+          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}, team=${isTeamActive}`);
         } else {
-          console.log(`[Transcript] NOT sent - EVA not connected or generators not running`);
+          console.log(`[Transcript] NOT sent - EVA not connected or no active processors`);
         }
       } catch (error) {
         console.error("Failed to save transcript segment:", error);

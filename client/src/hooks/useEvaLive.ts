@@ -22,6 +22,7 @@ interface UseEvaLiveOptions {
   onCroStatus?: (croVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
   onCommand?: (action: string) => void;
+  onTeamActiveChange?: (active: boolean) => void;
 }
 
 export function useEvaLive({
@@ -33,10 +34,13 @@ export function useEvaLive({
   onCroStatus,
   onStatusChange,
   onCommand,
+  onTeamActiveChange,
 }: UseEvaLiveOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isObserving, setIsObserving] = useState(false);
+  const [isTeamActive, setIsTeamActive] = useState(false);
+  const isTeamActiveRef = useRef(false);
   const observingRef = useRef(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,11 +68,24 @@ export function useEvaLive({
       setIsConnected(true);
       onStatusChange?.("connected");
       console.log("EVA Live connected");
+      ws.send(JSON.stringify({ type: "team_get_state" }));
     };
 
     ws.onmessage = (event) => {
       try {
-        const message: EvaLiveMessage = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+
+        if (data.type === "team_started" || (data.type === "team_status" && data.status === "active") || (data.type === "team_state" && data.isActive)) {
+          isTeamActiveRef.current = true;
+          setIsTeamActive(true);
+          onTeamActiveChange?.(true);
+        } else if (data.type === "team_stopped" || (data.type === "team_status" && data.status === "inactive") || (data.type === "team_state" && !data.isActive)) {
+          isTeamActiveRef.current = false;
+          setIsTeamActive(false);
+          onTeamActiveChange?.(false);
+        }
+
+        const message: EvaLiveMessage = data;
         
         if (message.type === "command" && message.action) {
           console.log(`[EVA] Received command: ${message.action}`);
@@ -98,6 +115,8 @@ export function useEvaLive({
     ws.onclose = () => {
       setIsConnected(false);
       setIsObserving(false);
+      isTeamActiveRef.current = false;
+      setIsTeamActive(false);
       onStatusChange?.("disconnected");
       
       // Auto-reconnect after 3 seconds
@@ -111,7 +130,7 @@ export function useEvaLive({
     ws.onerror = (error) => {
       console.error("EVA WebSocket error:", error);
     };
-  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange, onCommand]);
+  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange, onCommand, onTeamActiveChange]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -300,6 +319,8 @@ export function useEvaLive({
   return {
     isConnected,
     isObserving,
+    isTeamActive,
+    isTeamActiveRef,
     startObserving,
     stopObserving,
     startScreenCapture,

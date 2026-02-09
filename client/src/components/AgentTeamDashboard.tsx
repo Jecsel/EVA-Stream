@@ -39,6 +39,7 @@ interface AgentTeamDashboardProps {
   ws: WebSocket | null;
   isConnected: boolean;
   className?: string;
+  onTeamActiveChange?: (isActive: boolean) => void;
 }
 
 const agentConfig: Record<string, { name: string; icon: typeof Brain; color: string; bgColor: string }> = {
@@ -72,7 +73,7 @@ const taskStatusIcons: Record<string, string> = {
   failed: "❌",
 };
 
-export function AgentTeamDashboard({ meetingId, ws, isConnected, className = "" }: AgentTeamDashboardProps) {
+export function AgentTeamDashboard({ meetingId, ws, isConnected, className = "", onTeamActiveChange }: AgentTeamDashboardProps) {
   const [isTeamActive, setIsTeamActive] = useState(false);
   const [agents, setAgents] = useState<TeamAgentStatus[]>([]);
   const [tasks, setTasks] = useState<AgentTeamTask[]>([]);
@@ -148,6 +149,10 @@ export function AgentTeamDashboard({ meetingId, ws, isConnected, className = "" 
       ws.send(JSON.stringify({ type: "team_get_tasks" }));
     }
   }, [ws, isConnected]);
+
+  useEffect(() => {
+    onTeamActiveChange?.(isTeamActive);
+  }, [isTeamActive, onTeamActiveChange]);
 
   const startTeam = () => {
     if (ws && isConnected) {
