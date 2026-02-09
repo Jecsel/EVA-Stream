@@ -5,6 +5,8 @@ import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { processLiveInput, type GeminiLiveMessage, type GeminiLiveResponse } from "./gemini-live";
 import { startScrumMasterSession, stopScrumMasterSession, processTranscriptChunk, runPeriodicAnalysis, updateScrumMasterConfig, setSprintGoal, getSessionState, generatePostMeetingSummary } from "./scrum-master";
+import { getOrCreateTeam, getTeam, removeTeam, type AgentTeamOrchestrator } from "./agent-team";
+import type { AgentType } from "@shared/schema";
 import { seedAgents } from "./seed";
 import * as Sentry from "@sentry/node";
 
@@ -72,6 +74,55 @@ wss.on("connection", (ws: WebSocket, req) => {
     try {
       const message = JSON.parse(data.toString());
 
+      // Route agent team messages (prefixed with "team_")
+      if (message.type && message.type.startsWith("team_")) {
+        const teamType = message.type.replace("team_", "");
+        switch (teamType) {
+          case "start": {
+            const team = getOrCreateTeam(meetingId, broadcastToMeeting);
+            const agents: AgentType[] = message.agents || ["eva", "sop", "cro", "scrum"];
+            await team.start(agents);
+            broadcastToMeeting(meetingId, { type: "team_started", agents: team.getAgentStatusArray() });
+            break;
+          }
+          case "stop": {
+            const team = getTeam(meetingId);
+            if (team) {
+              const report = await team.generateCoordinatedOutput();
+              await team.stop();
+              broadcastToMeeting(meetingId, { type: "team_stopped", report });
+              removeTeam(meetingId);
+            }
+            break;
+          }
+          case "get_state": {
+            const team = getTeam(meetingId);
+            if (team) {
+              const state = team.getState();
+              ws.send(JSON.stringify({
+                type: "team_state",
+                isActive: state.isActive,
+                agents: team.getAgentStatusArray(),
+              }));
+            } else {
+              ws.send(JSON.stringify({ type: "team_state", isActive: false, agents: [] }));
+            }
+            break;
+          }
+          case "get_tasks": {
+            const team = getTeam(meetingId);
+            if (team) {
+              const tasks = await team.getTaskManager().getTasks();
+              ws.send(JSON.stringify({ type: "team_tasks", tasks }));
+            }
+            break;
+          }
+          default:
+            ws.send(JSON.stringify({ type: "team_error", content: `Unknown team message type: ${teamType}` }));
+        }
+        return;
+      }
+
       // Route scrum master messages (prefixed with "scrum_")
       if (message.type && message.type.startsWith("scrum_")) {
         const scrumType = message.type.replace("scrum_", "");
@@ -108,6 +159,15 @@ wss.on("connection", (ws: WebSocket, req) => {
             });
             for (const intervention of interventions) {
               broadcastToMeeting(meetingId, { ...intervention, interventionType: intervention.type, type: "scrum_intervention" });
+              // Report blockers/action items to agent team
+              const activeTeam = getTeam(meetingId);
+              if (activeTeam && activeTeam.isTeamActive()) {
+                if (intervention.type === "blocker_detected") {
+                  activeTeam.sendAlert("scrum", `Blocker detected: ${intervention.message}`, { speaker: intervention.speaker, severity: intervention.severity }).catch(() => {});
+                } else if (intervention.type === "action_needed") {
+                  activeTeam.shareContext("scrum", "sop", `Action item identified: ${intervention.message}`, { speaker: intervention.speaker }).catch(() => {});
+                }
+              }
             }
             const aiInterventions = await runPeriodicAnalysis(meetingId);
             for (const intervention of aiInterventions) {
@@ -135,6 +195,17 @@ wss.on("connection", (ws: WebSocket, req) => {
         console.log(`[EVA] Sent start_app_observe command to client for meeting ${meetingId}`);
       }
 
+      // If agent team is active, classify and delegate input
+      const team = getTeam(meetingId);
+      if (team && team.isTeamActive() && (message.type === "video" || message.type === "transcript" || message.type === "text")) {
+        const content = message.data || "";
+        if (content && content.length > 10) {
+          team.classifyAndDelegate(message.type, content, message.speaker).catch(err => {
+            console.error("[AgentTeam] Delegation error:", err);
+          });
+        }
+      }
+
       const response = await processLiveInput(meetingId, evaMessage);
       
       const shouldSend = response.type === "sop_update" || 
@@ -147,6 +218,15 @@ wss.on("connection", (ws: WebSocket, req) => {
             response.type === "cro_update" || response.type === "cro_status") {
           broadcastToMeeting(meetingId, response);
           console.log(`Broadcasted ${response.type} to ${meetingConnections.get(meetingId)?.size || 0} clients`);
+
+          // Report to agent team if active
+          if (team && team.isTeamActive()) {
+            if (response.type === "sop_update") {
+              team.reportAgentStatus("sop", "completed", "SOP generated", response.content.substring(0, 200)).catch(() => {});
+            } else if (response.type === "cro_update") {
+              team.reportAgentStatus("cro", "completed", "CRO generated", response.content.substring(0, 200)).catch(() => {});
+            }
+          }
         } else {
           ws.send(JSON.stringify(response));
         }

@@ -57,6 +57,10 @@ import {
   type InsertScrumMasterAction,
   type ScrumMeetingRecord,
   type InsertScrumMeetingRecord,
+  type AgentTeamTask,
+  type InsertAgentTeamTask,
+  type AgentTeamMessage,
+  type InsertAgentTeamMessage,
   users,
   meetings,
   recordings,
@@ -84,6 +88,8 @@ import {
   scrumMasterBlockers,
   scrumMasterActions,
   scrumMeetingRecords,
+  agentTeamTasks,
+  agentTeamMessages,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, not, desc, ilike, or, and, gte } from "drizzle-orm";
@@ -263,6 +269,16 @@ export interface IStorage {
   getLatestScrumMeetingRecordForSeries(meetingSeriesId: string, excludeMeetingId?: string): Promise<ScrumMeetingRecord | undefined>;
   getPreviousScrumMeetingRecord(meetingId: string): Promise<ScrumMeetingRecord | undefined>;
   updateScrumMeetingRecord(id: string, data: Partial<InsertScrumMeetingRecord>): Promise<ScrumMeetingRecord | undefined>;
+
+  // Agent Team Tasks
+  createAgentTeamTask(task: InsertAgentTeamTask): Promise<AgentTeamTask>;
+  getAgentTeamTask(id: string): Promise<AgentTeamTask | undefined>;
+  getAgentTeamTasksByMeeting(meetingId: string): Promise<AgentTeamTask[]>;
+  updateAgentTeamTask(id: string, data: Partial<InsertAgentTeamTask>): Promise<AgentTeamTask | undefined>;
+
+  // Agent Team Messages
+  createAgentTeamMessage(message: InsertAgentTeamMessage): Promise<AgentTeamMessage>;
+  getAgentTeamMessagesByMeeting(meetingId: string): Promise<AgentTeamMessage[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1273,6 +1289,36 @@ export class DatabaseStorage implements IStorage {
       .where(eq(scrumMeetingRecords.id, id))
       .returning();
     return result;
+  }
+
+  // Agent Team Tasks
+  async createAgentTeamTask(task: InsertAgentTeamTask): Promise<AgentTeamTask> {
+    const [result] = await db.insert(agentTeamTasks).values(task).returning();
+    return result;
+  }
+
+  async getAgentTeamTask(id: string): Promise<AgentTeamTask | undefined> {
+    const [result] = await db.select().from(agentTeamTasks).where(eq(agentTeamTasks.id, id));
+    return result;
+  }
+
+  async getAgentTeamTasksByMeeting(meetingId: string): Promise<AgentTeamTask[]> {
+    return db.select().from(agentTeamTasks).where(eq(agentTeamTasks.meetingId, meetingId)).orderBy(desc(agentTeamTasks.createdAt));
+  }
+
+  async updateAgentTeamTask(id: string, data: Partial<InsertAgentTeamTask>): Promise<AgentTeamTask | undefined> {
+    const [result] = await db.update(agentTeamTasks).set(data).where(eq(agentTeamTasks.id, id)).returning();
+    return result;
+  }
+
+  // Agent Team Messages
+  async createAgentTeamMessage(message: InsertAgentTeamMessage): Promise<AgentTeamMessage> {
+    const [result] = await db.insert(agentTeamMessages).values(message).returning();
+    return result;
+  }
+
+  async getAgentTeamMessagesByMeeting(meetingId: string): Promise<AgentTeamMessage[]> {
+    return db.select().from(agentTeamMessages).where(eq(agentTeamMessages.meetingId, meetingId)).orderBy(desc(agentTeamMessages.createdAt));
   }
 }
 

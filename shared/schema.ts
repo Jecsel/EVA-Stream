@@ -681,4 +681,51 @@ export interface ScrumMasterPostMeetingSummary {
   patterns: string[];
 }
 
+// Agent Team Tasks - shared task list for coordinated agent work
+export const agentTeamTasks = pgTable("agent_team_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  agentType: text("agent_type").notNull(), // eva, sop, cro, scrum
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"), // pending, assigned, in_progress, completed, failed
+  result: text("result"),
+  priority: text("priority").notNull().default("normal"), // low, normal, high, urgent
+  assignedBy: text("assigned_by").default("eva"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertAgentTeamTaskSchema = createInsertSchema(agentTeamTasks).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentTeamTask = z.infer<typeof insertAgentTeamTaskSchema>;
+export type AgentTeamTask = typeof agentTeamTasks.$inferSelect;
+
+// Agent Team Messages - inter-agent communication
+export const agentTeamMessages = pgTable("agent_team_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  meetingId: varchar("meeting_id").notNull().references(() => meetings.id, { onDelete: 'cascade' }),
+  fromAgent: text("from_agent").notNull(), // eva, sop, cro, scrum
+  toAgent: text("to_agent").notNull(), // eva, sop, cro, scrum, all
+  messageType: text("message_type").notNull(), // delegate_task, status_update, task_complete, finding, alert, context_share
+  content: text("content").notNull(),
+  metadata: jsonb("metadata"), // additional structured data
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAgentTeamMessageSchema = createInsertSchema(agentTeamMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAgentTeamMessage = z.infer<typeof insertAgentTeamMessageSchema>;
+export type AgentTeamMessage = typeof agentTeamMessages.$inferSelect;
+
+// Agent Team type definitions
+export type AgentType = "eva" | "sop" | "cro" | "scrum";
+export type AgentTaskStatus = "pending" | "assigned" | "in_progress" | "completed" | "failed";
+export type AgentMessageType = "delegate_task" | "status_update" | "task_complete" | "finding" | "alert" | "context_share";
+
 export * from "./models/chat";

@@ -15,6 +15,13 @@
       "when": 1769454983416,
       "tag": "0001_graceful_mandroid",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770627650410,
+      "tag": "0002_cuddly_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

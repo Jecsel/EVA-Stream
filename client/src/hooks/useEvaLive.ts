@@ -309,5 +309,6 @@ export function useEvaLive({
     sendTextMessage,
     sendTranscript,
     disconnect,
+    wsRef,
   };
 }

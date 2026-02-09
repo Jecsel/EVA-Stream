@@ -9,8 +9,9 @@ import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
 import { ScrumBoard } from "@/components/ScrumBoard";
 import { ScrumMasterPanel, type TranscriptEvent } from "@/components/ScrumMasterPanel";
+import { AgentTeamDashboard } from "@/components/AgentTeamDashboard";
 import { useAuth } from "@/contexts/AuthContext";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2, Monitor } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2, Monitor, Users } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -44,7 +45,7 @@ export default function MeetingRoom() {
   const { user, loading: authLoading } = useAuth();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
-  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
+  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro" | "team">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
   const [isAppObserving, setIsAppObserving] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
@@ -548,6 +549,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     stopAppCapture,
     sendTextMessage,
     sendTranscript,
+    wsRef,
   } = useEvaLive({
     meetingId: meeting?.id || "",
     onMessage: handleEvaMessage,
@@ -1182,6 +1184,18 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                         CRO Generator
                       </button>
                     )}
+                    <button
+                      onClick={() => setEvaPanelMode("team")}
+                      className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                        evaPanelMode === "team" 
+                          ? "bg-background text-foreground border-b-2 border-purple-500" 
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="button-eva-mode-team"
+                    >
+                      <Users className="w-3 h-3 inline mr-1" />
+                      Agent Team
+                    </button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-center bg-background/50 py-2.5 px-3">
@@ -1264,6 +1278,15 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                     </div>
                   </div>
                 </div>
+              )}
+              
+              {evaPanelMode === "team" && (
+                <AgentTeamDashboard
+                  meetingId={meeting.id}
+                  ws={wsRef.current}
+                  isConnected={evaConnected}
+                  className="h-[calc(100%-120px)]"
+                />
               )}
               
               {evaPanelMode === "cro" && isCROEnabled && (

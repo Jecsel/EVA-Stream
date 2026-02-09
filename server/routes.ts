@@ -2583,6 +2583,28 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // Agent Team Routes
+  // ============================================
+
+  app.get("/api/meetings/:meetingId/agent-team/tasks", async (req, res) => {
+    try {
+      const tasks = await storage.getAgentTeamTasksByMeeting(req.params.meetingId);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agent team tasks" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/agent-team/messages", async (req, res) => {
+    try {
+      const messages = await storage.getAgentTeamMessagesByMeeting(req.params.meetingId);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agent team messages" });
+    }
+  });
+
+  // ============================================
   // Public Routes - Agents (for meeting room)
   // ============================================
   
