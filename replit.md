@@ -63,6 +63,14 @@ The platform supports configurable AI agents and generators:
 
 Generators can operate from transcript only or combine transcript and screen observation for real-time generation via WebSockets. Custom prompts are configurable via the Admin panel.
 
+### Agent Team Coordination System
+Inspired by Claude Code's "Agent Teams" concept. EVA acts as team lead coordinating multiple AI agents (SOP Generator, CRO Generator, Scrum Master) working in parallel.
+- **Architecture**: `server/agent-team.ts` - AgentTeamOrchestrator with MessageBus (inter-agent communication), TaskManager (shared task tracking), and InputClassifier (Gemini-powered intelligent delegation).
+- **Data Model**: `agentTeamTasks` and `agentTeamMessages` tables in PostgreSQL for persistent task/message storage.
+- **Communication**: WebSocket-based real-time updates using `team_` message prefix. Message types: team_start, team_stop, team_get_state, team_get_tasks, team_status, team_task_update, team_agent_message, team_state, team_tasks.
+- **UI**: `client/src/components/AgentTeamDashboard.tsx` - Dashboard with three sub-tabs: Tasks (shared task list with active/completed sections), Messages (inter-agent communication feed), and Flow (Mermaid diagram showing agent team architecture with live status colors).
+- **Integration**: Available as "Agent Team" tab in the MeetingRoom EVA panel. Moderators can start/stop the team; agents are coordinated in parallel with EVA synthesizing a coordinated report on stop.
+
 ### Data Flow
 User interaction initiates meeting creation/joining. Jitsi handles media streaming. Selected AI agents activate, with EVA connecting via WebSocket for real-time observation. AI responses update SOPs and flowchart visualizations. All meeting data is persisted to PostgreSQL.
 
