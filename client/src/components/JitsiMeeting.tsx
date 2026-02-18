@@ -71,6 +71,12 @@ export function JitsiMeeting({
         configOverwrite={{
           startWithAudioMuted: false,
           startWithVideoMuted: true,
+          startSilent: false,
+          enableUserRolesBasedOnToken: true,
+          enableFeaturesBasedOnToken: true,
+          startAudioOnly: false,
+          disableInitialGUM: false,
+          prejoinPageEnabled: false,
           theme: {
             default: 'dark',
           },

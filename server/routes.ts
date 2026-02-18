@@ -1987,7 +1987,7 @@ export async function registerRoutes(
               name: userName || "Guest",
               avatar: userAvatar || "",
               email: userEmail || `${userId}@guest.local`,
-              moderator: isModerator,
+              moderator: isModerator ? "true" : "false",
             },
             features: {
               livestreaming: "true",
