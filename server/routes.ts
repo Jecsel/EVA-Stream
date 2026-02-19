@@ -583,7 +583,7 @@ export async function registerRoutes(
   app.post("/api/recordings", async (req, res) => {
     try {
       const validated = insertRecordingSchema.parse(req.body);
-      const recording = await storage.createRecording(validated);
+      const recording = await storage.createOrUpdateRecording(validated);
       res.json(recording);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -930,8 +930,8 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      // Create recording
-      await storage.createRecording({
+      // Create or update recording (prevents duplicates)
+      await storage.createOrUpdateRecording({
         meetingId,
         title: meeting.title,
         duration,
@@ -973,6 +973,17 @@ export async function registerRoutes(
       if (!meeting) {
         res.status(404).json({ error: "Meeting not found" });
         return;
+      }
+
+      // Check if meeting was already ended - return existing recording instead of creating duplicate
+      if (meeting.status === "completed") {
+        const existingRecordings = await storage.getRecordingsByMeeting(meetingId);
+        if (existingRecordings.length > 0) {
+          console.log(`Meeting ${meetingId} already completed, returning existing recording`);
+          res.json({ recording: existingRecordings[0], summary: existingRecordings[0].summary || "" });
+          return;
+        }
+        // If status is completed but no recording exists, proceed to create one
       }
 
       // Get all chat messages and transcript segments for summary
@@ -1145,7 +1156,7 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      const recording = await storage.createRecording({
+      const recording = await storage.createOrUpdateRecording({
         meetingId,
         title: meeting.title,
         duration: duration || "00:00",
@@ -2182,8 +2193,8 @@ export async function registerRoutes(
                 recordingId = existingRecording.id;
                 console.log(`Updated recording ${existingRecording.id} with video URL`);
               } else {
-                // Create new recording with video URL
-                const newRecording = await storage.createRecording({
+                // Create new recording with video URL (using createOrUpdateRecording for safety)
+                const newRecording = await storage.createOrUpdateRecording({
                   meetingId: meeting.id,
                   title: meeting.title,
                   duration: "Unknown",

@@ -135,6 +135,7 @@ export interface IStorage {
   getRecording(id: string): Promise<Recording | undefined>;
   getRecordingByShareToken(token: string): Promise<Recording | undefined>;
   createRecording(recording: InsertRecording): Promise<Recording>;
+  createOrUpdateRecording(recording: InsertRecording): Promise<Recording>;
   listRecordings(limit?: number): Promise<Recording[]>;
   getRecordingsByMeeting(meetingId: string): Promise<Recording[]>;
   updateRecording(id: string, recording: Partial<InsertRecording>): Promise<Recording | undefined>;
@@ -488,6 +489,30 @@ export class DatabaseStorage implements IStorage {
   async createRecording(insertRecording: InsertRecording): Promise<Recording> {
     const [recording] = await db.insert(recordings).values(insertRecording).returning();
     return recording;
+  }
+
+  async createOrUpdateRecording(insertRecording: InsertRecording): Promise<Recording> {
+    const existing = await this.getRecordingsByMeeting(insertRecording.meetingId);
+    if (existing.length > 0) {
+      const best = existing.sort((a, b) => {
+        const scoreA = (a.videoUrl ? 10 : 0) + (a.summary ? a.summary.length : 0) + (a.sopContent ? 5 : 0) + (a.croContent ? 5 : 0);
+        const scoreB = (b.videoUrl ? 10 : 0) + (b.summary ? b.summary.length : 0) + (b.sopContent ? 5 : 0) + (b.croContent ? 5 : 0);
+        return scoreB - scoreA;
+      })[0];
+      const { meetingId, ...updateData } = insertRecording;
+      const filteredUpdate: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(updateData)) {
+        if (value !== null && value !== undefined && value !== "" && value !== "00:00" && value !== "Unknown") {
+          filteredUpdate[key] = value;
+        }
+      }
+      if (Object.keys(filteredUpdate).length > 0) {
+        const updated = await this.updateRecording(best.id, filteredUpdate as Partial<InsertRecording>);
+        if (updated) return updated;
+      }
+      return best;
+    }
+    return this.createRecording(insertRecording);
   }
 
   async listRecordings(limit: number = 10): Promise<Recording[]> {
