@@ -153,6 +153,25 @@ export const api = {
     return response.json();
   },
 
+  async reanalyzeTranscriptionSession(transcriptionId: string, outputs: string[]): Promise<{ success: boolean; message: string; transcriptionId: string; selectedOutputs: string[] }> {
+    const response = await fetch(`${API_BASE}/transcriptions/${transcriptionId}/reanalyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputs }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Failed to start session re-analysis" }));
+      throw new Error(error.error || "Failed to start session re-analysis");
+    }
+    return response.json();
+  },
+
+  async getTranscriptionReanalyzeStatus(transcriptionId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/transcriptions/${transcriptionId}/reanalyze-status`);
+    if (!response.ok) return { active: false };
+    return response.json();
+  },
+
   async generateFlowchart(sopContent: string, meetingId?: string): Promise<{ mermaidCode: string }> {
     const response = await fetch(`${API_BASE}/generate-flowchart`, {
       method: "POST",

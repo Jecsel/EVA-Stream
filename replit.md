@@ -83,6 +83,9 @@ JaaS video recordings expire after 24 hours. To preserve them permanently:
 ### Per-Transcription Session Support
 When a meeting has multiple JaaS Cloud transcription records, the Recording Detail page shows a session selector allowing users to view each transcription independently. Each transcription record (`meetingTranscriptions` table) supports its own `sopContent`, `croContent`, and `flowchartCode` fields. The UI falls back to recording-level content when per-transcription content is not available. AI re-analyzed transcriptions (fqn = `recording-{recordingId}`) are filtered from the cloud transcription list.
 
+### Per-Session Re-Analysis
+The Re-analyze button lives in the Transcription Sessions section (not the header). When a session is selected, re-analysis generates documents (SOP, CRO, flowchart, meeting notes, meeting record) from the selected session's transcript text—no video re-transcription. Results are stored on the `meetingTranscriptions` record for that session. API: `POST /api/transcriptions/:transcriptionId/reanalyze` and `GET /api/transcriptions/:transcriptionId/reanalyze-status`. WebSocket message type: `session_reanalysis_progress`. Storage method: `getTranscriptionById(id)` in `server/storage.ts`.
+
 ### Data Flow
 User interaction initiates meeting creation/joining. Jitsi handles media streaming. Selected AI agents activate, with EVA connecting via WebSocket for real-time observation. AI responses update SOPs and flowchart visualizations. All meeting data is persisted to PostgreSQL.
 

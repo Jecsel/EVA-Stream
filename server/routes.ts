@@ -1025,6 +1025,350 @@ export async function registerRoutes(
     res.json({ active: false });
   });
 
+  // Per-session re-analyze: re-generate documents from a specific transcription session's transcript
+  const sessionReanalysisStatus = new Map<string, ReanalysisJobStatus>();
+
+  app.post("/api/transcriptions/:transcriptionId/reanalyze", async (req, res) => {
+    try {
+      const { transcriptionId } = req.params;
+      const { outputs } = req.body;
+
+      if (!outputs || !Array.isArray(outputs) || outputs.length === 0) {
+        res.status(400).json({ error: "No output types selected" });
+        return;
+      }
+
+      const validOutputs = ["sop", "cro", "flowchart", "meeting_notes", "meeting_record"];
+      const selectedOutputs = outputs.filter((o: string) => validOutputs.includes(o));
+      if (selectedOutputs.length === 0) {
+        res.status(400).json({ error: "No valid output types selected. Per-session re-analyze supports: sop, cro, flowchart, meeting_notes, meeting_record" });
+        return;
+      }
+
+      const transcription = await storage.getTranscriptionById(transcriptionId);
+      if (!transcription) {
+        res.status(404).json({ error: "Transcription session not found" });
+        return;
+      }
+
+      if (!transcription.meetingId) {
+        res.status(400).json({ error: "Transcription has no associated meeting" });
+        return;
+      }
+
+      const transcriptionMeetingId = transcription.meetingId;
+
+      const existingStatus = sessionReanalysisStatus.get(transcriptionId);
+      if (existingStatus && !existingStatus.completed) {
+        res.status(409).json({ error: "Re-analysis is already in progress for this session" });
+        return;
+      }
+
+      const meeting = await storage.getMeeting(transcriptionMeetingId);
+      const meetingTitle = meeting?.title || "Meeting";
+
+      // Extract transcript text from the session
+      let transcriptText = "";
+      if (transcription.rawTranscript) {
+        try {
+          const raw = JSON.parse(transcription.rawTranscript);
+          if (raw.messages && Array.isArray(raw.messages)) {
+            transcriptText = raw.messages.map((m: any) => `${m.name || "Speaker"}: ${m.content}`).join("\n");
+          } else {
+            transcriptText = transcription.rawTranscript;
+          }
+        } catch {
+          transcriptText = transcription.rawTranscript;
+        }
+      }
+      if (!transcriptText && transcription.parsedTranscript) {
+        const parsed = Array.isArray(transcription.parsedTranscript) ? transcription.parsedTranscript : [];
+        transcriptText = parsed.map((s: any) => {
+          if (typeof s === "string") return s;
+          if (s.text) {
+            try {
+              const inner = JSON.parse(s.text);
+              if (inner.messages && Array.isArray(inner.messages)) {
+                return inner.messages.map((m: any) => `${m.name || "Speaker"}: ${m.content}`).join("\n");
+              }
+            } catch {}
+            return `${s.speaker || "Speaker"}: ${s.text}`;
+          }
+          return "";
+        }).filter(Boolean).join("\n");
+      }
+
+      if (!transcriptText || transcriptText.trim().length === 0) {
+        res.status(400).json({ error: "No transcript text available in this session for re-analysis" });
+        return;
+      }
+
+      const initialOutputs: Record<string, ReanalysisOutputStatus> = {};
+      for (const o of selectedOutputs) initialOutputs[o] = "pending";
+
+      const startedAt = new Date().toISOString();
+      const initialJob: ReanalysisJobStatus = {
+        status: "Starting per-session re-analysis...",
+        step: "starting",
+        progress: 0,
+        completed: false,
+        outputs: initialOutputs,
+        startedAt,
+        updatedAt: startedAt,
+      };
+      sessionReanalysisStatus.set(transcriptionId, initialJob);
+
+      const emitProgress = (
+        status: string,
+        step: string,
+        progress: number,
+        outputsUpdate?: Record<string, ReanalysisOutputStatus>,
+        errorCode?: ReanalysisErrorCode
+      ) => {
+        const updatedAt = new Date().toISOString();
+        const current = sessionReanalysisStatus.get(transcriptionId);
+        const updated: ReanalysisJobStatus = {
+          status,
+          step,
+          progress,
+          completed: false,
+          outputs: outputsUpdate ?? current?.outputs ?? initialOutputs,
+          startedAt,
+          updatedAt,
+          ...(errorCode ? { errorCode } : {}),
+        };
+        sessionReanalysisStatus.set(transcriptionId, updated);
+        broadcastToMeeting(transcriptionMeetingId, {
+          type: "session_reanalysis_progress",
+          transcriptionId,
+          active: true,
+          ...updated,
+        });
+      };
+
+      // Process asynchronously
+      (async () => {
+        const outputs: Record<string, ReanalysisOutputStatus> = { ...initialOutputs };
+        const emitWithOutputs = (status: string, step: string, progress: number, errorCode?: ReanalysisErrorCode) => {
+          emitProgress(status, step, progress, { ...outputs }, errorCode);
+        };
+
+        const updateData: Record<string, any> = {};
+        const totalSteps = selectedOutputs.length;
+        let currentStep = 0;
+        const getProgress = () => 10 + Math.round((currentStep / Math.max(totalSteps, 1)) * 85);
+
+        try {
+          if (selectedOutputs.includes("sop")) {
+            outputs["sop"] = "in_progress";
+            emitWithOutputs("Generating SOP from session transcript...", "generating_sop", getProgress());
+            try {
+              const sopContent = await withNetworkRetry(() => generateSOPFromTranscript(transcriptText, meetingTitle));
+              if (sopContent) {
+                updateData.sopContent = sopContent;
+                outputs["sop"] = "done";
+              } else {
+                outputs["sop"] = "error";
+              }
+            } catch (err) {
+              outputs["sop"] = "error";
+              console.error("[Session Re-analysis] SOP generation failed:", err);
+            }
+            currentStep++;
+          }
+
+          if (selectedOutputs.includes("cro")) {
+            outputs["cro"] = "in_progress";
+            emitWithOutputs("Generating CRO from session transcript...", "generating_cro", getProgress());
+            try {
+              const parsedSegments = Array.isArray(transcription.parsedTranscript) ? transcription.parsedTranscript : [];
+              const chatMessages = parsedSegments.length > 0
+                ? parsedSegments.map((seg: any) => ({
+                    role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
+                    content: typeof seg === "string" ? seg : seg.text || "",
+                  }))
+                : [
+                    { role: "user", content: transcriptText.slice(0, 5000) },
+                    { role: "ai", content: "Analyzing the discussion..." },
+                    { role: "user", content: transcriptText.slice(5000, 10000) || "continued..." }
+                  ];
+              if (chatMessages.length < 3) {
+                chatMessages.push(
+                  { role: "user", content: transcriptText.slice(0, 5000) },
+                  { role: "ai", content: "Analyzing..." },
+                  { role: "user", content: transcriptText.slice(5000, 10000) || "continued..." }
+                );
+              }
+              const croContent = await withNetworkRetry(() => generateCROFromChatMessages(chatMessages, meetingTitle));
+              if (croContent) {
+                updateData.croContent = croContent;
+                outputs["cro"] = "done";
+              } else {
+                outputs["cro"] = "error";
+              }
+            } catch (err) {
+              outputs["cro"] = "error";
+              console.error("[Session Re-analysis] CRO generation failed:", err);
+            }
+            currentStep++;
+          }
+
+          if (selectedOutputs.includes("flowchart")) {
+            outputs["flowchart"] = "in_progress";
+            emitWithOutputs("Generating flowchart...", "generating_flowchart", getProgress());
+            try {
+              const sopForFlowchart = updateData.sopContent || transcription.sopContent;
+              if (sopForFlowchart) {
+                const flowchartCode = await withNetworkRetry(() => generateMermaidFlowchart(sopForFlowchart));
+                if (flowchartCode) {
+                  updateData.flowchartCode = flowchartCode;
+                  outputs["flowchart"] = "done";
+                } else {
+                  outputs["flowchart"] = "error";
+                }
+              } else {
+                outputs["flowchart"] = "error";
+                console.log("[Session Re-analysis] No SOP content available for flowchart generation");
+              }
+            } catch (err) {
+              outputs["flowchart"] = "error";
+              console.error("[Session Re-analysis] Flowchart generation failed:", err);
+            }
+            currentStep++;
+          }
+
+          if (selectedOutputs.includes("meeting_notes")) {
+            outputs["meeting_notes"] = "in_progress";
+            emitWithOutputs("Generating meeting notes...", "generating_notes", getProgress());
+            try {
+              const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcriptText.slice(0, 30000)}`;
+              const notesResponse = await withNetworkRetry(() => analyzeChat(notesPrompt, "", false));
+              if (notesResponse?.message) {
+                await storage.createChatMessage({ meetingId: transcriptionMeetingId, role: "ai", content: notesResponse.message });
+                outputs["meeting_notes"] = "done";
+              } else {
+                outputs["meeting_notes"] = "error";
+              }
+            } catch (err) {
+              outputs["meeting_notes"] = "error";
+              console.error("[Session Re-analysis] Meeting notes generation failed:", err);
+            }
+            currentStep++;
+          }
+
+          if (selectedOutputs.includes("meeting_record")) {
+            outputs["meeting_record"] = "in_progress";
+            emitWithOutputs("Generating meeting record...", "generating_record", getProgress());
+            try {
+              const existingRecord = await storage.getScrumMeetingRecordByMeeting(transcriptionMeetingId);
+              if (existingRecord) {
+                await storage.deleteScrumMeetingRecord(existingRecord.id);
+              }
+              const { generateScrumMeetingRecord } = await import("./scrum-master");
+              const record = await generateScrumMeetingRecord(transcriptionMeetingId);
+              outputs["meeting_record"] = record ? "done" : "error";
+            } catch (err) {
+              outputs["meeting_record"] = "error";
+              console.error("[Session Re-analysis] Meeting record generation failed:", err);
+            }
+            currentStep++;
+          }
+
+          // Save results to the transcription session record
+          if (Object.keys(updateData).length > 0) {
+            await storage.updateMeetingTranscription(transcriptionId, updateData);
+            console.log(`[Session Re-analysis] Results saved to transcription ${transcriptionId}`);
+          }
+
+          // Check for partial failures
+          const outputValues = Object.values(outputs);
+          const hasDone = outputValues.some(v => v === "done");
+          const hasError = outputValues.some(v => v === "error");
+
+          if (hasError && hasDone) {
+            const doneJob: ReanalysisJobStatus = {
+              status: "Re-analysis partially completed - some outputs failed.",
+              step: "done",
+              progress: 100,
+              completed: true,
+              error: "Partial failure",
+              errorCode: "partial_failure",
+              outputs,
+              startedAt,
+              updatedAt: new Date().toISOString(),
+            };
+            sessionReanalysisStatus.set(transcriptionId, doneJob);
+            broadcastToMeeting(transcriptionMeetingId, { type: "session_reanalysis_progress", transcriptionId, active: true, ...doneJob });
+          } else if (hasError) {
+            const errorJob: ReanalysisJobStatus = {
+              status: "Re-analysis failed.",
+              step: "error",
+              progress: 100,
+              completed: true,
+              error: "All outputs failed",
+              errorCode: "processing_error",
+              outputs,
+              startedAt,
+              updatedAt: new Date().toISOString(),
+            };
+            sessionReanalysisStatus.set(transcriptionId, errorJob);
+            broadcastToMeeting(transcriptionMeetingId, { type: "session_reanalysis_progress", transcriptionId, active: true, ...errorJob });
+          } else {
+            const doneJob: ReanalysisJobStatus = {
+              status: "Re-analysis completed successfully!",
+              step: "done",
+              progress: 100,
+              completed: true,
+              outputs,
+              startedAt,
+              updatedAt: new Date().toISOString(),
+            };
+            sessionReanalysisStatus.set(transcriptionId, doneJob);
+            broadcastToMeeting(transcriptionMeetingId, { type: "session_reanalysis_progress", transcriptionId, active: true, ...doneJob });
+          }
+
+          setTimeout(() => sessionReanalysisStatus.delete(transcriptionId), 60000);
+        } catch (error) {
+          console.error(`[Session Re-analysis] Error:`, error);
+          const failMessage = error instanceof Error ? error.message : "Re-analysis failed.";
+          const errorJob: ReanalysisJobStatus = {
+            status: failMessage,
+            step: "error",
+            progress: 0,
+            completed: true,
+            error: failMessage,
+            errorCode: "processing_error",
+            outputs,
+            startedAt,
+            updatedAt: new Date().toISOString(),
+          };
+          sessionReanalysisStatus.set(transcriptionId, errorJob);
+          broadcastToMeeting(transcriptionMeetingId, { type: "session_reanalysis_progress", transcriptionId, active: true, ...errorJob });
+          setTimeout(() => sessionReanalysisStatus.delete(transcriptionId), 120000);
+        }
+      })();
+
+      res.json({
+        success: true,
+        message: "Per-session re-analysis started.",
+        transcriptionId,
+        selectedOutputs,
+      });
+    } catch (error) {
+      console.error("Failed to start per-session re-analysis:", error);
+      res.status(500).json({ error: "Failed to start re-analysis" });
+    }
+  });
+
+  app.get("/api/transcriptions/:transcriptionId/reanalyze-status", async (req, res) => {
+    const status = sessionReanalysisStatus.get(req.params.transcriptionId);
+    if (status) {
+      res.json({ active: true, ...status });
+      return;
+    }
+    res.json({ active: false });
+  });
+
   // Trigger AI transcription for a recording
   app.post("/api/recordings/:id/transcribe", async (req, res) => {
     try {

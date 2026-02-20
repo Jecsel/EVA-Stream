@@ -156,6 +156,7 @@ export interface IStorage {
 
   // Meeting Transcriptions
   createMeetingTranscription(transcription: InsertMeetingTranscription): Promise<MeetingTranscription>;
+  getTranscriptionById(id: string): Promise<MeetingTranscription | undefined>;
   getTranscriptionBySessionId(sessionId: string): Promise<MeetingTranscription | undefined>;
   updateMeetingTranscription(id: string, data: Partial<InsertMeetingTranscription>): Promise<MeetingTranscription | undefined>;
   getTranscriptionsByMeetingId(meetingId: string): Promise<MeetingTranscription[]>;
@@ -593,6 +594,11 @@ export class DatabaseStorage implements IStorage {
   // Meeting Transcriptions
   async createMeetingTranscription(insertTranscription: InsertMeetingTranscription): Promise<MeetingTranscription> {
     const [transcription] = await db.insert(meetingTranscriptions).values(insertTranscription).returning();
+    return transcription;
+  }
+
+  async getTranscriptionById(id: string): Promise<MeetingTranscription | undefined> {
+    const [transcription] = await db.select().from(meetingTranscriptions).where(eq(meetingTranscriptions.id, id));
     return transcription;
   }
 

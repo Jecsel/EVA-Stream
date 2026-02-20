@@ -378,7 +378,6 @@ export default function RecordingDetail() {
     let ws: WebSocket | null = null;
     let cancelled = false;
 
-    // Single REST check on mount to catch in-progress jobs from before the page loaded
     fetch(`/api/recordings/${recordingId}/reanalyze-status`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -393,6 +392,9 @@ export default function RecordingDetail() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "reanalysis_progress" && msg.recordingId === recordingId && !cancelled) {
+          handleReanalysisUpdate.current(msg);
+        }
+        if (msg.type === "session_reanalysis_progress" && !cancelled) {
           handleReanalysisUpdate.current(msg);
         }
       } catch {
@@ -419,6 +421,9 @@ export default function RecordingDetail() {
         .map(([key]) => key);
       if (selectedOutputs.length === 0) {
         throw new Error("Please select at least one output type");
+      }
+      if (selectedTranscription?.id) {
+        return api.reanalyzeTranscriptionSession(selectedTranscription.id, selectedOutputs);
       }
       return api.reanalyzeRecording(recordingId, selectedOutputs);
     },
@@ -748,43 +753,7 @@ export default function RecordingDetail() {
               </div>
             </PopoverContent>
           </Popover>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowReanalyzeModal(true)}
-                    disabled={!!reanalyzeDisabledReason}
-                    data-testid="button-reanalyze"
-                    className={reanalyzeSuccessFlash ? "border-green-500 text-green-500 transition-colors duration-300" : ""}
-                  >
-                    {reanalyzeSuccessFlash ? (
-                      <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
-                    ) : (
-                      <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
-                    )}
-                    {isReanalyzing ? (
-                      <span className="flex items-center gap-1.5">
-                        Re-analyzing...
-                        {reanalyzeStatus.progress != null && (
-                          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-mono">
-                            {reanalyzeStatus.progress}%
-                          </span>
-                        )}
-                      </span>
-                    ) : reanalyzeMutation.isPending ? "Starting..." : reanalyzeSuccessFlash ? "Done!" : "Re-analyze"}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {reanalyzeDisabledReason && (
-                <TooltipContent>
-                  <p>{reanalyzeDisabledReason}</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          
           <Button 
             variant="outline" 
             size="sm" 
@@ -1234,11 +1203,50 @@ export default function RecordingDetail() {
 
         {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
 
-        {cloudTranscriptions.length > 1 && (
+        {cloudTranscriptions.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-4 mb-4" data-testid="transcription-session-selector">
-            <div className="flex items-center gap-2 mb-3">
-              <Volume2 className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-medium">Transcription Sessions ({cloudTranscriptions.length})</h3>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-medium">Transcription Sessions ({cloudTranscriptions.length})</h3>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowReanalyzeModal(true)}
+                        disabled={isReanalyzing || reanalyzeMutation.isPending}
+                        data-testid="button-reanalyze"
+                        className={reanalyzeSuccessFlash ? "border-green-500 text-green-500 transition-colors duration-300" : ""}
+                      >
+                        {reanalyzeSuccessFlash ? (
+                          <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                        ) : (
+                          <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+                        )}
+                        {isReanalyzing ? (
+                          <span className="flex items-center gap-1.5">
+                            Re-analyzing...
+                            {reanalyzeStatus.progress != null && (
+                              <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-mono">
+                                {reanalyzeStatus.progress}%
+                              </span>
+                            )}
+                          </span>
+                        ) : reanalyzeMutation.isPending ? "Starting..." : reanalyzeSuccessFlash ? "Done!" : "Re-analyze"}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {isReanalyzing && (
+                    <TooltipContent>
+                      <p>Re-analysis is currently in progress</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             </div>
             <div className="flex flex-wrap gap-2">
               {cloudTranscriptions.map((t, idx) => {
@@ -1898,22 +1906,28 @@ export default function RecordingDetail() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-primary" />
-              Re-analyze Recording
+              Re-analyze {selectedTranscription ? `Session` : "Recording"}
             </DialogTitle>
             <DialogDescription>
-              The video will be re-transcribed from scratch using AI. Select the outputs you want to regenerate from the new transcription.
+              {selectedTranscription
+                ? "Generate documents from this session's transcript. Select the outputs you want to create."
+                : "The video will be re-transcribed from scratch using AI. Select the outputs you want to regenerate from the new transcription."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-4">
-            {[
-              { key: "document", label: "Document", icon: FileText, description: "General document from transcript" },
+            {([
+              ...(selectedTranscription ? [] : [
+                { key: "document", label: "Document", icon: FileText, description: "General document from transcript" },
+              ]),
               { key: "sop", label: "SOP", icon: FileText, description: "Standard Operating Procedure" },
               { key: "cro", label: "CRO", icon: Target, description: "Core Role Objective" },
               { key: "flowchart", label: "Flowchart", icon: GitBranch, description: "Process flow diagram" },
-              { key: "transcript", label: "Transcript", icon: MessageSquare, description: "Full meeting transcript" },
+              ...(selectedTranscription ? [] : [
+                { key: "transcript", label: "Transcript", icon: MessageSquare, description: "Full meeting transcript" },
+              ]),
               { key: "meeting_notes", label: "Meeting Notes", icon: ClipboardList, description: "Structured meeting notes" },
               { key: "meeting_record", label: "Meeting Record", icon: ScrollText, description: "Complete meeting record" },
-            ].map(({ key, label, icon: Icon, description }) => {
+            ] as Array<{ key: string; label: string; icon: any; description: string }>).map(({ key, label, icon: Icon, description }) => {
               const outputStatus = reanalyzeStatus.outputs?.[key];
               const statusBadge = outputStatus === "done"
                 ? <span className="text-xs text-green-500 flex items-center gap-0.5"><Check className="w-3 h-3" />Done</span>
