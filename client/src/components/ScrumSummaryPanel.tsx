@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Users, AlertTriangle, CheckCircle, Circle, Clock, ChevronDown, ChevronUp, Target, User, ArrowRight } from "lucide-react";
+import { Users, AlertTriangle, CheckCircle, Circle, Clock, ChevronDown, ChevronUp, Target, User, ArrowRight, Pencil, Trash2, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -76,6 +77,9 @@ const statusIcons: Record<string, typeof CheckCircle> = {
 export function ScrumSummaryPanel({ meetingId }: ScrumSummaryPanelProps) {
   const queryClient = useQueryClient();
   const [expandedParticipant, setExpandedParticipant] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ title: string; assignee: string; priority: string }>({ title: "", assignee: "", priority: "medium" });
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   const { data: scrumSummaryData, isLoading, error } = useQuery({
     queryKey: ["scrumSummary", meetingId],
@@ -87,9 +91,27 @@ export function ScrumSummaryPanel({ meetingId }: ScrumSummaryPanelProps) {
   const updateActionItemMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => api.updateScrumActionItem(id, data),
     onSuccess: () => {
+      setEditingItemId(null);
       queryClient.invalidateQueries({ queryKey: ["scrumSummary", meetingId] });
     },
   });
+
+  const deleteActionItemMutation = useMutation({
+    mutationFn: (id: string) => api.deleteScrumActionItem(id),
+    onSuccess: () => {
+      setDeletingItemId(null);
+      queryClient.invalidateQueries({ queryKey: ["scrumSummary", meetingId] });
+    },
+  });
+
+  const startEditing = (item: ActionItem) => {
+    setEditingItemId(item.id);
+    setEditForm({ title: item.title, assignee: item.assignee || "", priority: item.priority || "medium" });
+  };
+
+  const saveEdit = (id: string) => {
+    updateActionItemMutation.mutate({ id, data: { title: editForm.title, assignee: editForm.assignee || null, priority: editForm.priority } });
+  };
 
   if (isLoading) {
     return (
@@ -269,10 +291,72 @@ export function ScrumSummaryPanel({ meetingId }: ScrumSummaryPanelProps) {
           <div className="space-y-2">
             {(actionItems as ActionItem[]).map((item) => {
               const StatusIcon = statusIcons[item.status] || Circle;
+              const isEditing = editingItemId === item.id;
+              const isDeleting = deletingItemId === item.id;
+
+              if (isEditing) {
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3 bg-background/60 rounded-lg border border-primary/30 space-y-2"
+                    data-testid={`card-action-item-edit-${item.id}`}
+                  >
+                    <Input
+                      value={editForm.title}
+                      onChange={(e) => setEditForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder="Action item title"
+                      className="h-7 text-xs"
+                      data-testid={`input-title-${item.id}`}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editForm.assignee}
+                        onChange={(e) => setEditForm(f => ({ ...f, assignee: e.target.value }))}
+                        placeholder="Assignee"
+                        className="h-7 text-xs flex-1"
+                        data-testid={`input-assignee-${item.id}`}
+                      />
+                      <Select value={editForm.priority} onValueChange={(v) => setEditForm(f => ({ ...f, priority: v }))}>
+                        <SelectTrigger className="w-[90px] h-7 text-[10px]" data-testid={`select-priority-edit-${item.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => setEditingItemId(null)}
+                        data-testid={`button-cancel-edit-${item.id}`}
+                      >
+                        <X className="w-3 h-3 mr-1" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => saveEdit(item.id)}
+                        disabled={!editForm.title.trim() || updateActionItemMutation.isPending}
+                        data-testid={`button-save-edit-${item.id}`}
+                      >
+                        <Check className="w-3 h-3 mr-1" />
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 p-3 bg-background/60 rounded-lg border border-border/50"
+                  className="flex items-center gap-3 p-3 bg-background/60 rounded-lg border border-border/50 group"
                   data-testid={`card-action-item-${item.id}`}
                 >
                   <StatusIcon className={`w-4 h-4 flex-shrink-0 ${
@@ -297,20 +381,67 @@ export function ScrumSummaryPanel({ meetingId }: ScrumSummaryPanelProps) {
                       )}
                     </div>
                   </div>
-                  <Select
-                    value={item.status}
-                    onValueChange={(value) => updateActionItemMutation.mutate({ id: item.id, data: { status: value } })}
-                  >
-                    <SelectTrigger className="w-[110px] h-7 text-[10px]" data-testid={`select-status-${item.id}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="open">Open</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="done">Done</SelectItem>
-                      <SelectItem value="blocked">Blocked</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    {isDeleting ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-red-400 mr-1">Delete?</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => setDeletingItemId(null)}
+                          data-testid={`button-cancel-delete-${item.id}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                          onClick={() => deleteActionItemMutation.mutate(item.id)}
+                          disabled={deleteActionItemMutation.isPending}
+                          data-testid={`button-confirm-delete-${item.id}`}
+                        >
+                          <Check className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                          onClick={() => startEditing(item)}
+                          data-testid={`button-edit-${item.id}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400"
+                          onClick={() => setDeletingItemId(item.id)}
+                          data-testid={`button-delete-${item.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </>
+                    )}
+                    <Select
+                      value={item.status}
+                      onValueChange={(value) => updateActionItemMutation.mutate({ id: item.id, data: { status: value } })}
+                    >
+                      <SelectTrigger className="w-[110px] h-7 text-[10px]" data-testid={`select-status-${item.id}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">Open</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="done">Done</SelectItem>
+                        <SelectItem value="blocked">Blocked</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               );
             })}
