@@ -37,11 +37,11 @@ Every feature, UI/UX and design should be mobile-first.
 - **Data Storage**: Uses a storage abstraction layer for database operations.
 
 ### AI Integration
-- **Provider**: Google Gemini API (screen analysis, SOP/CRO generation), OpenAI Whisper via Replit AI Integrations (live audio transcription).
+- **Provider**: Google Gemini API (screen analysis, SOP/CRO generation, speaker identification), OpenAI Whisper via Replit AI Integrations (audio transcription).
 - **Communication**: HTTP for chat analysis, WebSocket for live observation.
 - **Capabilities**: Screen analysis, conversation understanding, SOP generation, and post-meeting video transcription.
 - **Live Transcription**: OpenAI Whisper (`gpt-4o-mini-transcribe`) via `/api/transcribe/whisper` endpoint. Frontend captures audio with MediaRecorder, sends base64 chunks to server, server converts with ffmpeg and transcribes via Whisper.
-- **Post-Meeting Transcription**: Automated transcription and summarization of recorded meetings, including speaker identification and action items.
+- **Post-Meeting Transcription**: Two-stage pipeline: (1) OpenAI Whisper for accurate audio transcription (with ffmpeg audio extraction and auto-chunking for files >24MB), (2) Gemini for speaker identification, labeling, summary, and action item extraction. Located in `transcribeRecording()` in `server/gemini.ts`.
 
 ### Developer AI Agent
 - **Provider**: Anthropic Claude (via Replit AI Integrations).
