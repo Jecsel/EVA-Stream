@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload, WifiOff, ServerCrash, TriangleAlert } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +18,7 @@ import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
 import { ScrumSummaryPanel } from "@/components/ScrumSummaryPanel";
 import { ScrumMeetingRecordTab } from "@/components/ScrumMeetingRecordTab";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -285,54 +286,82 @@ export default function RecordingDetail() {
     },
   });
 
-  const [reanalyzeStatus, setReanalyzeStatus] = useState<{
+  type ReanalysisOutputStatus = "pending" | "in_progress" | "done" | "error";
+  type ReanalysisErrorCode = "no_audio" | "network_error" | "processing_error" | "partial_failure";
+  type ReanalyzeStatusState = {
     active: boolean;
     status?: string;
     step?: string;
     progress?: number;
     completed?: boolean;
     error?: string;
-  }>({ active: false });
+    errorCode?: ReanalysisErrorCode;
+    outputs?: Record<string, ReanalysisOutputStatus>;
+  };
 
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<ReanalyzeStatusState>({ active: false });
+  const [reanalyzeSuccessFlash, setReanalyzeSuccessFlash] = useState(false);
+
+  const handleReanalysisUpdate = useRef<(data: ReanalyzeStatusState) => void>(() => {});
+
+  handleReanalysisUpdate.current = (data: ReanalyzeStatusState) => {
+    setReanalyzeStatus(data);
+    if (data.active && data.completed) {
+      if (!data.error) {
+        toast.success("Re-analysis completed!");
+        setReanalyzeSuccessFlash(true);
+        setTimeout(() => setReanalyzeSuccessFlash(false), 2500);
+        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+        queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
+        queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
+        queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
+      } else if (data.errorCode !== "partial_failure") {
+        toast.error(data.status || "Re-analysis failed");
+      } else {
+        toast.warning("Re-analysis partially completed — some outputs failed.");
+        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+      }
+      setTimeout(() => setReanalyzeStatus({ active: false }), 6000);
+    }
+  };
+
+  // WebSocket-based status updates — no polling
   useEffect(() => {
-    if (!recordingId) return;
+    if (!recordingId || !meetingId) return;
+    let ws: WebSocket | null = null;
     let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
 
-    const pollStatus = async () => {
+    // Single REST check on mount to catch in-progress jobs from before the page loaded
+    fetch(`/api/recordings/${recordingId}/reanalyze-status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.active && !cancelled) handleReanalysisUpdate.current(data);
+      })
+      .catch(() => {});
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${protocol}//${window.location.host}/ws/eva?meetingId=${meetingId}`);
+
+    ws.addEventListener("message", (event) => {
       try {
-        const res = await fetch(`/api/recordings/${recordingId}/reanalyze-status`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setReanalyzeStatus(data);
-        if (data.active && data.completed) {
-          if (!data.error) {
-            toast.success("Re-analysis completed!");
-            queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
-            queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
-            queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
-            queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
-          } else {
-            toast.error(data.status || "Re-analysis failed");
-          }
-          if (interval) clearInterval(interval);
-          setTimeout(() => {
-            if (!cancelled) setReanalyzeStatus({ active: false });
-          }, 5000);
+        const msg = JSON.parse(event.data);
+        if (msg.type === "reanalysis_progress" && msg.recordingId === recordingId && !cancelled) {
+          handleReanalysisUpdate.current(msg);
         }
       } catch {
+        // ignore malformed messages
       }
-    };
+    });
 
-    pollStatus();
-    interval = setInterval(pollStatus, 3000);
+    ws.addEventListener("open", () => {
+      ws?.send(JSON.stringify({ type: "reanalysis_subscribe", recordingId }));
+    });
 
     return () => {
       cancelled = true;
-      if (interval) clearInterval(interval);
+      ws?.close();
     };
-  }, [recordingId, meetingId, queryClient]);
+  }, [recordingId, meetingId]);
 
   const isReanalyzing = reanalyzeStatus.active && !reanalyzeStatus.completed;
 
@@ -348,7 +377,19 @@ export default function RecordingDetail() {
     },
     onSuccess: () => {
       setShowReanalyzeModal(false);
-      setReanalyzeStatus({ active: true, status: "Starting re-analysis...", step: "starting", progress: 0, completed: false });
+      const selectedKeys = Object.entries(reanalyzeOutputs)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+      const initialOutputs: Record<string, ReanalysisOutputStatus> = {};
+      for (const k of selectedKeys) initialOutputs[k] = "pending";
+      setReanalyzeStatus({
+        active: true,
+        status: "Starting re-analysis...",
+        step: "starting",
+        progress: 0,
+        completed: false,
+        outputs: initialOutputs,
+      });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to start re-analysis. Please try again.");
@@ -536,6 +577,28 @@ export default function RecordingDetail() {
     recording.summary.startsWith("Transcription failed")
   );
 
+  // Derive a friendly error code from the stored summary message for the UI
+  const persistedErrorCode: ReanalysisErrorCode | undefined = (() => {
+    if (!isFailedAnalysis) return undefined;
+    const msg = (recording.summary ?? "").toLowerCase();
+    if (msg.includes("no audio") || msg.includes("no live transcripts")) return "no_audio";
+    if (msg.includes("network") || msg.includes("timeout") || msg.includes("fetch")) return "network_error";
+    if (msg.includes("partial")) return "partial_failure";
+    return "processing_error";
+  })();
+
+  const failedOutputs = reanalyzeStatus.outputs
+    ? Object.entries(reanalyzeStatus.outputs).filter(([, v]) => v === "error").map(([k]) => k)
+    : [];
+
+  const reanalyzeDisabledReason = !recording?.videoUrl
+    ? "No video URL available for this recording"
+    : isReanalyzing
+    ? "Re-analysis is currently in progress"
+    : reanalyzeMutation.isPending
+    ? "Starting re-analysis..."
+    : undefined;
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-6 bg-background sticky top-0 z-50">
@@ -638,16 +701,43 @@ export default function RecordingDetail() {
               </div>
             </PopoverContent>
           </Popover>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowReanalyzeModal(true)}
-            disabled={!recording?.videoUrl || reanalyzeMutation.isPending || isReanalyzing}
-            data-testid="button-reanalyze"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
-            {isReanalyzing ? "Re-analyzing..." : reanalyzeMutation.isPending ? "Starting..." : "Re-analyze"}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowReanalyzeModal(true)}
+                    disabled={!!reanalyzeDisabledReason}
+                    data-testid="button-reanalyze"
+                    className={reanalyzeSuccessFlash ? "border-green-500 text-green-500 transition-colors duration-300" : ""}
+                  >
+                    {reanalyzeSuccessFlash ? (
+                      <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                    ) : (
+                      <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+                    )}
+                    {isReanalyzing ? (
+                      <span className="flex items-center gap-1.5">
+                        Re-analyzing...
+                        {reanalyzeStatus.progress != null && (
+                          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-mono">
+                            {reanalyzeStatus.progress}%
+                          </span>
+                        )}
+                      </span>
+                    ) : reanalyzeMutation.isPending ? "Starting..." : reanalyzeSuccessFlash ? "Done!" : "Re-analyze"}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {reanalyzeDisabledReason && (
+                <TooltipContent>
+                  <p>{reanalyzeDisabledReason}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           <Button 
             variant="outline" 
             size="sm" 
@@ -721,33 +811,61 @@ export default function RecordingDetail() {
 
       {reanalyzeStatus.active && (
         <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-4" data-testid="reanalyze-status-banner">
-          <div className={`bg-card border ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'border-destructive/30' : 'border-border'} rounded-xl p-4`}>
+          <div className={`bg-card border ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'border-destructive/30' : reanalyzeStatus.completed ? 'border-green-500/30' : 'border-border'} rounded-xl p-4`}>
             <div className="flex items-center gap-3 mb-2">
-              {reanalyzeStatus.completed && reanalyzeStatus.error ? (
+              {reanalyzeStatus.completed && reanalyzeStatus.error && reanalyzeStatus.errorCode !== "partial_failure" ? (
                 <AlertCircle className="w-5 h-5 text-destructive" />
+              ) : reanalyzeStatus.completed && !reanalyzeStatus.error ? (
+                <CheckCircle className="w-5 h-5 text-green-500" />
               ) : (
                 <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
               )}
               <div className="flex-1">
                 <div className="text-sm font-medium">
                   {reanalyzeStatus.completed
-                    ? reanalyzeStatus.error
+                    ? reanalyzeStatus.errorCode === "partial_failure"
+                      ? "Re-analysis Partially Completed"
+                      : reanalyzeStatus.error
                       ? "Re-analysis Failed"
                       : "Re-analysis Complete"
                     : "Re-analyzing Recording"}
                 </div>
-                <div className={`text-xs mt-0.5 ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'text-destructive/80' : 'text-muted-foreground'}`}>{reanalyzeStatus.status}</div>
+                <div className={`text-xs mt-0.5 ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'text-destructive/80' : 'text-muted-foreground'}`}>
+                  {reanalyzeStatus.status}
+                </div>
               </div>
-              {reanalyzeStatus.completed && !reanalyzeStatus.error && (
-                <Check className="w-5 h-5 text-green-500" />
+              {reanalyzeStatus.progress != null && !reanalyzeStatus.completed && (
+                <span className="text-xs font-mono text-muted-foreground">{reanalyzeStatus.progress}%</span>
               )}
             </div>
             {!reanalyzeStatus.completed && reanalyzeStatus.progress != null && (
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden mb-3">
                 <div
                   className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${Math.max(reanalyzeStatus.progress, 3)}%` }}
                 />
+              </div>
+            )}
+            {reanalyzeStatus.outputs && Object.keys(reanalyzeStatus.outputs).length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {Object.entries(reanalyzeStatus.outputs).map(([key, status]) => {
+                  const outputLabels: Record<string, string> = {
+                    transcript: "Transcript", document: "Document", sop: "SOP",
+                    cro: "CRO", flowchart: "Flowchart", meeting_notes: "Notes", meeting_record: "Record",
+                  };
+                  const statusConfig = {
+                    pending: { color: "text-muted-foreground bg-muted/50", icon: null },
+                    in_progress: { color: "text-primary bg-primary/10", icon: <Loader2 className="w-3 h-3 animate-spin" /> },
+                    done: { color: "text-green-500 bg-green-500/10", icon: <Check className="w-3 h-3" /> },
+                    error: { color: "text-destructive bg-destructive/10", icon: <X className="w-3 h-3" /> },
+                  }[status] ?? { color: "text-muted-foreground bg-muted/50", icon: null };
+                  return (
+                    <span key={key} className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${statusConfig.color}`}>
+                      {statusConfig.icon}
+                      {outputLabels[key] ?? key}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -946,29 +1064,65 @@ export default function RecordingDetail() {
             <div className="flex-1 space-y-4">
               <div>
                 {isFailedAnalysis ? (
-                  <>
-                    <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
-                      Analysis Failed
-                      <span className="px-2 py-0.5 text-xs bg-destructive/20 text-destructive rounded-full">Error</span>
-                    </h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
-                      {recording.summary}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      This can happen when the video file is too large or there was a network issue during processing. You can try re-analyzing the recording.
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 border-destructive/30 hover:bg-destructive/10"
-                      onClick={() => setShowReanalyzeModal(true)}
-                      disabled={isReanalyzing}
-                      data-testid="button-retry-reanalyze"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Retry Re-analyze
-                    </Button>
-                  </>
+                  (() => {
+                      const errorConfig: Record<string, { title: string; description: string; icon: React.ReactNode; badge: string }> = {
+                        no_audio: {
+                          title: "No Audio Detected",
+                          description: "The video file had no detectable audio, or the audio quality was too low to transcribe. Check that the recording has sound and try again.",
+                          icon: <VolumeX className="w-4 h-4" />,
+                          badge: "No Audio",
+                        },
+                        network_error: {
+                          title: "Network Error",
+                          description: "A network issue occurred while processing the video. This may be a transient error — retrying usually resolves it.",
+                          icon: <WifiOff className="w-4 h-4" />,
+                          badge: "Network Error",
+                        },
+                        partial_failure: {
+                          title: "Partially Completed",
+                          description: "Some outputs were generated successfully, but others failed. Use 'Retry Failed Outputs' to regenerate only the ones that didn't complete.",
+                          icon: <TriangleAlert className="w-4 h-4" />,
+                          badge: "Partial Failure",
+                        },
+                        processing_error: {
+                          title: "Analysis Failed",
+                          description: "An unexpected error occurred during processing. You can try re-analyzing the recording, or contact support if the issue persists.",
+                          icon: <ServerCrash className="w-4 h-4" />,
+                          badge: "Error",
+                        },
+                      };
+                      const cfg = errorConfig[persistedErrorCode ?? "processing_error"] ?? errorConfig["processing_error"];
+                      return (
+                        <>
+                          <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                            {cfg.title}
+                            <span className="px-2 py-0.5 text-xs bg-destructive/20 text-destructive rounded-full">{cfg.badge}</span>
+                          </h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                            {recording.summary}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-2">{cfg.description}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3 border-destructive/30 hover:bg-destructive/10"
+                            onClick={() => {
+                              if (persistedErrorCode === "partial_failure" && failedOutputs.length > 0) {
+                                const retryMap: Record<string, boolean> = {};
+                                for (const k of failedOutputs) retryMap[k] = true;
+                                setReanalyzeOutputs(retryMap);
+                              }
+                              setShowReanalyzeModal(true);
+                            }}
+                            disabled={isReanalyzing}
+                            data-testid="button-retry-reanalyze"
+                          >
+                            {cfg.icon}
+                            <span className="ml-2">{persistedErrorCode === "partial_failure" ? "Retry Failed Outputs" : "Retry Re-analyze"}</span>
+                          </Button>
+                        </>
+                      );
+                    })()
                 ) : (
                   <>
                     <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
@@ -1612,30 +1766,41 @@ export default function RecordingDetail() {
               { key: "transcript", label: "Transcript", icon: MessageSquare, description: "Full meeting transcript" },
               { key: "meeting_notes", label: "Meeting Notes", icon: ClipboardList, description: "Structured meeting notes" },
               { key: "meeting_record", label: "Meeting Record", icon: ScrollText, description: "Complete meeting record" },
-            ].map(({ key, label, icon: Icon, description }) => (
-              <label
-                key={key}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
-                data-testid={`reanalyze-option-${key}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={reanalyzeOutputs[key]}
-                  onChange={(e) =>
-                    setReanalyzeOutputs((prev) => ({
-                      ...prev,
-                      [key]: e.target.checked,
-                    }))
-                  }
-                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
-                />
-                <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">{label}</div>
-                  <div className="text-xs text-muted-foreground">{description}</div>
-                </div>
-              </label>
-            ))}
+            ].map(({ key, label, icon: Icon, description }) => {
+              const outputStatus = reanalyzeStatus.outputs?.[key];
+              const statusBadge = outputStatus === "done"
+                ? <span className="text-xs text-green-500 flex items-center gap-0.5"><Check className="w-3 h-3" />Done</span>
+                : outputStatus === "in_progress"
+                ? <span className="text-xs text-primary flex items-center gap-0.5"><Loader2 className="w-3 h-3 animate-spin" />Running</span>
+                : outputStatus === "error"
+                ? <span className="text-xs text-destructive flex items-center gap-0.5"><AlertCircle className="w-3 h-3" />Failed</span>
+                : null;
+              return (
+                <label
+                  key={key}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${outputStatus === "error" ? "border-destructive/40 bg-destructive/5" : outputStatus === "done" ? "border-green-500/30 bg-green-500/5" : "border-border hover:bg-muted/50"} cursor-pointer`}
+                  data-testid={`reanalyze-option-${key}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={reanalyzeOutputs[key] ?? false}
+                    onChange={(e) =>
+                      setReanalyzeOutputs((prev) => ({
+                        ...prev,
+                        [key]: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">{label}</div>
+                    <div className="text-xs text-muted-foreground">{description}</div>
+                  </div>
+                  {statusBadge}
+                </label>
+              );
+            })}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button

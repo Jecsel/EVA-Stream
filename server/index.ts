@@ -9,6 +9,7 @@ import { getOrCreateTeam, getTeam, removeTeam, type AgentTeamOrchestrator } from
 import type { AgentType } from "@shared/schema";
 import { seedAgents } from "./seed";
 import * as Sentry from "@sentry/node";
+import { registerMeetingConnection, unregisterMeetingConnection, broadcastToMeeting as _broadcast, getMeetingConnectionCount } from "./ws-broadcast";
 
 const isProduction = process.env.NODE_ENV === "production";
 const sentryEnabled = isProduction && !!process.env.SENTRY_DSN;
@@ -41,34 +42,21 @@ const httpServer = createServer(app);
 // WebSocket server for EVA and Scrum Master (multiplexed on single path)
 const wss = new WebSocketServer({ server: httpServer, path: "/ws/eva" });
 
-// Track all WebSocket connections by meetingId for broadcasting
-const meetingConnections = new Map<string, Set<WebSocket>>();
+// Re-export broadcastToMeeting for other modules that imported it from here
+export { broadcastToMeeting } from "./ws-broadcast";
 
-// Broadcast message to all clients in a meeting
-function broadcastToMeeting(meetingId: string, message: object) {
-  const connections = meetingConnections.get(meetingId);
-  if (connections) {
-    const data = JSON.stringify(message);
-    connections.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(data);
-      }
-    });
-  }
-}
+// Local alias for use within this file
+const broadcastToMeeting = _broadcast;
 
 wss.on("connection", (ws: WebSocket, req) => {
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const meetingId = url.searchParams.get("meetingId") || "unknown";
   
   console.log(`EVA WebSocket connected for meeting: ${meetingId}`);
-  
+
   // Track this connection for the meeting
-  if (!meetingConnections.has(meetingId)) {
-    meetingConnections.set(meetingId, new Set());
-  }
-  meetingConnections.get(meetingId)!.add(ws);
-  console.log(`Meeting ${meetingId} now has ${meetingConnections.get(meetingId)!.size} connected clients`);
+  registerMeetingConnection(meetingId, ws);
+  console.log(`Meeting ${meetingId} now has ${getMeetingConnectionCount(meetingId)} connected clients`);
 
   ws.on("message", async (data: Buffer) => {
     try {
@@ -186,6 +174,12 @@ wss.on("connection", (ws: WebSocket, req) => {
         return;
       }
 
+      // Re-analysis subscription acknowledgment
+      if (message.type === "reanalysis_subscribe") {
+        ws.send(JSON.stringify({ type: "reanalysis_subscribed", recordingId: message.recordingId, meetingId }));
+        return;
+      }
+
       // Regular EVA messages
       const evaMessage: GeminiLiveMessage = message;
       evaMessage.meetingId = meetingId;
@@ -217,7 +211,7 @@ wss.on("connection", (ws: WebSocket, req) => {
         if (response.type === "sop_update" || response.type === "sop_status" || 
             response.type === "cro_update" || response.type === "cro_status") {
           broadcastToMeeting(meetingId, response);
-          console.log(`Broadcasted ${response.type} to ${meetingConnections.get(meetingId)?.size || 0} clients`);
+          console.log(`Broadcasted ${response.type} to ${getMeetingConnectionCount(meetingId)} clients`);
 
           // Report to agent team if active
           if (team && team.isTeamActive()) {
@@ -242,15 +236,8 @@ wss.on("connection", (ws: WebSocket, req) => {
 
   ws.on("close", () => {
     console.log(`EVA WebSocket disconnected for meeting: ${meetingId}`);
-    // Remove this connection from tracking
-    const connections = meetingConnections.get(meetingId);
-    if (connections) {
-      connections.delete(ws);
-      if (connections.size === 0) {
-        meetingConnections.delete(meetingId);
-      }
-      console.log(`Meeting ${meetingId} now has ${connections.size} connected clients`);
-    }
+    unregisterMeetingConnection(meetingId, ws);
+    console.log(`Meeting ${meetingId} now has ${getMeetingConnectionCount(meetingId)} connected clients`);
   });
 
   ws.on("error", (error) => {
