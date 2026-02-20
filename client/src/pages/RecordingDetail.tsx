@@ -137,12 +137,6 @@ export default function RecordingDetail() {
     enabled: !!meetingId,
   });
 
-  // AI re-analyzed transcription — identified by fqn = "recording-{recordingId}"
-  // This takes display priority over live capture segments since it's higher quality
-  const aiTranscription = jaasTranscriptions.find(
-    (t) => t.fqn === `recording-${recordingId}`
-  );
-
   const { data: meeting } = useQuery({
     queryKey: ["meeting", meetingId],
     queryFn: () => api.getMeeting(meetingId!),
@@ -1498,8 +1492,8 @@ export default function RecordingDetail() {
                   Meeting Transcript
                   {(jaasTranscriptions.length > 0 || localTranscripts.length > 0 || chatMessages.length > 0) && (
                     <span className="text-xs text-muted-foreground">
-                      {jaasTranscriptions.length > 0
-                        ? `(${(aiTranscription?.parsedTranscript as any[])?.length ?? jaasTranscriptions.length} segments)`
+                      {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length > 0
+                        ? `(${jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length} segments)`
                         : localTranscripts.length > 0
                         ? `(${localTranscripts.length} segments)`
                         : `(${chatMessages.length} messages)`}
@@ -1518,7 +1512,7 @@ export default function RecordingDetail() {
                     <Download className="w-4 h-4" />
                     {transcribeMutation.isPending
                       ? "Pulling..."
-                      : aiTranscription
+                      : jaasTranscriptions.length > 0
                       ? "Re-pull JaaS Transcript"
                       : "Pull JaaS Transcript"}
                   </Button>
@@ -1526,27 +1520,19 @@ export default function RecordingDetail() {
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-4 space-y-4" data-testid="content-transcript">
-                  {jaasTranscriptions.length > 0 ? (
-                    // Priority 1: JaaS transcriptions — includes AI re-analyzed (newest first) and JaaS cloud records
+                  {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length > 0 ? (
+                    // JaaS Cloud transcriptions only (AI re-analyzed excluded)
                     <div className="space-y-6">
-                      {jaasTranscriptions.map((transcription) => {
-                        const isAiReanalyzed = transcription.fqn === `recording-${recordingId}`;
+                      {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).map((transcription) => {
                         return (
                           <div key={transcription.id} className="space-y-4">
                             <div className="flex items-center gap-2">
-                              {isAiReanalyzed ? (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/30">
-                                  <Sparkles className="w-3 h-3" />
-                                  AI Re-analyzed
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                                  <Volume2 className="w-3 h-3" />
-                                  JaaS Cloud
-                                </span>
-                              )}
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                                <Volume2 className="w-3 h-3" />
+                                JaaS Cloud
+                              </span>
                               <span className="text-xs text-muted-foreground">
-                                {isAiReanalyzed ? "Transcribed from video recording" : "Provided by JaaS transcription service"}
+                                Provided by JaaS transcription service
                               </span>
                             </div>
                             {transcription.aiSummary && (
