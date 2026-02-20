@@ -663,6 +663,37 @@ export default function RecordingDetail() {
         </div>
       </header>
 
+      {reanalyzeStatus.active && (
+        <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-4" data-testid="reanalyze-status-banner">
+          <div className="bg-card border border-border rounded-xl p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
+              <div className="flex-1">
+                <div className="text-sm font-medium">
+                  {reanalyzeStatus.completed
+                    ? reanalyzeStatus.error
+                      ? "Re-analysis Failed"
+                      : "Re-analysis Complete"
+                    : "Re-analyzing Recording"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{reanalyzeStatus.status}</div>
+              </div>
+              {reanalyzeStatus.completed && !reanalyzeStatus.error && (
+                <Check className="w-5 h-5 text-green-500" />
+              )}
+            </div>
+            {!reanalyzeStatus.completed && reanalyzeStatus.progress != null && (
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${Math.max(reanalyzeStatus.progress, 3)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-6">
         {recording.videoUrl && (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-video-player">
@@ -833,35 +864,6 @@ export default function RecordingDetail() {
         </div>
 
         {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
-
-        {reanalyzeStatus.active && (
-          <div className="mb-4 bg-card border border-border rounded-xl p-4" data-testid="reanalyze-status-banner">
-            <div className="flex items-center gap-3 mb-2">
-              <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
-              <div className="flex-1">
-                <div className="text-sm font-medium">
-                  {reanalyzeStatus.completed
-                    ? reanalyzeStatus.error
-                      ? "Re-analysis Failed"
-                      : "Re-analysis Complete"
-                    : "Re-analyzing Recording"}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{reanalyzeStatus.status}</div>
-              </div>
-              {reanalyzeStatus.completed && !reanalyzeStatus.error && (
-                <Check className="w-5 h-5 text-green-500" />
-              )}
-            </div>
-            {!reanalyzeStatus.completed && reanalyzeStatus.progress != null && (
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${Math.max(reanalyzeStatus.progress, 3)}%` }}
-                />
-              </div>
-            )}
-          </div>
-        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">
