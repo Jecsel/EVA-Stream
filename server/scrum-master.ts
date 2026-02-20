@@ -562,9 +562,17 @@ export async function generateScrumMeetingRecord(meetingId: string, options?: { 
     const previousRecord = await storage.getPreviousScrumMeetingRecord(meetingId);
 
     const fullTranscript = options?.transcript || session?.fullTranscript.join("\n") || "";
-    const participants = session 
-      ? Array.from(session.speakers.keys()) 
+    let participants: string[] = session
+      ? Array.from(session.speakers.keys())
       : (scrumSummary?.scrumData as any)?.participants?.map((p: any) => p.name) || [];
+
+    if (participants.length === 0 && fullTranscript.length > 0) {
+      const speakerMatches = fullTranscript.match(/^([A-Za-z][A-Za-z0-9 _'-]{1,40}):/gm) || [];
+      const speakerSet = new Set(speakerMatches.map(s => s.replace(/:$/, "").trim()));
+      speakerSet.delete("Speaker");
+      speakerSet.delete("Unknown");
+      participants = Array.from(speakerSet);
+    }
     
     const meetingDuration = session 
       ? `${Math.round((Date.now() - session.meetingStartTime) / 60000)} minutes`
@@ -629,7 +637,9 @@ Sprint Goal: ${session?.sprintGoal || dbSession?.sprintGoal || "Not set"}
 Duration: ${meetingDuration}
 Participants: ${participants.join(", ") || "Unknown"}
 
-${fullTranscript.length > 100 ? `Transcript (last 6000 chars):\n${fullTranscript.substring(Math.max(0, fullTranscript.length - 6000))}` : ""}
+${fullTranscript.length > 100 ? `Transcript:\n${fullTranscript.length > 20000
+  ? fullTranscript.slice(0, 10000) + "\n...[middle omitted for brevity]...\n" + fullTranscript.slice(-10000)
+  : fullTranscript}` : ""}
 
 Team Updates Data: ${teamUpdatesContext}
 
@@ -643,8 +653,8 @@ Generate a JSON response with these exact fields:
 {
   "teamName": "team name if detectable, otherwise 'Development Team'",
   "sprintName": "sprint/iteration name if mentioned, otherwise 'Current Sprint'",
-  "participants": ["list of participant names"],
-  "absentMembers": ["anyone who was expected but absent, empty array if unknown"],
+  "participants": ["Extract all speaker names from the transcript (e.g. lines starting with 'Name:' → include 'Name'). Also include any names from the provided Participants list. Use an empty array only if truly undetectable."],
+  "absentMembers": ["anyone who was expected but absent based on the transcript context, empty array if unknown"],
   "carriedOverItems": [{"item": "description", "owner": "who", "status": "open|in_progress|done", "notes": "any notes"}],
   "teamUpdates": [{"memberName": "name", "completed": ["items completed"], "inProgress": ["items in progress"], "blocked": ["blockers"]}],
   "blockers": [{"blocker": "description", "owner": "who", "impact": "high|medium|low", "status": "active|resolved|escalated"}],
@@ -657,7 +667,7 @@ Generate a JSON response with these exact fields:
 Respond ONLY with valid JSON.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
+      model: "gemini-2.0-flash",
       contents: prompt,
     });
 
