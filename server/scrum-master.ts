@@ -538,10 +538,12 @@ export function getSessionState(meetingId: string) {
   };
 }
 
-export async function generateScrumMeetingRecord(meetingId: string): Promise<ScrumMeetingRecord | null> {
+export async function generateScrumMeetingRecord(meetingId: string, options?: { transcript?: string; forceRegenerate?: boolean }): Promise<ScrumMeetingRecord | null> {
   try {
-    const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
-    if (existingRecord) return existingRecord;
+    if (!options?.forceRegenerate) {
+      const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
+      if (existingRecord) return existingRecord;
+    }
 
     const meeting = await storage.getMeeting(meetingId);
     if (!meeting) return null;
@@ -559,7 +561,7 @@ export async function generateScrumMeetingRecord(meetingId: string): Promise<Scr
     const actionItems = await storage.getScrumActionItemsByMeeting(meetingId);
     const previousRecord = await storage.getPreviousScrumMeetingRecord(meetingId);
 
-    const fullTranscript = session?.fullTranscript.join("\n") || "";
+    const fullTranscript = options?.transcript || session?.fullTranscript.join("\n") || "";
     const participants = session 
       ? Array.from(session.speakers.keys()) 
       : (scrumSummary?.scrumData as any)?.participants?.map((p: any) => p.name) || [];

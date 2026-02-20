@@ -1265,7 +1265,7 @@ export async function registerRoutes(
                 await storage.deleteScrumMeetingRecord(existingRecord.id);
               }
               const { generateScrumMeetingRecord } = await import("./scrum-master");
-              const record = await generateScrumMeetingRecord(transcriptionMeetingId);
+              const record = await generateScrumMeetingRecord(transcriptionMeetingId, { transcript: transcriptText, forceRegenerate: true });
               outputs["meeting_record"] = record ? "done" : "error";
             } catch (err) {
               outputs["meeting_record"] = "error";
@@ -5152,11 +5152,12 @@ async function runOutputGenerations(
         console.log(`[Re-analysis] Cleared existing meeting record`);
       }
       const { generateScrumMeetingRecord } = await import("./scrum-master");
-      const record = await generateScrumMeetingRecord(meetingId);
+      const record = await generateScrumMeetingRecord(meetingId, { forceRegenerate: true });
       outputs["meeting_record"] = record ? "done" : "error";
       console.log(`[Re-analysis] Meeting record ${record ? "generated" : "failed"}`);
     } catch (recordError) {
       outputs["meeting_record"] = "error";
+
       console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
     }
     currentStep++;
