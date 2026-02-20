@@ -1581,22 +1581,47 @@ export default function RecordingDetail() {
                             {transcription.parsedTranscript && Array.isArray(transcription.parsedTranscript) && transcription.parsedTranscript.length > 0 ? (
                               <div className="space-y-2">
                                 <h3 className="text-sm font-medium text-muted-foreground">Full Transcript</h3>
-                                {(transcription.parsedTranscript as { speaker: string; text: string; timestamp: string }[]).map((segment, idx) => (
-                                  <div key={idx} className="flex gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                                      <User className="w-4 h-4 text-foreground" />
-                                    </div>
-                                    <div className="flex-1 bg-muted/50 border border-border rounded-xl p-3">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-medium">{segment.speaker}</span>
-                                        {segment.timestamp && (
-                                          <span className="text-xs opacity-60">{segment.timestamp}</span>
-                                        )}
+                                {(() => {
+                                  const raw = transcription.parsedTranscript as any[];
+                                  let segments: { speaker: string; text: string; timestamp: string }[] = [];
+                                  if (raw.length === 1 && raw[0].text && typeof raw[0].text === "string") {
+                                    try {
+                                      const parsed = JSON.parse(raw[0].text);
+                                      if (parsed.messages && Array.isArray(parsed.messages)) {
+                                        segments = parsed.messages.map((m: any) => ({
+                                          speaker: m.name || raw[0].speaker || "Participant",
+                                          text: m.content || "",
+                                          timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "",
+                                        }));
+                                      }
+                                    } catch {
+                                      segments = raw as any;
+                                    }
+                                  }
+                                  if (segments.length === 0) {
+                                    segments = raw.map((s: any) => ({
+                                      speaker: s.speaker || "Participant",
+                                      text: s.text || "",
+                                      timestamp: s.timestamp || "",
+                                    }));
+                                  }
+                                  return segments.map((segment, idx) => (
+                                    <div key={idx} className="flex gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                                        <User className="w-4 h-4 text-foreground" />
                                       </div>
-                                      <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
+                                      <div className="flex-1 bg-muted/50 border border-border rounded-xl p-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-xs font-medium">{segment.speaker}</span>
+                                          {segment.timestamp && (
+                                            <span className="text-xs opacity-60">{segment.timestamp}</span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             ) : transcription.rawTranscript ? (
                               <div className="space-y-2">
