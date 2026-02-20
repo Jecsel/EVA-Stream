@@ -1506,16 +1506,21 @@ export default function RecordingDetail() {
                     </span>
                   )}
                 </h2>
-                {recording?.videoUrl && !aiTranscription && localTranscripts.length === 0 && jaasTranscriptions.length === 0 && (
+                {recording?.videoUrl && (
                   <Button
                     size="sm"
+                    variant="outline"
                     onClick={() => transcribeMutation.mutate()}
                     disabled={transcribeMutation.isPending}
                     className="gap-2"
                     data-testid="btn-transcribe-recording"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    {transcribeMutation.isPending ? "Starting..." : "Generate Transcript"}
+                    <Download className="w-4 h-4" />
+                    {transcribeMutation.isPending
+                      ? "Pulling..."
+                      : aiTranscription
+                      ? "Re-pull JaaS Transcript"
+                      : "Pull JaaS Transcript"}
                   </Button>
                 )}
               </div>
@@ -1672,23 +1677,12 @@ export default function RecordingDetail() {
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8 space-y-4">
+                    <div className="text-center py-8 space-y-2">
                       <p className="text-muted-foreground italic">No transcript available for this meeting.</p>
                       {recording?.videoUrl && (
-                        <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">
-                            This recording has a video. You can generate an AI transcript from it.
-                          </p>
-                          <Button
-                            onClick={() => transcribeMutation.mutate()}
-                            disabled={transcribeMutation.isPending}
-                            className="gap-2"
-                            data-testid="btn-transcribe-empty"
-                          >
-                            <Sparkles className="w-4 h-4" />
-                            {transcribeMutation.isPending ? "Starting Transcription..." : "Generate AI Transcript"}
-                          </Button>
-                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Use the "Pull JaaS Transcript" button above to generate an AI transcript from the recording.
+                        </p>
                       )}
                     </div>
                   )}
