@@ -4851,7 +4851,7 @@ async function processRecordingTranscription(
     const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
     console.log(`Cleared ${deletedTranscriptions} existing AI transcription for recording ${recordingId}`);
     
-    // Transcribe the recording using Gemini
+    // Transcribe the recording using Whisper
     const transcription = await transcribeRecording(videoUrl, meetingTitle);
     
     if (!transcription.fullTranscript && transcription.segments.length === 0) {

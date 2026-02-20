@@ -551,7 +551,7 @@ export async function transcribeRecording(
 ): Promise<RecordingTranscript> {
   const emitStatus = onStatus || (() => {});
   try {
-    console.log(`Starting Whisper+Gemini transcription for recording: ${meetingTitle || "Unknown"}`);
+    console.log(`Starting Whisper transcription for recording: ${meetingTitle || "Unknown"}`);
     console.log(`Video URL: ${videoUrl.substring(0, 100)}...`);
 
     const fs = await import("fs");
@@ -697,80 +697,9 @@ export async function transcribeRecording(
         };
       }
 
-      emitStatus("Whisper transcription complete. Analyzing speakers and generating summary...");
+      emitStatus("Whisper transcription complete.");
+      console.log(`[Transcription] Whisper transcription complete. Returning transcript.`);
 
-      // Step 4: Use Gemini to add speaker labels, timestamps, summary, action items
-      if (!process.env.GEMINI_API_KEY) {
-        // No Gemini key — return raw Whisper transcript without speaker labels
-        return {
-          fullTranscript: fullWhisperTranscript,
-          segments: [{ speaker: "Speaker", timestamp: "00:00", text: fullWhisperTranscript }],
-          summary: "Transcription complete (speaker identification unavailable).",
-          actionItems: [],
-          keyTopics: [],
-        };
-      }
-
-      const speakerPrompt = `You are a professional meeting analyst. Below is a raw transcript of a meeting. Your job is to:
-
-1. **Speaker Identification (CRITICAL)**: Analyze the conversation flow and identify ALL distinct speakers. Look for:
-   - Conversational turn-taking patterns (questions followed by answers from different people)
-   - Different speaking styles, vocabulary, or roles (e.g., presenter vs. questioner)
-   - Name mentions (if someone is addressed by name, use that name)
-   - Contextual clues about who is speaking
-   Label speakers as "Speaker 1", "Speaker 2", etc., or use names if identifiable. Most meetings have 2+ speakers.
-
-2. **Timestamps**: Assign approximate timestamps (MM:SS) based on the flow and length of the conversation.
-
-3. **Summary**: Write a concise 2-3 paragraph summary of the meeting.
-
-4. **Action Items**: List any action items, tasks, or follow-ups mentioned.
-
-5. **Key Topics**: List the main topics discussed.
-
-Meeting Title: ${meetingTitle || "Unknown Meeting"}
-
-Raw Transcript:
-${fullWhisperTranscript.slice(0, 100000)}
-
-Respond ONLY with valid JSON in this exact format:
-{
-  "fullTranscript": "Complete transcription with speaker labels as continuous text",
-  "segments": [
-    {"speaker": "Speaker 1", "timestamp": "00:00", "text": "What they said..."},
-    {"speaker": "Speaker 2", "timestamp": "00:15", "text": "Their response..."}
-  ],
-  "summary": "Meeting summary...",
-  "actionItems": ["Action 1", "Action 2"],
-  "keyTopics": ["Topic 1", "Topic 2"]
-}`;
-
-      const geminiResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: speakerPrompt }] }],
-      });
-
-      const responseText = geminiResponse.text || "";
-      console.log(`[Transcription] Gemini speaker analysis response: ${responseText.substring(0, 200)}...`);
-      emitStatus("Parsing transcription results...");
-
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return {
-            fullTranscript: parsed.fullTranscript || fullWhisperTranscript,
-            segments: Array.isArray(parsed.segments) ? parsed.segments : [],
-            summary: parsed.summary || "No summary generated.",
-            actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
-            keyTopics: Array.isArray(parsed.keyTopics) ? parsed.keyTopics : [],
-          };
-        } catch (parseError) {
-          console.error("[Transcription] JSON parse error from Gemini speaker analysis:", parseError);
-        }
-      }
-
-      // Fallback: return Whisper transcript without speaker labels
       return {
         fullTranscript: fullWhisperTranscript,
         segments: [{ speaker: "Speaker", timestamp: "00:00", text: fullWhisperTranscript }],
@@ -797,7 +726,7 @@ Respond ONLY with valid JSON in this exact format:
       console.log(`[Transcription] Cleaned up temp files`);
     }
   } catch (error) {
-    console.error("Whisper+Gemini transcription error:", error);
+    console.error("Whisper transcription error:", error);
     emitStatus("Transcription failed. Check video URL and try again.");
     return {
       fullTranscript: "",
