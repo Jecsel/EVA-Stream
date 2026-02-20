@@ -574,11 +574,25 @@ export async function transcribeRecording(
         throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
       }
 
-      const arrayBuffer = await videoResponse.arrayBuffer();
-      const videoBuffer = Buffer.from(arrayBuffer);
-      fs.writeFileSync(tempVideoPath, videoBuffer);
+      const fileStream = fs.createWriteStream(tempVideoPath);
+      const reader = videoResponse.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to get response body reader");
+      }
+      let bytesWritten = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fileStream.write(Buffer.from(value));
+        bytesWritten += value.byteLength;
+      }
+      await new Promise<void>((resolve, reject) => {
+        fileStream.on('finish', resolve);
+        fileStream.on('error', reject);
+        fileStream.end();
+      });
 
-      const fileSizeMB = (videoBuffer.length / (1024 * 1024)).toFixed(1);
+      const fileSizeMB = (bytesWritten / (1024 * 1024)).toFixed(1);
       console.log(`[Transcription] Video downloaded: ${fileSizeMB}MB`);
       emitStatus(`Video downloaded (${fileSizeMB}MB). Extracting audio...`);
 

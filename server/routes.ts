@@ -862,6 +862,15 @@ export async function registerRoutes(
         return;
       }
 
+      // Prefer stored video (App Storage) over original JaaS URL since JaaS links expire after 24h
+      let videoUrlForAnalysis = recording.videoUrl;
+      if (recording.storageStatus === "stored" && recording.storedVideoPath) {
+        const protocol = req.protocol;
+        const host = req.get("host");
+        videoUrlForAnalysis = `${protocol}://${host}${recording.storedVideoPath}`;
+        console.log(`[Re-analysis] Using stored video: ${videoUrlForAnalysis}`);
+      }
+
       const { outputs } = req.body;
       if (!outputs || !Array.isArray(outputs) || outputs.length === 0) {
         res.status(400).json({ error: "No output types selected" });
@@ -933,7 +942,7 @@ export async function registerRoutes(
 
       processReanalysis(
         recording.id,
-        recording.videoUrl,
+        videoUrlForAnalysis,
         recording.meetingId,
         meetingTitle,
         selectedOutputs,
