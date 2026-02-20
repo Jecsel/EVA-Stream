@@ -118,6 +118,20 @@ export const api = {
     return response.json();
   },
 
+  async backupRecordingVideo(id: string): Promise<{ message: string }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/backup-video`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("Failed to start video backup");
+    return response.json();
+  },
+
+  async getBackupStatus(id: string): Promise<{ storageStatus: string; storedVideoPath: string | null; originalVideoUrl: string | null; hasVideo: boolean }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/backup-status`);
+    if (!response.ok) throw new Error("Failed to get backup status");
+    return response.json();
+  },
+
   async reanalyzeRecording(id: string, outputs: string[]): Promise<{ success: boolean; message: string; recordingId: string; selectedOutputs: string[] }> {
     const response = await fetch(`${API_BASE}/recordings/${id}/reanalyze`, {
       method: "POST",

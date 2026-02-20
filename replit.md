@@ -72,6 +72,14 @@ Inspired by Claude Code's "Agent Teams" concept. EVA acts as team lead coordinat
 - **UI**: `client/src/components/AgentTeamDashboard.tsx` - Dashboard with three sub-tabs: Tasks (shared task list with active/completed sections), Messages (inter-agent communication feed), and Flow (Mermaid diagram showing agent team architecture with live status colors).
 - **Integration**: Available as "Agent Team" tab in the MeetingRoom EVA panel. Moderators can start/stop the team; agents are coordinated in parallel with EVA synthesizing a coordinated report on stop.
 
+### Video Recording Storage
+JaaS video recordings expire after 24 hours. To preserve them permanently:
+- **Storage**: Replit App Storage (Google Cloud Storage) via `server/video-storage.ts`.
+- **Automatic Backup**: When the `RECORDING_UPLOADED` webhook fires, the video is automatically downloaded from JaaS and uploaded to App Storage.
+- **Manual Backup**: Users can trigger backup from the recording detail page via "Save Video" button.
+- **Schema Fields**: `originalVideoUrl` (JaaS temporary link), `storageStatus` (pending/downloading/stored/failed), `storedVideoPath` (permanent path in App Storage).
+- **Serving**: Stored videos are served via the object storage routes at `/objects/recordings/{id}.mp4`.
+
 ### Data Flow
 User interaction initiates meeting creation/joining. Jitsi handles media streaming. Selected AI agents activate, with EVA connecting via WebSocket for real-time observation. AI responses update SOPs and flowchart visualizations. All meeting data is persisted to PostgreSQL.
 

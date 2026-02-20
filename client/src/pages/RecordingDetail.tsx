@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2 } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -139,6 +139,28 @@ export default function RecordingDetail() {
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
+  });
+
+  const { data: backupStatus } = useQuery({
+    queryKey: ["backupStatus", recordingId],
+    queryFn: () => api.getBackupStatus(recordingId),
+    enabled: !!recordingId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.storageStatus === "downloading") return 3000;
+      return false;
+    },
+  });
+
+  const backupMutation = useMutation({
+    mutationFn: () => api.backupRecordingVideo(recordingId),
+    onSuccess: () => {
+      toast.success("Video backup started! This may take a few minutes.");
+      queryClient.invalidateQueries({ queryKey: ["backupStatus", recordingId] });
+    },
+    onError: () => {
+      toast.error("Failed to start video backup. Please try again.");
+    },
   });
 
   // Fetch decision-based SOPs linked to this meeting
@@ -708,7 +730,7 @@ export default function RecordingDetail() {
             <div className="relative bg-black">
               <video
                 ref={videoRef}
-                src={recording.videoUrl}
+                src={backupStatus?.storedVideoPath || recording.videoUrl}
                 className="w-full aspect-video"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
@@ -787,6 +809,47 @@ export default function RecordingDetail() {
                 >
                   <Maximize className="w-5 h-5" />
                 </Button>
+
+                <div className="border-l border-border pl-3 ml-1 flex items-center gap-2">
+                  {backupStatus?.storageStatus === "stored" && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" data-testid="badge-storage-stored">
+                      <HardDrive className="w-3 h-3" />
+                      Saved
+                    </span>
+                  )}
+                  {backupStatus?.storageStatus === "downloading" && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse" data-testid="badge-storage-downloading">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Backing up...
+                    </span>
+                  )}
+                  {backupStatus?.storageStatus === "failed" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                      onClick={() => backupMutation.mutate()}
+                      disabled={backupMutation.isPending}
+                      data-testid="button-retry-backup"
+                    >
+                      <CloudOff className="w-3 h-3 mr-1.5" />
+                      Retry Backup
+                    </Button>
+                  )}
+                  {(backupStatus?.storageStatus === "pending" || (!backupStatus?.storageStatus && recording.videoUrl)) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => backupMutation.mutate()}
+                      disabled={backupMutation.isPending}
+                      data-testid="button-backup-video"
+                    >
+                      <HardDrive className="w-3 h-3 mr-1.5" />
+                      {backupMutation.isPending ? "Starting..." : "Save Video"}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -12,6 +12,8 @@ import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
 import admin from "firebase-admin";
 import { runDevAgent, type AgentMessage } from "./dev-agent";
+import { downloadAndStoreVideo } from "./video-storage";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 // Initialize Firebase Admin SDK for token verification
 if (!admin.apps.length) {
@@ -77,6 +79,8 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  registerObjectStorageRoutes(app);
+
   // Developer AI Agent - Chat endpoint with streaming
   app.post("/api/dev-agent/chat", async (req, res) => {
     try {
@@ -687,6 +691,62 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete recording" });
+    }
+  });
+
+  // Manual backup endpoint - trigger video backup for a specific recording
+  app.post("/api/recordings/:id/backup-video", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      const videoUrl = recording.originalVideoUrl || recording.videoUrl;
+      if (!videoUrl) {
+        res.status(400).json({ error: "Recording has no video URL to backup" });
+        return;
+      }
+
+      if (recording.storageStatus === "stored") {
+        res.json({ message: "Recording already backed up", storedVideoPath: recording.storedVideoPath });
+        return;
+      }
+
+      if (recording.storageStatus === "downloading") {
+        res.json({ message: "Recording backup already in progress" });
+        return;
+      }
+
+      await storage.updateRecording(req.params.id, { storageStatus: "downloading" });
+
+      backupRecordingVideo(req.params.id, videoUrl)
+        .catch(err => console.error(`[VideoStorage] Manual backup failed for recording ${req.params.id}:`, err));
+
+      res.json({ message: "Video backup started" });
+    } catch (error) {
+      console.error("Error starting video backup:", error);
+      res.status(500).json({ error: "Failed to start video backup" });
+    }
+  });
+
+  // Get backup status for a recording
+  app.get("/api/recordings/:id/backup-status", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      res.json({
+        storageStatus: recording.storageStatus,
+        storedVideoPath: recording.storedVideoPath,
+        originalVideoUrl: recording.originalVideoUrl,
+        hasVideo: !!recording.videoUrl,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get backup status" });
     }
   });
 
@@ -2282,23 +2342,29 @@ export async function registerRoutes(
               
               let recordingId: string;
               if (existingRecording) {
-                // Update existing recording with video URL
                 await storage.updateRecording(existingRecording.id, {
-                  videoUrl: data.preAuthenticatedLink
+                  videoUrl: data.preAuthenticatedLink,
+                  originalVideoUrl: data.preAuthenticatedLink,
+                  storageStatus: "downloading",
                 });
                 recordingId = existingRecording.id;
                 console.log(`Updated recording ${existingRecording.id} with video URL`);
               } else {
-                // Create new recording with video URL (using createOrUpdateRecording for safety)
                 const newRecording = await storage.createOrUpdateRecording({
                   meetingId: meeting.id,
                   title: meeting.title,
                   duration: "Unknown",
                   videoUrl: data.preAuthenticatedLink,
+                  originalVideoUrl: data.preAuthenticatedLink,
+                  storageStatus: "downloading",
                 });
                 recordingId = newRecording.id;
                 console.log(`Created new recording for meeting ${meeting.id} with video URL`);
               }
+
+              // Download and store video permanently in App Storage (async)
+              backupRecordingVideo(recordingId, data.preAuthenticatedLink)
+                .catch(err => console.error(`[VideoStorage] Backup failed for recording ${recordingId}:`, err));
 
               // Trigger AI transcription of the recording asynchronously
               processRecordingTranscription(
@@ -4641,5 +4707,26 @@ async function processRecordingTranscription(
         console.error(`Failed to update recording with error status:`, updateError);
       }
     }
+  }
+}
+
+async function backupRecordingVideo(recordingId: string, videoUrl: string) {
+  try {
+    console.log(`[VideoStorage] Starting backup for recording ${recordingId}`);
+    await storage.updateRecording(recordingId, { storageStatus: "downloading" });
+
+    const { storedVideoPath } = await downloadAndStoreVideo(videoUrl, recordingId);
+
+    await storage.updateRecording(recordingId, {
+      storedVideoPath,
+      storageStatus: "stored",
+    });
+
+    console.log(`[VideoStorage] Recording ${recordingId} backed up successfully to ${storedVideoPath}`);
+  } catch (error) {
+    console.error(`[VideoStorage] Failed to backup recording ${recordingId}:`, error);
+    await storage.updateRecording(recordingId, {
+      storageStatus: "failed",
+    }).catch(err => console.error(`[VideoStorage] Failed to update status:`, err));
   }
 }
