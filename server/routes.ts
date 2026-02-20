@@ -4833,6 +4833,21 @@ async function runOutputGenerations(
 
   emitWithOutputs("Saving results...", "saving", 95);
   await storage.updateRecording(recordingId, updateData);
+
+  // Also save SOP/CRO/Flowchart to the transcription record for per-session data
+  const transcriptionUpdate: Record<string, any> = {};
+  if (updateData.sopContent) transcriptionUpdate.sopContent = updateData.sopContent;
+  if (updateData.croContent) transcriptionUpdate.croContent = updateData.croContent;
+  if (updateData.flowchartCode) transcriptionUpdate.flowchartCode = updateData.flowchartCode;
+  if (Object.keys(transcriptionUpdate).length > 0) {
+    const transcriptions = await storage.getTranscriptionsByMeetingId(meetingId);
+    const aiTranscription = transcriptions.find(t => t.fqn === `recording-${recordingId}`);
+    if (aiTranscription) {
+      await storage.updateMeetingTranscription(aiTranscription.id, transcriptionUpdate);
+      console.log(`[Re-analysis] Per-transcription SOP/CRO/Flowchart saved`);
+    }
+  }
+
   console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed successfully`);
 }
 

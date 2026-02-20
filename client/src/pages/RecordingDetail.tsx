@@ -95,6 +95,7 @@ export default function RecordingDetail() {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showNewMeetingPopover, setShowNewMeetingPopover] = useState(false);
   const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+  const [selectedTranscriptionId, setSelectedTranscriptionId] = useState<string | null>(null);
   const [showReanalyzeResults, setShowReanalyzeResults] = useState(false);
   const [reanalyzeResultsData, setReanalyzeResultsData] = useState<{
     outputs: Record<string, string>;
@@ -147,6 +148,16 @@ export default function RecordingDetail() {
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
   });
+
+  const cloudTranscriptions = jaasTranscriptions.filter(
+    (t) => t.fqn !== `recording-${recordingId}`
+  );
+  const selectedTranscription = selectedTranscriptionId
+    ? cloudTranscriptions.find((t) => t.id === selectedTranscriptionId)
+    : cloudTranscriptions[0] || null;
+  const activeSopContent = selectedTranscription?.sopContent || recording?.sopContent;
+  const activeCroContent = selectedTranscription?.croContent || recording?.croContent;
+  const activeFlowchartCode = selectedTranscription?.flowchartCode || recording?.flowchartCode;
 
   const { data: backupStatus } = useQuery({
     queryKey: ["backupStatus", recordingId],
@@ -250,7 +261,7 @@ export default function RecordingDetail() {
 
   const generateFlowchartMutation = useMutation({
     mutationFn: async () => {
-      if (!recording?.sopContent) {
+      if (!activeSopContent) {
         throw new Error("No SOP content available");
       }
       
@@ -259,7 +270,7 @@ export default function RecordingDetail() {
       setFlowchartProgress('generating');
       let result;
       try {
-        result = await api.generateFlowchart(recording.sopContent, meetingId);
+        result = await api.generateFlowchart(activeSopContent, meetingId);
       } catch (error) {
         throw new Error("AI generation failed");
       }
@@ -517,16 +528,19 @@ export default function RecordingDetail() {
   };
 
   useEffect(() => {
-    if (recording?.sopContent && !isEditing) {
-      setEditedSopContent(recording.sopContent);
-    }
-  }, [recording?.sopContent, isEditing]);
+    setSelectedTranscriptionId(null);
+  }, [recordingId]);
 
   useEffect(() => {
-    // Only render flowchart when the flowchart tab is active
+    if (activeSopContent && !isEditing) {
+      setEditedSopContent(activeSopContent);
+    }
+  }, [activeSopContent, isEditing]);
+
+  useEffect(() => {
     if (activeTab !== "flowchart") return;
     
-    if (!recording?.sopContent && !recording?.flowchartCode) {
+    if (!activeSopContent && !activeFlowchartCode) {
       if (flowchartRef.current) {
         flowchartRef.current.innerHTML = `<p class="text-muted-foreground italic">No SOP content available to generate flowchart.</p>`;
       }
@@ -534,10 +548,9 @@ export default function RecordingDetail() {
       return;
     }
     
-    const contentToCheck = recording.flowchartCode || recording.sopContent;
+    const contentToCheck = activeFlowchartCode || activeSopContent;
     if (contentToCheck !== renderedSopContent) {
       const renderFlowchart = async () => {
-        // Small delay to ensure DOM is ready after tab switch
         await new Promise(resolve => setTimeout(resolve, 50));
         
         if (!flowchartRef.current) {
@@ -546,11 +559,9 @@ export default function RecordingDetail() {
         }
         
         try {
-          // Use pre-generated flowchart code if available, otherwise generate from SOP
-          // Decode HTML entities since AI-generated code may have escaped characters
-          let flowchartCode = recording.flowchartCode 
-            ? decodeHtmlEntities(recording.flowchartCode) 
-            : generateFlowchartFromSOP(recording.sopContent || "");
+          let flowchartCode = activeFlowchartCode 
+            ? decodeHtmlEntities(activeFlowchartCode) 
+            : generateFlowchartFromSOP(activeSopContent || "");
           
           flowchartRef.current.innerHTML = "";
           const uniqueId = `flowchart-${Date.now()}`;
@@ -566,14 +577,14 @@ export default function RecordingDetail() {
       };
       renderFlowchart();
     }
-  }, [recording?.sopContent, recording?.flowchartCode, renderedSopContent, activeTab]);
+  }, [activeSopContent, activeFlowchartCode, renderedSopContent, activeTab]);
 
   const handleSave = () => {
     updateMutation.mutate(editedSopContent);
   };
 
   const handleCancelEdit = () => {
-    setEditedSopContent(recording?.sopContent || "");
+    setEditedSopContent(activeSopContent || "");
     setIsEditing(false);
   };
 
@@ -782,7 +793,7 @@ export default function RecordingDetail() {
                 toast.error("Failed to generate share link");
               }
             }}
-            disabled={!recording?.sopContent}
+            disabled={!activeSopContent}
           >
             {shareLinkCopied ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Share2 className="w-4 h-4 mr-2" />}
             {shareLinkCopied ? "Copied!" : "Share SOP"}
@@ -792,8 +803,8 @@ export default function RecordingDetail() {
             size="sm" 
             data-testid="button-download-sop"
             onClick={() => {
-              if (!recording?.sopContent) return;
-              const blob = new Blob([recording.sopContent], { type: 'text/markdown' });
+              if (!activeSopContent) return;
+              const blob = new Blob([activeSopContent], { type: 'text/markdown' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
@@ -803,7 +814,7 @@ export default function RecordingDetail() {
               document.body.removeChild(a);
               URL.revokeObjectURL(url);
             }}
-            disabled={!recording?.sopContent}
+            disabled={!activeSopContent}
           >
             <Download className="w-4 h-4 mr-2" />
             Export
@@ -1215,13 +1226,52 @@ export default function RecordingDetail() {
 
         {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
 
+        {cloudTranscriptions.length > 1 && (
+          <div className="bg-card border border-border rounded-xl p-4 mb-4" data-testid="transcription-session-selector">
+            <div className="flex items-center gap-2 mb-3">
+              <Volume2 className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-medium">Transcription Sessions ({cloudTranscriptions.length})</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {cloudTranscriptions.map((t, idx) => {
+                const isSelected = selectedTranscription?.id === t.id;
+                const segmentCount = Array.isArray(t.parsedTranscript) ? (t.parsedTranscript as any[]).length : 0;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setSelectedTranscriptionId(t.id)}
+                    className={`flex flex-col items-start gap-1 px-4 py-3 rounded-lg border text-left transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-muted/30 text-muted-foreground hover:border-primary/50 hover:bg-muted/50"
+                    }`}
+                    data-testid={`btn-select-session-${idx}`}
+                  >
+                    <span className="text-sm font-medium">Session {idx + 1}</span>
+                    <span className="text-xs opacity-70">
+                      {segmentCount > 0 ? `${segmentCount} segments` : "Transcript available"}
+                      {t.sopContent ? " · SOP" : ""}
+                      {t.croContent ? " · CRO" : ""}
+                    </span>
+                    {t.createdAt && (
+                      <span className="text-xs opacity-50">
+                        {format(new Date(t.createdAt), "MMM d, h:mm a")}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
               <FileText className="w-4 h-4" />
               SOP
             </TabsTrigger>
-            {recording.croContent && (
+            {activeCroContent && (
               <TabsTrigger value="cro" className="flex items-center gap-2" data-testid="tab-cro">
                 <Target className="w-4 h-4" />
                 CRO
@@ -1282,7 +1332,7 @@ export default function RecordingDetail() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsEditing(true)}
-                      disabled={!recording.sopContent && !primarySop}
+                      disabled={!activeSopContent && !primarySop}
                       data-testid="button-edit-sop"
                     >
                       <Edit2 className="w-4 h-4 mr-1" />
@@ -1389,9 +1439,9 @@ export default function RecordingDetail() {
                           </div>
                         )}
                       </div>
-                    ) : recording.sopContent ? (
+                    ) : activeSopContent ? (
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {recording.sopContent}
+                        {activeSopContent}
                       </ReactMarkdown>
                     ) : (
                       <p className="text-muted-foreground italic">No document was generated for this meeting.</p>
@@ -1402,7 +1452,7 @@ export default function RecordingDetail() {
             </div>
           </TabsContent>
 
-          {recording.croContent && (
+          {activeCroContent && (
             <TabsContent value="cro" className="mt-0">
               <div className="bg-card border border-border rounded-xl overflow-hidden">
                 <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
@@ -1415,7 +1465,7 @@ export default function RecordingDetail() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        const blob = new Blob([recording.croContent!], { type: "text/markdown" });
+                        const blob = new Blob([activeCroContent!], { type: "text/markdown" });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
                         a.href = url;
@@ -1433,7 +1483,7 @@ export default function RecordingDetail() {
                 <ScrollArea className="h-[calc(100vh-350px)]">
                   <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-cro">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {recording.croContent}
+                      {activeCroContent}
                     </ReactMarkdown>
                   </div>
                 </ScrollArea>
@@ -1448,7 +1498,7 @@ export default function RecordingDetail() {
                   <GitBranch className="w-4 h-4 text-primary" />
                   Process Flowchart
                 </h2>
-                {recording?.sopContent && (
+                {activeSopContent && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1458,7 +1508,7 @@ export default function RecordingDetail() {
                     data-testid="btn-regenerate-flowchart"
                   >
                     <Sparkles className="w-4 h-4" />
-                    {flowchartProgress !== 'idle' ? 'Generating...' : recording?.flowchartCode ? 'Regenerate' : 'Generate Flowchart'}
+                    {flowchartProgress !== 'idle' ? 'Generating...' : activeFlowchartCode ? 'Regenerate' : 'Generate Flowchart'}
                   </Button>
                 )}
               </div>
@@ -1490,10 +1540,10 @@ export default function RecordingDetail() {
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-primary" />
                   Meeting Transcript
-                  {(jaasTranscriptions.length > 0 || localTranscripts.length > 0 || chatMessages.length > 0) && (
+                  {(cloudTranscriptions.length > 0 || localTranscripts.length > 0 || chatMessages.length > 0) && (
                     <span className="text-xs text-muted-foreground">
-                      {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length > 0
-                        ? `(${jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length} segments)`
+                      {selectedTranscription
+                        ? `(${Array.isArray(selectedTranscription.parsedTranscript) ? (selectedTranscription.parsedTranscript as any[]).length : 0} segments${cloudTranscriptions.length > 1 ? ` · Session ${cloudTranscriptions.indexOf(selectedTranscription) + 1} of ${cloudTranscriptions.length}` : ""})`
                         : localTranscripts.length > 0
                         ? `(${localTranscripts.length} segments)`
                         : `(${chatMessages.length} messages)`}
@@ -1520,10 +1570,10 @@ export default function RecordingDetail() {
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-4 space-y-4" data-testid="content-transcript">
-                  {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).length > 0 ? (
-                    // JaaS Cloud transcriptions only (AI re-analyzed excluded)
+                  {selectedTranscription ? (
                     <div className="space-y-6">
-                      {jaasTranscriptions.filter((t) => t.fqn !== `recording-${recordingId}`).map((transcription) => {
+                      {(() => {
+                        const transcription = selectedTranscription;
                         return (
                           <div key={transcription.id} className="space-y-4">
                             <div className="flex items-center gap-2">
@@ -1531,6 +1581,11 @@ export default function RecordingDetail() {
                                 <Volume2 className="w-3 h-3" />
                                 JaaS Cloud
                               </span>
+                              {cloudTranscriptions.length > 1 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                                  Session {cloudTranscriptions.indexOf(transcription) + 1}
+                                </span>
+                              )}
                               <span className="text-xs text-muted-foreground">
                                 Provided by JaaS transcription service
                               </span>
@@ -1623,7 +1678,7 @@ export default function RecordingDetail() {
                             )}
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
                   ) : localTranscripts.length > 0 ? (
                     // Priority 2: Live capture segments (recorded in real-time during the meeting)
@@ -1807,7 +1862,7 @@ export default function RecordingDetail() {
         followUpContext={{
           previousMeetingId: meetingId,
           meetingSeriesId: meeting?.meetingSeriesId || undefined,
-          documentContext: recording?.sopContent || undefined,
+          documentContext: activeSopContent || undefined,
         }}
       />
 
@@ -1957,7 +2012,7 @@ export default function RecordingDetail() {
                 </div>
               )}
 
-              {recording?.sopContent && (reanalyzeResultsData?.outputs?.sop === "done" || reanalyzeResultsData?.outputs?.document === "done") && (
+              {activeSopContent && (reanalyzeResultsData?.outputs?.sop === "done" || reanalyzeResultsData?.outputs?.document === "done") && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
                     <ClipboardList className="w-3.5 h-3.5" />
@@ -1965,13 +2020,13 @@ export default function RecordingDetail() {
                   </h4>
                   <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto overflow-x-hidden break-words prose prose-invert prose-sm max-w-none [&_*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-all">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {recording.sopContent.length > 800 ? recording.sopContent.slice(0, 800) + "\n\n*...view full SOP in the SOP tab*" : recording.sopContent}
+                      {activeSopContent.length > 800 ? activeSopContent.slice(0, 800) + "\n\n*...view full SOP in the SOP tab*" : activeSopContent}
                     </ReactMarkdown>
                   </div>
                 </div>
               )}
 
-              {recording?.croContent && reanalyzeResultsData?.outputs?.cro === "done" && (
+              {activeCroContent && reanalyzeResultsData?.outputs?.cro === "done" && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
                     <Target className="w-3.5 h-3.5" />
@@ -1979,7 +2034,7 @@ export default function RecordingDetail() {
                   </h4>
                   <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto overflow-x-hidden break-words prose prose-invert prose-sm max-w-none [&_*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-all">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {recording.croContent.length > 500 ? recording.croContent.slice(0, 500) + "\n\n*...view full CRO in the CRO tab*" : recording.croContent}
+                      {activeCroContent.length > 500 ? activeCroContent.slice(0, 500) + "\n\n*...view full CRO in the CRO tab*" : activeCroContent}
                     </ReactMarkdown>
                   </div>
                 </div>

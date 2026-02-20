@@ -224,6 +224,9 @@ export const meetingTranscriptions = pgTable("meeting_transcriptions", {
   aiSummary: text("ai_summary"),
   actionItems: jsonb("action_items"),
   downloadUrl: text("download_url"),
+  sopContent: text("sop_content"),
+  croContent: text("cro_content"),
+  flowchartCode: text("flowchart_code"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

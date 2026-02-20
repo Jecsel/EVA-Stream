@@ -80,6 +80,9 @@ JaaS video recordings expire after 24 hours. To preserve them permanently:
 - **Schema Fields**: `originalVideoUrl` (JaaS temporary link), `storageStatus` (pending/downloading/stored/failed), `storedVideoPath` (permanent path in App Storage).
 - **Serving**: Stored videos are served via the object storage routes at `/objects/recordings/{id}.mp4`.
 
+### Per-Transcription Session Support
+When a meeting has multiple JaaS Cloud transcription records, the Recording Detail page shows a session selector allowing users to view each transcription independently. Each transcription record (`meetingTranscriptions` table) supports its own `sopContent`, `croContent`, and `flowchartCode` fields. The UI falls back to recording-level content when per-transcription content is not available. AI re-analyzed transcriptions (fqn = `recording-{recordingId}`) are filtered from the cloud transcription list.
+
 ### Data Flow
 User interaction initiates meeting creation/joining. Jitsi handles media streaming. Selected AI agents activate, with EVA connecting via WebSocket for real-time observation. AI responses update SOPs and flowchart visualizations. All meeting data is persisted to PostgreSQL.
 
