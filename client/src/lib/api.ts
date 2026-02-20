@@ -126,6 +126,17 @@ export const api = {
     return response.json();
   },
 
+  async uploadRecordingVideo(id: string, file: File): Promise<{ message: string; storedVideoPath: string }> {
+    const formData = new FormData();
+    formData.append("video", file);
+    const response = await fetch(`${API_BASE}/recordings/${id}/upload-video`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) throw new Error("Failed to upload video");
+    return response.json();
+  },
+
   async getBackupStatus(id: string): Promise<{ storageStatus: string; storedVideoPath: string | null; originalVideoUrl: string | null; hasVideo: boolean }> {
     const response = await fetch(`${API_BASE}/recordings/${id}/backup-status`);
     if (!response.ok) throw new Error("Failed to get backup status");

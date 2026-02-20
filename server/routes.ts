@@ -12,7 +12,9 @@ import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
 import admin from "firebase-admin";
 import { runDevAgent, type AgentMessage } from "./dev-agent";
-import { downloadAndStoreVideo, fixStoredVideoContentType } from "./video-storage";
+import { downloadAndStoreVideo, fixStoredVideoContentType, uploadVideoToStorage } from "./video-storage";
+import multer from "multer";
+import { Readable } from "stream";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 // Initialize Firebase Admin SDK for token verification
@@ -736,6 +738,70 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting video backup:", error);
       res.status(500).json({ error: "Failed to start video backup" });
+    }
+  });
+
+  const videoUpload = multer({
+    storage: multer.diskStorage({
+      destination: "/tmp",
+      filename: (_req, _file, cb) => cb(null, `upload-${Date.now()}.mp4`),
+    }),
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith("video/")) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only video files are allowed"));
+      }
+    },
+  });
+
+  app.post("/api/recordings/:id/upload-video", videoUpload.single("video"), async (req, res) => {
+    const tempFilePath = req.file?.path;
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      if (!req.file || !tempFilePath) {
+        res.status(400).json({ error: "No video file provided" });
+        return;
+      }
+
+      await storage.updateRecording(req.params.id, { storageStatus: "downloading" });
+
+      const fs = await import("fs");
+      const fileStream = fs.createReadStream(tempFilePath);
+
+      try {
+        const { storedVideoPath } = await uploadVideoToStorage(
+          fileStream,
+          req.params.id,
+          req.file.size
+        );
+
+        await storage.updateRecording(req.params.id, {
+          storedVideoPath,
+          storageStatus: "stored",
+        });
+
+        res.json({ message: "Video uploaded successfully", storedVideoPath });
+      } catch (uploadError) {
+        console.error(`[VideoStorage] Upload failed for recording ${req.params.id}:`, uploadError);
+        await storage.updateRecording(req.params.id, { storageStatus: "failed" })
+          .catch(err => console.error(`[VideoStorage] Failed to update status:`, err));
+        res.status(500).json({ error: "Failed to upload video to storage" });
+      }
+    } catch (error) {
+      console.error("Error handling video upload:", error);
+      res.status(500).json({ error: "Failed to process video upload" });
+    } finally {
+      if (tempFilePath) {
+        const fs = await import("fs");
+        fs.unlink(tempFilePath, () => {});
+      }
     }
   });
 

@@ -96,6 +96,47 @@ export async function fixStoredVideoContentType(storedVideoPath: string): Promis
   }
 }
 
+export async function uploadVideoToStorage(
+  fileStream: NodeJS.ReadableStream,
+  recordingId: string,
+  fileSizeBytes?: number,
+  onProgress?: (status: string) => void
+): Promise<{ storedVideoPath: string }> {
+  const emit = (msg: string) => {
+    console.log(`[VideoStorage] ${msg}`);
+    onProgress?.(msg);
+  };
+
+  const fileSizeMB = fileSizeBytes ? (fileSizeBytes / (1024 * 1024)).toFixed(1) : "unknown";
+  emit(`Uploading video (${fileSizeMB} MB) to storage...`);
+
+  const privateDir = objectStorageService.getPrivateObjectDir();
+  const objectPath = `${privateDir}/recordings/${recordingId}.mp4`;
+  const { bucketName, objectName } = parseObjectPath(objectPath);
+
+  const bucket = objectStorageClient.bucket(bucketName);
+  const file = bucket.file(objectName);
+
+  const writeStream = file.createWriteStream({
+    contentType: "video/mp4",
+    metadata: {
+      metadata: {
+        recordingId,
+        uploadedManually: "true",
+        storedAt: new Date().toISOString(),
+      },
+    },
+    resumable: true,
+  });
+
+  await pipeline(fileStream as any, writeStream);
+
+  const storedVideoPath = `/objects/recordings/${recordingId}.mp4`;
+  emit(`Video uploaded successfully at ${storedVideoPath}`);
+
+  return { storedVideoPath };
+}
+
 export async function getStoredVideoFile(storedVideoPath: string) {
   const objectStorageService = new ObjectStorageService();
   return objectStorageService.getObjectEntityFile(storedVideoPath);

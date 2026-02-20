@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -162,6 +162,36 @@ export default function RecordingDetail() {
       toast.error("Failed to start video backup. Please try again.");
     },
   });
+
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadRecordingVideo(recordingId, file),
+    onMutate: () => {
+      setUploadProgress("Uploading...");
+    },
+    onSuccess: () => {
+      setUploadProgress(null);
+      toast.success("Video uploaded successfully!");
+      queryClient.invalidateQueries({ queryKey: ["backupStatus", recordingId] });
+      queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+    },
+    onError: () => {
+      setUploadProgress(null);
+      toast.error("Failed to upload video. Please try again.");
+    },
+  });
+
+  const handleVideoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadMutation.mutate(file);
+    }
+    if (videoFileInputRef.current) {
+      videoFileInputRef.current.value = "";
+    }
+  };
 
   // Fetch decision-based SOPs linked to this meeting
   const { data: decisionBasedSops = [] } = useQuery({
@@ -725,12 +755,12 @@ export default function RecordingDetail() {
       )}
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-6">
-        {recording.videoUrl && (
+        {(recording.videoUrl || backupStatus?.storedVideoPath) && (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-video-player">
             <div className="relative bg-black">
               <video
                 ref={videoRef}
-                src={backupStatus?.storedVideoPath || recording.videoUrl}
+                src={backupStatus?.storedVideoPath || recording.videoUrl || undefined}
                 className="w-full aspect-video"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
@@ -849,13 +879,32 @@ export default function RecordingDetail() {
                       {backupMutation.isPending ? "Starting..." : "Save Video"}
                     </Button>
                   )}
+                  <input
+                    ref={videoFileInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={handleVideoFileSelect}
+                    data-testid="input-upload-video"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => videoFileInputRef.current?.click()}
+                    disabled={uploadMutation.isPending}
+                    data-testid="button-upload-video"
+                  >
+                    <Upload className="w-3 h-3 mr-1.5" />
+                    {uploadMutation.isPending ? (uploadProgress || "Uploading...") : "Upload Video"}
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {!recording.videoUrl && (
+        {!recording.videoUrl && !backupStatus?.storedVideoPath && (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-no-video">
             <div className="aspect-video bg-muted/30 flex flex-col items-center justify-center gap-4">
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
@@ -864,6 +913,26 @@ export default function RecordingDetail() {
               <div className="text-center">
                 <p className="text-muted-foreground">Video recording not available</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">The video for this meeting was not recorded or has been removed</p>
+              </div>
+              <div>
+                <input
+                  ref={videoFileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleVideoFileSelect}
+                  data-testid="input-upload-video-no-video"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => videoFileInputRef.current?.click()}
+                  disabled={uploadMutation.isPending}
+                  data-testid="button-upload-video-no-video"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  {uploadMutation.isPending ? (uploadProgress || "Uploading...") : "Upload Video"}
+                </Button>
               </div>
             </div>
           </div>
