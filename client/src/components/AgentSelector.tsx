@@ -6,7 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Bot, ChevronDown, MessageSquare, FileText } from "lucide-react";
+import { Bot, ChevronDown, MessageSquare, FileText, Users } from "lucide-react";
 
 interface AgentSelectorProps {
   meetingId: string;
@@ -17,6 +17,8 @@ interface AgentSelectorProps {
   onScreenObserverChange?: (enabled: boolean) => void;
   isCROEnabled?: boolean;
   onCROChange?: (enabled: boolean) => void;
+  isScrumMasterEnabled?: boolean;
+  onScrumMasterChange?: (enabled: boolean) => void;
   className?: string;
 }
 
@@ -25,21 +27,24 @@ export function AgentSelector({
   onScreenObserverChange,
   isCROEnabled = false,
   onCROChange,
+  isScrumMasterEnabled = false,
+  onScrumMasterChange,
   className = ""
 }: AgentSelectorProps) {
   const [open, setOpen] = useState(false);
 
   const getButtonText = () => {
-    const enabledGenerators: string[] = [];
-    if (isScreenObserverEnabled) enabledGenerators.push("SOP");
-    if (isCROEnabled) enabledGenerators.push("CRO");
+    const enabled: string[] = [];
+    if (isScreenObserverEnabled) enabled.push("SOP");
+    if (isCROEnabled) enabled.push("CRO");
+    if (isScrumMasterEnabled) enabled.push("Scrum");
     
-    if (enabledGenerators.length === 0) {
-      return "Generators";
-    } else if (enabledGenerators.length === 1) {
-      return `${enabledGenerators[0]} Generator`;
+    if (enabled.length === 0) {
+      return "Agents";
+    } else if (enabled.length === 1) {
+      return enabled[0];
     } else {
-      return enabledGenerators.join(", ");
+      return enabled.join(", ");
     }
   };
 
@@ -57,7 +62,7 @@ export function AgentSelector({
             {getButtonText()}
           </span>
           <span className="sm:hidden">
-            {(isScreenObserverEnabled ? 1 : 0) + (isCROEnabled ? 1 : 0)}
+            {(isScreenObserverEnabled ? 1 : 0) + (isCROEnabled ? 1 : 0) + (isScrumMasterEnabled ? 1 : 0)}
           </span>
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
@@ -95,6 +100,37 @@ export function AgentSelector({
             </div>
           </div>
         </div>
+
+        {/* Facilitator Toggles */}
+        {onScrumMasterChange && (
+          <div className="p-2 border-b border-border">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-2.5 mb-2">
+              Facilitators
+            </div>
+            <div className="space-y-1">
+              <div 
+                className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${isScrumMasterEnabled ? 'bg-blue-500/10' : 'hover:bg-muted/50'}`}
+                data-testid="toggle-scrum-master-row"
+              >
+                <div className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded flex items-center justify-center ${isScrumMasterEnabled ? 'bg-blue-500/20 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
+                    <Users className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-medium text-sm">Scrum Master</span>
+                    <p className="text-[10px] text-muted-foreground">Standup facilitation & tracking</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={isScrumMasterEnabled}
+                  onCheckedChange={onScrumMasterChange}
+                  className="scale-90"
+                  data-testid="toggle-scrum-master"
+                />
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Generator Toggles */}
         {(onScreenObserverChange || onCROChange) && (

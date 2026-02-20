@@ -3,16 +3,21 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload } from "lucide-react";
+import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
+import { ScrumSummaryPanel } from "@/components/ScrumSummaryPanel";
+import { ScrumMeetingRecordTab } from "@/components/ScrumMeetingRecordTab";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -85,6 +90,19 @@ export default function RecordingDetail() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [flowchartProgress, setFlowchartProgress] = useState<FlowchartProgressStep>('idle');
+  const [shareLinkCopied, setShareLinkCopied] = useState(false);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showNewMeetingPopover, setShowNewMeetingPopover] = useState(false);
+  const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+  const [reanalyzeOutputs, setReanalyzeOutputs] = useState<Record<string, boolean>>({
+    document: true,
+    sop: true,
+    cro: true,
+    flowchart: true,
+    transcript: true,
+    meeting_notes: true,
+    meeting_record: true,
+  });
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -111,6 +129,69 @@ export default function RecordingDetail() {
     queryFn: () => api.getTranscripts(meetingId!),
     enabled: !!meetingId,
   });
+
+  const { data: meeting } = useQuery({
+    queryKey: ["meeting", meetingId],
+    queryFn: () => api.getMeeting(meetingId!),
+    enabled: !!meetingId,
+  });
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+  });
+
+  const { data: backupStatus } = useQuery({
+    queryKey: ["backupStatus", recordingId],
+    queryFn: () => api.getBackupStatus(recordingId),
+    enabled: !!recordingId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.storageStatus === "downloading") return 3000;
+      return false;
+    },
+  });
+
+  const backupMutation = useMutation({
+    mutationFn: () => api.backupRecordingVideo(recordingId),
+    onSuccess: () => {
+      toast.success("Video backup started! This may take a few minutes.");
+      queryClient.invalidateQueries({ queryKey: ["backupStatus", recordingId] });
+    },
+    onError: () => {
+      toast.error("Failed to start video backup. Please try again.");
+    },
+  });
+
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadRecordingVideo(recordingId, file),
+    onMutate: () => {
+      setUploadProgress("Uploading...");
+    },
+    onSuccess: () => {
+      setUploadProgress(null);
+      toast.success("Video uploaded successfully!");
+      queryClient.invalidateQueries({ queryKey: ["backupStatus", recordingId] });
+      queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+    },
+    onError: () => {
+      setUploadProgress(null);
+      toast.error("Failed to upload video. Please try again.");
+    },
+  });
+
+  const handleVideoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadMutation.mutate(file);
+    }
+    if (videoFileInputRef.current) {
+      videoFileInputRef.current.value = "";
+    }
+  };
 
   // Fetch decision-based SOPs linked to this meeting
   const { data: decisionBasedSops = [] } = useQuery({
@@ -201,6 +282,76 @@ export default function RecordingDetail() {
       const message = error.message || "Failed to generate flowchart";
       toast.error(message + ". Please try again.");
       console.error("Flowchart generation error:", error);
+    },
+  });
+
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<{
+    active: boolean;
+    status?: string;
+    step?: string;
+    progress?: number;
+    completed?: boolean;
+    error?: string;
+  }>({ active: false });
+
+  useEffect(() => {
+    if (!recordingId) return;
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch(`/api/recordings/${recordingId}/reanalyze-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setReanalyzeStatus(data);
+        if (data.active && data.completed) {
+          if (!data.error) {
+            toast.success("Re-analysis completed!");
+            queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+            queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
+            queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
+            queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
+          } else {
+            toast.error(data.status || "Re-analysis failed");
+          }
+          if (interval) clearInterval(interval);
+          setTimeout(() => {
+            if (!cancelled) setReanalyzeStatus({ active: false });
+          }, 5000);
+        }
+      } catch {
+      }
+    };
+
+    pollStatus();
+    interval = setInterval(pollStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [recordingId, meetingId, queryClient]);
+
+  const isReanalyzing = reanalyzeStatus.active && !reanalyzeStatus.completed;
+
+  const reanalyzeMutation = useMutation({
+    mutationFn: async () => {
+      const selectedOutputs = Object.entries(reanalyzeOutputs)
+        .filter(([, selected]) => selected)
+        .map(([key]) => key);
+      if (selectedOutputs.length === 0) {
+        throw new Error("Please select at least one output type");
+      }
+      return api.reanalyzeRecording(recordingId, selectedOutputs);
+    },
+    onSuccess: () => {
+      setShowReanalyzeModal(false);
+      setReanalyzeStatus({ active: true, status: "Starting re-analysis...", step: "starting", progress: 0, completed: false });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to start re-analysis. Please try again.");
     },
   });
 
@@ -380,6 +531,10 @@ export default function RecordingDetail() {
   }
 
   const summaryData = parseSummaryHighlights(recording.summary || "");
+  const isFailedAnalysis = recording.summary && (
+    recording.summary.startsWith("Re-analysis failed") ||
+    recording.summary.startsWith("Transcription failed")
+  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -405,11 +560,115 @@ export default function RecordingDetail() {
                   <Clock className="w-3 h-3" />
                   {recording.duration}
                 </span>
+                {meeting?.selectedAgents && meeting.selectedAgents.length > 0 && (
+                  <div className="flex items-center gap-1.5 ml-1">
+                    {meeting.selectedAgents.map((agentId: string) => {
+                      const agent = agents.find((a: any) => a.id?.toString() === agentId);
+                      const agentType = agent?.type || "";
+                      const label = agent?.name || agentId;
+                      const config: Record<string, { icon: React.ReactNode; color: string }> = {
+                        eva: { icon: <Bot className="w-2.5 h-2.5" />, color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+                        sop: { icon: <FileText className="w-2.5 h-2.5" />, color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                        flowchart: { icon: <GitBranch className="w-2.5 h-2.5" />, color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                        cro: { icon: <Target className="w-2.5 h-2.5" />, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+                        scrum: { icon: <ScrollText className="w-2.5 h-2.5" />, color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" },
+                        screen_observer: { icon: <Eye className="w-2.5 h-2.5" />, color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
+                      };
+                      const c = config[agentType] || { icon: <Bot className="w-2.5 h-2.5" />, color: "bg-gray-500/20 text-gray-400 border-gray-500/30" };
+                      return (
+                        <span
+                          key={agentId}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${c.color}`}
+                          data-testid={`badge-agent-${agentId}`}
+                        >
+                          {c.icon}
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Popover open={showNewMeetingPopover} onOpenChange={setShowNewMeetingPopover}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-new-meeting"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Meeting
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="end">
+              <div className="space-y-1">
+                <button
+                  className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left"
+                  data-testid="button-instant-meeting"
+                  onClick={() => {
+                    setShowNewMeetingPopover(false);
+                    const randomId = Math.random().toString(36).substring(7);
+                    setLocation(`/meeting/${randomId}?followUp=${meetingId}`);
+                  }}
+                >
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  <div>
+                    <div className="font-medium">Start Instant Meeting</div>
+                    <div className="text-xs text-muted-foreground">Begin a meeting right now</div>
+                  </div>
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left"
+                  data-testid="button-schedule-followup"
+                  onClick={() => {
+                    setShowNewMeetingPopover(false);
+                    setShowScheduleDialog(true);
+                  }}
+                >
+                  <CalendarPlus className="w-4 h-4 text-blue-500" />
+                  <div>
+                    <div className="font-medium">Schedule Meeting</div>
+                    <div className="text-xs text-muted-foreground">Pick a date and time</div>
+                  </div>
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowReanalyzeModal(true)}
+            disabled={!recording?.videoUrl || reanalyzeMutation.isPending || isReanalyzing}
+            data-testid="button-reanalyze"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+            {isReanalyzing ? "Re-analyzing..." : reanalyzeMutation.isPending ? "Starting..." : "Re-analyze"}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            data-testid="button-share-sop"
+            onClick={async () => {
+              try {
+                const shareToken = await api.getOrCreateShareToken(recordingId);
+                const shareUrl = `${window.location.origin}/sop/${shareToken}`;
+                await navigator.clipboard.writeText(shareUrl);
+                setShareLinkCopied(true);
+                toast.success("Share link copied to clipboard");
+                setTimeout(() => setShareLinkCopied(false), 2000);
+              } catch (error) {
+                toast.error("Failed to generate share link");
+              }
+            }}
+            disabled={!recording?.sopContent}
+          >
+            {shareLinkCopied ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Share2 className="w-4 h-4 mr-2" />}
+            {shareLinkCopied ? "Copied!" : "Share SOP"}
+          </Button>
           <Button 
             variant="outline" 
             size="sm" 
@@ -429,7 +688,7 @@ export default function RecordingDetail() {
             disabled={!recording?.sopContent}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export SOP
+            Export
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -460,13 +719,48 @@ export default function RecordingDetail() {
         </div>
       </header>
 
+      {reanalyzeStatus.active && (
+        <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-4" data-testid="reanalyze-status-banner">
+          <div className={`bg-card border ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'border-destructive/30' : 'border-border'} rounded-xl p-4`}>
+            <div className="flex items-center gap-3 mb-2">
+              {reanalyzeStatus.completed && reanalyzeStatus.error ? (
+                <AlertCircle className="w-5 h-5 text-destructive" />
+              ) : (
+                <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
+              )}
+              <div className="flex-1">
+                <div className="text-sm font-medium">
+                  {reanalyzeStatus.completed
+                    ? reanalyzeStatus.error
+                      ? "Re-analysis Failed"
+                      : "Re-analysis Complete"
+                    : "Re-analyzing Recording"}
+                </div>
+                <div className={`text-xs mt-0.5 ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'text-destructive/80' : 'text-muted-foreground'}`}>{reanalyzeStatus.status}</div>
+              </div>
+              {reanalyzeStatus.completed && !reanalyzeStatus.error && (
+                <Check className="w-5 h-5 text-green-500" />
+              )}
+            </div>
+            {!reanalyzeStatus.completed && reanalyzeStatus.progress != null && (
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${Math.max(reanalyzeStatus.progress, 3)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 py-6">
-        {recording.videoUrl && (
+        {(recording.videoUrl || backupStatus?.storedVideoPath) && (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-video-player">
             <div className="relative bg-black">
               <video
                 ref={videoRef}
-                src={recording.videoUrl}
+                src={backupStatus?.storedVideoPath || recording.videoUrl || undefined}
                 className="w-full aspect-video"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
@@ -545,12 +839,72 @@ export default function RecordingDetail() {
                 >
                   <Maximize className="w-5 h-5" />
                 </Button>
+
+                <div className="border-l border-border pl-3 ml-1 flex items-center gap-2">
+                  {backupStatus?.storageStatus === "stored" && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" data-testid="badge-storage-stored">
+                      <HardDrive className="w-3 h-3" />
+                      Saved
+                    </span>
+                  )}
+                  {backupStatus?.storageStatus === "downloading" && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse" data-testid="badge-storage-downloading">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Backing up...
+                    </span>
+                  )}
+                  {backupStatus?.storageStatus === "failed" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                      onClick={() => backupMutation.mutate()}
+                      disabled={backupMutation.isPending}
+                      data-testid="button-retry-backup"
+                    >
+                      <CloudOff className="w-3 h-3 mr-1.5" />
+                      Retry Backup
+                    </Button>
+                  )}
+                  {(backupStatus?.storageStatus === "pending" || (!backupStatus?.storageStatus && recording.videoUrl)) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => backupMutation.mutate()}
+                      disabled={backupMutation.isPending}
+                      data-testid="button-backup-video"
+                    >
+                      <HardDrive className="w-3 h-3 mr-1.5" />
+                      {backupMutation.isPending ? "Starting..." : "Save Video"}
+                    </Button>
+                  )}
+                  <input
+                    ref={videoFileInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={handleVideoFileSelect}
+                    data-testid="input-upload-video"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => videoFileInputRef.current?.click()}
+                    disabled={uploadMutation.isPending}
+                    data-testid="button-upload-video"
+                  >
+                    <Upload className="w-3 h-3 mr-1.5" />
+                    {uploadMutation.isPending ? (uploadProgress || "Uploading...") : "Upload Video"}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {!recording.videoUrl && (
+        {!recording.videoUrl && !backupStatus?.storedVideoPath && (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6" data-testid="section-no-video">
             <div className="aspect-video bg-muted/30 flex flex-col items-center justify-center gap-4">
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
@@ -560,24 +914,72 @@ export default function RecordingDetail() {
                 <p className="text-muted-foreground">Video recording not available</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">The video for this meeting was not recorded or has been removed</p>
               </div>
+              <div>
+                <input
+                  ref={videoFileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleVideoFileSelect}
+                  data-testid="input-upload-video-no-video"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => videoFileInputRef.current?.click()}
+                  disabled={uploadMutation.isPending}
+                  data-testid="button-upload-video-no-video"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  {uploadMutation.isPending ? (uploadProgress || "Uploading...") : "Upload Video"}
+                </Button>
+              </div>
             </div>
           </div>
         )}
 
-        <div className="bg-gradient-to-br from-card via-card to-primary/5 border border-border rounded-xl p-5 mb-6" data-testid="section-ai-summary">
+        <div className={`bg-gradient-to-br ${isFailedAnalysis ? 'from-card via-card to-destructive/10 border-destructive/30' : 'from-card via-card to-primary/5 border-border'} border rounded-xl p-5 mb-6`} data-testid="section-ai-summary">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className={`w-10 h-10 rounded-xl ${isFailedAnalysis ? 'bg-gradient-to-br from-destructive/80 to-destructive' : 'bg-gradient-to-br from-primary via-accent to-secondary'} flex items-center justify-center flex-shrink-0 shadow-lg`}>
+              {isFailedAnalysis ? <AlertCircle className="w-5 h-5 text-white" /> : <Sparkles className="w-5 h-5 text-white" />}
             </div>
             <div className="flex-1 space-y-4">
               <div>
-                <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
-                  AI Meeting Summary
-                  <span className="px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full">Auto-generated</span>
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
-                  {recording.summary || "No summary available for this recording."}
-                </p>
+                {isFailedAnalysis ? (
+                  <>
+                    <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                      Analysis Failed
+                      <span className="px-2 py-0.5 text-xs bg-destructive/20 text-destructive rounded-full">Error</span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                      {recording.summary}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      This can happen when the video file is too large or there was a network issue during processing. You can try re-analyzing the recording.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 border-destructive/30 hover:bg-destructive/10"
+                      onClick={() => setShowReanalyzeModal(true)}
+                      disabled={isReanalyzing}
+                      data-testid="button-retry-reanalyze"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Retry Re-analyze
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                      AI Meeting Summary
+                      <span className="px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full">Auto-generated</span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                      {recording.summary || "No summary available for this recording."}
+                    </p>
+                  </>
+                )}
               </div>
               
               {summaryData.hasStructure && (
@@ -629,12 +1031,20 @@ export default function RecordingDetail() {
           </div>
         </div>
 
+        {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
               <FileText className="w-4 h-4" />
-              Document
+              SOP
             </TabsTrigger>
+            {recording.croContent && (
+              <TabsTrigger value="cro" className="flex items-center gap-2" data-testid="tab-cro">
+                <Target className="w-4 h-4" />
+                CRO
+              </TabsTrigger>
+            )}
             <TabsTrigger value="flowchart" className="flex items-center gap-2" data-testid="tab-flowchart">
               <GitBranch className="w-4 h-4" />
               Flowchart
@@ -647,6 +1057,12 @@ export default function RecordingDetail() {
               <ClipboardList className="w-4 h-4" />
               Meeting Notes
             </TabsTrigger>
+            {meetingId && (
+              <TabsTrigger value="meeting-record" className="flex items-center gap-2" data-testid="tab-meeting-record">
+                <ScrollText className="w-4 h-4" />
+                Meeting Record
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="sop" className="mt-0">
@@ -803,6 +1219,45 @@ export default function RecordingDetail() {
               )}
             </div>
           </TabsContent>
+
+          {recording.croContent && (
+            <TabsContent value="cro" className="mt-0">
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Target className="w-4 h-4 text-primary" />
+                    Core Role Outcomes (CRO)
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const blob = new Blob([recording.croContent!], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${recording.title}-CRO.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      data-testid="button-download-cro"
+                    >
+                      <Download className="w-4 h-4 mr-1" />
+                      Download
+                    </Button>
+                  </div>
+                </div>
+                <ScrollArea className="h-[calc(100vh-350px)]">
+                  <div className="p-6 prose prose-invert prose-sm max-w-none" data-testid="content-cro">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {recording.croContent}
+                    </ReactMarkdown>
+                  </div>
+                </ScrollArea>
+              </div>
+            </TabsContent>
+          )}
 
           <TabsContent value="flowchart" className="mt-0" forceMount style={{ display: activeTab === "flowchart" ? "block" : "none" }}>
             <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -1112,8 +1567,104 @@ export default function RecordingDetail() {
               </ScrollArea>
             </div>
           </TabsContent>
+
+          {meetingId && (
+            <TabsContent value="meeting-record" className="mt-0">
+              <ScrumMeetingRecordTab meetingId={meetingId} />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
+
+      <ScheduleMeetingDialog
+        open={showScheduleDialog}
+        onOpenChange={setShowScheduleDialog}
+        onSuccess={(meetingLink) => {
+          setShowScheduleDialog(false);
+          if (meetingLink) setLocation(meetingLink);
+        }}
+        initialSelectedAgents={meeting?.selectedAgents || undefined}
+        initialTitle={recording?.title || meeting?.title || ""}
+        followUpContext={{
+          previousMeetingId: meetingId,
+          meetingSeriesId: meeting?.meetingSeriesId || undefined,
+          documentContext: recording?.sopContent || undefined,
+        }}
+      />
+
+      <Dialog open={showReanalyzeModal} onOpenChange={setShowReanalyzeModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-primary" />
+              Re-analyze Recording
+            </DialogTitle>
+            <DialogDescription>
+              The video will be re-transcribed from scratch using AI. Select the outputs you want to regenerate from the new transcription.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {[
+              { key: "document", label: "Document", icon: FileText, description: "General document from transcript" },
+              { key: "sop", label: "SOP", icon: FileText, description: "Standard Operating Procedure" },
+              { key: "cro", label: "CRO", icon: Target, description: "Core Role Objective" },
+              { key: "flowchart", label: "Flowchart", icon: GitBranch, description: "Process flow diagram" },
+              { key: "transcript", label: "Transcript", icon: MessageSquare, description: "Full meeting transcript" },
+              { key: "meeting_notes", label: "Meeting Notes", icon: ClipboardList, description: "Structured meeting notes" },
+              { key: "meeting_record", label: "Meeting Record", icon: ScrollText, description: "Complete meeting record" },
+            ].map(({ key, label, icon: Icon, description }) => (
+              <label
+                key={key}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                data-testid={`reanalyze-option-${key}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={reanalyzeOutputs[key]}
+                  onChange={(e) =>
+                    setReanalyzeOutputs((prev) => ({
+                      ...prev,
+                      [key]: e.target.checked,
+                    }))
+                  }
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="text-xs text-muted-foreground">{description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowReanalyzeModal(false)}
+              data-testid="button-cancel-reanalyze"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => reanalyzeMutation.mutate()}
+              disabled={reanalyzeMutation.isPending || Object.values(reanalyzeOutputs).every((v) => !v)}
+              data-testid="button-confirm-reanalyze"
+            >
+              {reanalyzeMutation.isPending ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Re-analyze
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

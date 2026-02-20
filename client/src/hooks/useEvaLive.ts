@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import html2canvas from "html2canvas";
 
 interface EvaLiveMessage {
-  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status";
+  type: "text" | "audio" | "sop_update" | "sop_status" | "cro_update" | "cro_status" | "error" | "status" | "command";
   content: string;
+  action?: string;
   audioData?: string;
   observationCount?: number;
   sopVersion?: number;
@@ -19,6 +21,8 @@ interface UseEvaLiveOptions {
   onCroUpdate?: (content: string, croVersion?: number) => void;
   onCroStatus?: (croVersion: number) => void;
   onStatusChange?: (status: "connected" | "disconnected" | "connecting") => void;
+  onCommand?: (action: string) => void;
+  onTeamActiveChange?: (active: boolean) => void;
 }
 
 export function useEvaLive({
@@ -29,13 +33,18 @@ export function useEvaLive({
   onCroUpdate,
   onCroStatus,
   onStatusChange,
+  onCommand,
+  onTeamActiveChange,
 }: UseEvaLiveOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isObserving, setIsObserving] = useState(false);
+  const [isTeamActive, setIsTeamActive] = useState(false);
+  const isTeamActiveRef = useRef(false);
   const observingRef = useRef(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appFrameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -59,15 +68,33 @@ export function useEvaLive({
       setIsConnected(true);
       onStatusChange?.("connected");
       console.log("EVA Live connected");
+      ws.send(JSON.stringify({ type: "team_get_state" }));
     };
 
     ws.onmessage = (event) => {
       try {
-        const message: EvaLiveMessage = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+
+        if (data.type === "team_started" || (data.type === "team_status" && data.status === "active") || (data.type === "team_state" && data.isActive)) {
+          isTeamActiveRef.current = true;
+          setIsTeamActive(true);
+          onTeamActiveChange?.(true);
+        } else if (data.type === "team_stopped" || (data.type === "team_status" && data.status === "inactive") || (data.type === "team_state" && !data.isActive)) {
+          isTeamActiveRef.current = false;
+          setIsTeamActive(false);
+          onTeamActiveChange?.(false);
+        }
+
+        const message: EvaLiveMessage = data;
         
+        if (message.type === "command" && message.action) {
+          console.log(`[EVA] Received command: ${message.action}`);
+          onCommand?.(message.action);
+          return;
+        }
+
         if (message.type === "sop_update") {
           onSopUpdate?.(message.content, message.observationCount, message.sopVersion, message.flowchartCode);
-          // Also check for CRO content in combined updates
           if (message.croContent) {
             onCroUpdate?.(message.croContent, message.croVersion);
           }
@@ -88,6 +115,8 @@ export function useEvaLive({
     ws.onclose = () => {
       setIsConnected(false);
       setIsObserving(false);
+      isTeamActiveRef.current = false;
+      setIsTeamActive(false);
       onStatusChange?.("disconnected");
       
       // Auto-reconnect after 3 seconds
@@ -101,7 +130,7 @@ export function useEvaLive({
     ws.onerror = (error) => {
       console.error("EVA WebSocket error:", error);
     };
-  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange]);
+  }, [meetingId, onMessage, onSopUpdate, onSopStatus, onCroUpdate, onCroStatus, onStatusChange, onCommand, onTeamActiveChange]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -109,6 +138,9 @@ export function useEvaLive({
     }
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
+    }
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
     }
     wsRef.current?.close();
     wsRef.current = null;
@@ -200,6 +232,55 @@ export function useEvaLive({
     }
   }, []);
 
+  const startAppCapture = useCallback(() => {
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
+    }
+
+    const captureAndSend = async () => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+      try {
+        const target = document.querySelector("main") || document.body;
+        const canvas = await html2canvas(target as HTMLElement, {
+          scale: 0.5,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: "#1a1a2e",
+          ignoreElements: (el) => {
+            return el.getAttribute("data-testid") === "button-open-dev-agent" ||
+                   el.classList.contains("DevAgentWidget");
+          },
+        });
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        const base64Data = dataUrl.split(",")[1];
+
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log("[EVA] Sending app view capture...");
+          wsRef.current.send(JSON.stringify({
+            type: "video",
+            data: base64Data,
+            mimeType: "image/jpeg",
+          }));
+        }
+      } catch (err) {
+        console.error("[EVA] App capture error:", err);
+      }
+    };
+
+    captureAndSend();
+    appFrameIntervalRef.current = setInterval(captureAndSend, 10000);
+  }, []);
+
+  const stopAppCapture = useCallback(() => {
+    if (appFrameIntervalRef.current) {
+      clearInterval(appFrameIntervalRef.current);
+      appFrameIntervalRef.current = null;
+    }
+  }, []);
+
   const sendTextMessage = useCallback((text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -238,12 +319,17 @@ export function useEvaLive({
   return {
     isConnected,
     isObserving,
+    isTeamActive,
+    isTeamActiveRef,
     startObserving,
     stopObserving,
     startScreenCapture,
     stopScreenCapture,
+    startAppCapture,
+    stopAppCapture,
     sendTextMessage,
     sendTranscript,
     disconnect,
+    wsRef,
   };
 }

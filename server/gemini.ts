@@ -546,8 +546,10 @@ export interface RecordingTranscript {
 
 export async function transcribeRecording(
   videoUrl: string,
-  meetingTitle?: string
+  meetingTitle?: string,
+  onStatus?: (status: string) => void
 ): Promise<RecordingTranscript> {
+  const emitStatus = onStatus || (() => {});
   try {
     if (!process.env.GEMINI_API_KEY) {
       return {
@@ -588,33 +590,105 @@ Respond in the following JSON format:
   "keyTopics": ["Topic 1", "Topic 2"]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          parts: [
-            {
-              fileData: {
-                fileUri: videoUrl,
-                mimeType: videoUrl.includes(".mp4") ? "video/mp4" : 
-                         videoUrl.includes(".webm") ? "video/webm" :
-                         videoUrl.includes(".mp3") ? "audio/mpeg" :
-                         videoUrl.includes(".wav") ? "audio/wav" :
-                         "video/mp4"
-              }
-            },
-            {
-              text: prompt
-            }
-          ]
+    const mimeType = videoUrl.includes(".mp4") ? "video/mp4" : 
+                     videoUrl.includes(".webm") ? "video/webm" :
+                     videoUrl.includes(".mp3") ? "audio/mpeg" :
+                     videoUrl.includes(".wav") ? "audio/wav" :
+                     "video/mp4";
+
+    let response;
+    
+    emitStatus("Downloading video recording...");
+    console.log(`[Transcription] Downloading video to temp file...`);
+    
+    const fs = await import("fs");
+    const os = await import("os");
+    const path = await import("path");
+    
+    const ext = mimeType.includes("mp4") ? ".mp4" : mimeType.includes("webm") ? ".webm" : ".mp4";
+    const tempFilePath = path.join(os.tmpdir(), `gemini-upload-${Date.now()}${ext}`);
+    
+    try {
+      const videoResponse = await fetch(videoUrl);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
+      }
+      
+      const arrayBuffer = await videoResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(tempFilePath, buffer);
+      
+      const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(1);
+      console.log(`[Transcription] Video downloaded: ${fileSizeMB}MB`);
+      emitStatus(`Video downloaded (${fileSizeMB}MB). Uploading to AI service...`);
+      
+      const uploadedFile = await ai.files.upload({
+        file: tempFilePath,
+        config: { mimeType },
+      });
+      
+      console.log(`[Transcription] File uploaded to Gemini: ${uploadedFile.name}`);
+      emitStatus("Video uploaded. Waiting for AI processing...");
+      
+      let file = await ai.files.get({ name: uploadedFile.name! });
+      let pollAttempts = 0;
+      const maxPolls = 120;
+      
+      while (file.state === "PROCESSING" && pollAttempts < maxPolls) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        file = await ai.files.get({ name: uploadedFile.name! });
+        pollAttempts++;
+        if (pollAttempts % 5 === 0) {
+          emitStatus(`AI is processing video... (${pollAttempts * 3}s elapsed)`);
         }
-      ]
-    });
+      }
+      
+      if (file.state === "FAILED") {
+        throw new Error("Gemini video processing failed");
+      }
+      
+      if (file.state === "PROCESSING") {
+        throw new Error("Gemini video processing timed out");
+      }
+      
+      console.log(`[Transcription] File ready, state: ${file.state}`);
+      emitStatus("Transcribing video with AI...");
+      
+      const { createPartFromUri } = await import("@google/genai");
+      
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            parts: [
+              createPartFromUri(file.uri!, mimeType),
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+      
+      try {
+        await ai.files.delete({ name: uploadedFile.name! });
+        console.log(`[Transcription] Cleaned up uploaded file`);
+      } catch (cleanupErr) {
+        console.warn(`[Transcription] Failed to clean up uploaded file:`, cleanupErr);
+      }
+    } finally {
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+          console.log(`[Transcription] Cleaned up temp file`);
+        }
+      } catch (cleanupErr) {
+        console.warn(`[Transcription] Failed to clean up temp file:`, cleanupErr);
+      }
+    }
 
     const text = response.text || "";
     console.log(`Received transcription response: ${text.substring(0, 200)}...`);
+    emitStatus("Parsing transcription results...");
     
-    // Parse JSON response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -631,7 +705,6 @@ Respond in the following JSON format:
       }
     }
 
-    // Fallback: treat entire response as transcript
     return {
       fullTranscript: text,
       segments: [{ speaker: "Speaker", timestamp: "00:00", text }],
@@ -641,6 +714,7 @@ Respond in the following JSON format:
     };
   } catch (error) {
     console.error("Gemini recording transcription error:", error);
+    emitStatus("Transcription failed. Check video URL and try again.");
     return {
       fullTranscript: "",
       segments: [],
@@ -788,4 +862,188 @@ Do NOT infer or guess missing information - flag anything unclear with "⚠️".
     console.error("[CRO Generation] Failed:", error);
     return null;
   }
+}
+
+const SCRUM_MASTER_SYSTEM_PROMPT = `You are an AI Scrum Master embedded in a live daily standup meeting.
+
+Your primary role is to facilitate the standup, ensure it stays focused, and extract structured updates from each participant.
+
+STANDUP FORMAT:
+For each participant, track their answers to the three standup questions:
+1. What did you work on yesterday / since last standup?
+2. What are you working on today?
+3. Are there any blockers or impediments?
+
+BEHAVIOR RULES:
+- Keep the standup focused and time-boxed
+- Gently redirect off-topic discussions
+- Identify and highlight blockers that need immediate attention
+- Track action items that emerge from the discussion
+- Note any decisions made during the standup
+- If someone hasn't given their update, note it
+- Be concise and practical in responses
+
+BLOCKER AWARENESS:
+- Flag blockers that are cross-team dependencies
+- Identify blockers that have persisted across multiple standups
+- Suggest escalation for high-severity blockers
+- Track blocker resolution
+
+ACTION ITEM TRACKING:
+- Extract specific action items with owners
+- Note any commitments or deadlines mentioned
+- Flag unassigned action items
+
+STANDUP CONTINUITY:
+- When previous standup data is provided, compare today's updates against it
+- Flag blockers that persist from the previous standup as "carry-over blockers"
+- Note which previous action items were completed and which are still open
+- Highlight new blockers that appeared since the last standup
+- Track whether participants addressed what they planned to work on
+
+FAIL-SAFE BEHAVIOR:
+- If you can't determine who said what, note "Speaker unidentified"
+- If an update is vague, flag it for clarification
+- Never invent information that wasn't discussed`;
+
+export interface ScrumSummaryResult {
+  fullSummary: string;
+  scrumData: {
+    participants: Array<{
+      name: string;
+      yesterday: string[];
+      today: string[];
+      blockers: string[];
+    }>;
+    blockers: Array<{
+      description: string;
+      owner: string;
+      severity: "low" | "medium" | "high";
+      status: "active" | "resolved";
+    }>;
+    actionItems: Array<{
+      title: string;
+      assignee: string;
+      priority: "low" | "medium" | "high";
+      dueDate?: string;
+    }>;
+    teamMood?: string;
+    sprintGoalProgress?: string;
+  };
+}
+
+export async function generateScrumSummary(
+  transcriptText: string,
+  meetingTitle: string,
+  chatMessages?: Array<{ role: string; content: string }>,
+  customSystemPrompt?: string,
+  previousStandupContext?: string
+): Promise<ScrumSummaryResult | null> {
+  if (!process.env.GEMINI_API_KEY) {
+    console.log("[Scrum Summary] No API key");
+    return null;
+  }
+
+  const chatText = chatMessages
+    ? chatMessages.map(m => `${m.role}: ${m.content}`).join("\n")
+    : "";
+
+  const inputText = transcriptText || chatText;
+  if (inputText.length < 20) {
+    console.log("[Scrum Summary] Input too short");
+    return null;
+  }
+
+  const systemPrompt = customSystemPrompt || SCRUM_MASTER_SYSTEM_PROMPT;
+
+  const previousContext = previousStandupContext
+    ? `\n### Previous Standup Summary:\n${previousStandupContext}\n`
+    : "";
+
+  const prompt = `${systemPrompt}
+
+---
+
+## INPUT DATA
+
+Meeting: ${meetingTitle}
+${previousContext}
+### Today's Meeting Transcript / Chat:
+${inputText.slice(0, 30000)}
+
+---
+
+## YOUR TASK
+Analyze this standup meeting and generate a structured JSON summary.
+${previousStandupContext ? `\nIMPORTANT - CONTINUITY FROM PREVIOUS STANDUP:
+- Compare today's updates against what was discussed in the previous standup
+- Flag any blockers from the previous standup that are still unresolved
+- Note which action items from the previous standup were completed vs. still open
+- Highlight any new blockers that appeared since the last standup
+- Include a "carryOverItems" note in the fullSummary if there are unresolved items from yesterday` : ""}
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "fullSummary": "2-3 sentence overview of the standup",
+  "scrumData": {
+    "participants": [
+      {
+        "name": "Person Name",
+        "yesterday": ["Task they completed or worked on"],
+        "today": ["Task they plan to work on"],
+        "blockers": ["Any blockers mentioned, empty array if none"]
+      }
+    ],
+    "blockers": [
+      {
+        "description": "Description of the blocker",
+        "owner": "Person responsible",
+        "severity": "low|medium|high",
+        "status": "active"
+      }
+    ],
+    "actionItems": [
+      {
+        "title": "Specific action to take",
+        "assignee": "Person responsible",
+        "priority": "low|medium|high"
+      }
+    ],
+    "teamMood": "Brief assessment of team energy/morale if discernible, or null",
+    "sprintGoalProgress": "Brief assessment of sprint progress if mentioned, or null"
+  }
+}
+
+IMPORTANT:
+- Extract REAL names from the transcript (use speaker labels)
+- Only include information that was actually discussed
+- If you can't identify a speaker, use "Unidentified"
+- Every blocker mentioned by anyone should appear in both their participant.blockers AND the top-level blockers array
+- Action items should be specific and actionable, not vague`;
+
+  try {
+    console.log("[Scrum Summary] Generating structured standup summary...");
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const text = response.text || "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as ScrumSummaryResult;
+      console.log(`[Scrum Summary] Generated with ${parsed.scrumData?.participants?.length || 0} participants`);
+      return parsed;
+    }
+
+    console.log("[Scrum Summary] Failed to parse JSON response");
+    return null;
+  } catch (error) {
+    console.error("[Scrum Summary] Failed:", error);
+    return null;
+  }
+}
+
+export function getScrumMasterChatPrompt(): string {
+  return SCRUM_MASTER_SYSTEM_PROMPT;
 }

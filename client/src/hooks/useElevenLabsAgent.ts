@@ -1,14 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
-export type ElevenLabsAgentType = 'eva' | 'sop' | 'cro_interview';
-
 interface UseElevenLabsAgentOptions {
   onUserTranscript?: (text: string) => void;
   onAgentResponse?: (text: string) => void;
   onError?: (error: string) => void;
   enabled?: boolean;
   dynamicContext?: string;
-  agentType?: ElevenLabsAgentType;
 }
 
 interface AgentMessage {
@@ -27,13 +24,11 @@ export function useElevenLabsAgent({
   onError,
   enabled = true,
   dynamicContext,
-  agentType = 'eva',
 }: UseElevenLabsAgentOptions = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [currentAgentType, setCurrentAgentType] = useState<ElevenLabsAgentType>(agentType);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -43,28 +38,21 @@ export function useElevenLabsAgent({
   const isPlayingRef = useRef(false);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const dynamicContextRef = useRef<string | undefined>(dynamicContext);
-  const agentTypeRef = useRef<ElevenLabsAgentType>(agentType);
   
   // Keep refs in sync with props
   useEffect(() => {
     dynamicContextRef.current = dynamicContext;
   }, [dynamicContext]);
-  
-  useEffect(() => {
-    agentTypeRef.current = agentType;
-    setCurrentAgentType(agentType);
-  }, [agentType]);
 
-  const getSignedUrl = useCallback(async (type?: ElevenLabsAgentType): Promise<string | null> => {
+  const getSignedUrl = useCallback(async (): Promise<string | null> => {
     try {
-      const targetType = type || agentTypeRef.current;
-      const response = await fetch(`/api/elevenlabs/signed-url?agentType=${targetType}`);
+      const response = await fetch(`/api/elevenlabs/signed-url`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to get signed URL');
       }
       const data = await response.json();
-      console.log(`[ElevenLabs Agent] Got signed URL for agent type: ${data.agentType}`);
+      console.log(`[ElevenLabs Agent] Got signed URL`);
       return data.signedUrl;
     } catch (error: any) {
       console.error('[ElevenLabs Agent] Error getting signed URL:', error);
@@ -391,7 +379,6 @@ export function useElevenLabsAgent({
     isListening,
     isSpeaking,
     conversationId,
-    currentAgentType,
     connect,
     disconnect,
     startListening,

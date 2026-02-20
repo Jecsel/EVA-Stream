@@ -45,6 +45,22 @@ import {
   type InsertEvaSettings,
   type ApiKey,
   type InsertApiKey,
+  type ScrumActionItem,
+  type InsertScrumActionItem,
+  type ScrumMasterSession,
+  type InsertScrumMasterSession,
+  type ScrumMasterIntervention,
+  type InsertScrumMasterIntervention,
+  type ScrumMasterBlocker,
+  type InsertScrumMasterBlocker,
+  type ScrumMasterAction,
+  type InsertScrumMasterAction,
+  type ScrumMeetingRecord,
+  type InsertScrumMeetingRecord,
+  type AgentTeamTask,
+  type InsertAgentTeamTask,
+  type AgentTeamMessage,
+  type InsertAgentTeamMessage,
   users,
   meetings,
   recordings,
@@ -65,10 +81,18 @@ import {
   meetingFiles,
   meetingSummaries,
   evaSettings,
-  apiKeys
+  apiKeys,
+  scrumActionItems,
+  scrumMasterSessions,
+  scrumMasterInterventions,
+  scrumMasterBlockers,
+  scrumMasterActions,
+  scrumMeetingRecords,
+  agentTeamTasks,
+  agentTeamMessages,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, ilike, or, and, gte } from "drizzle-orm";
+import { eq, ne, not, desc, ilike, or, and, gte } from "drizzle-orm";
 
 export type AgentWithPrompt = Agent & { prompt?: Prompt | null };
 
@@ -109,7 +133,9 @@ export interface IStorage {
 
   // Recordings
   getRecording(id: string): Promise<Recording | undefined>;
+  getRecordingByShareToken(token: string): Promise<Recording | undefined>;
   createRecording(recording: InsertRecording): Promise<Recording>;
+  createOrUpdateRecording(recording: InsertRecording): Promise<Recording>;
   listRecordings(limit?: number): Promise<Recording[]>;
   getRecordingsByMeeting(meetingId: string): Promise<Recording[]>;
   updateRecording(id: string, recording: Partial<InsertRecording>): Promise<Recording | undefined>;
@@ -192,6 +218,14 @@ export interface IStorage {
   getMeetingSummary(meetingId: string): Promise<MeetingSummary | undefined>;
   createMeetingSummary(summary: InsertMeetingSummary): Promise<MeetingSummary>;
   updateMeetingSummary(meetingId: string, data: Partial<InsertMeetingSummary>): Promise<MeetingSummary | undefined>;
+  getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined>;
+  getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit?: number, meetingTitle?: string, meetingSeriesId?: string | null): Promise<MeetingSummary[]>;
+
+  // Scrum Action Items
+  createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem>;
+  getScrumActionItemsByMeeting(meetingId: string): Promise<ScrumActionItem[]>;
+  updateScrumActionItem(id: string, data: Partial<InsertScrumActionItem>): Promise<ScrumActionItem | undefined>;
+  deleteScrumActionItem(id: string): Promise<boolean>;
 
   // EVA - Settings
   getEvaSettings(userId: string): Promise<EvaSettings | undefined>;
@@ -204,6 +238,49 @@ export interface IStorage {
   listApiKeys(): Promise<ApiKey[]>;
   revokeApiKey(id: string): Promise<boolean>;
   updateApiKeyLastUsed(id: string): Promise<void>;
+
+  // Scrum Master Sessions
+  createScrumMasterSession(session: InsertScrumMasterSession): Promise<ScrumMasterSession>;
+  getScrumMasterSession(id: string): Promise<ScrumMasterSession | undefined>;
+  getScrumMasterSessionByMeeting(meetingId: string): Promise<ScrumMasterSession | undefined>;
+  updateScrumMasterSession(id: string, data: Partial<InsertScrumMasterSession>): Promise<ScrumMasterSession | undefined>;
+  getScrumMasterSessionsByCreator(createdBy: string, limit?: number): Promise<ScrumMasterSession[]>;
+
+  // Scrum Master Interventions
+  createScrumMasterIntervention(intervention: InsertScrumMasterIntervention): Promise<ScrumMasterIntervention>;
+  getScrumMasterInterventionsBySession(sessionId: string): Promise<ScrumMasterIntervention[]>;
+
+  // Scrum Master Blockers
+  createScrumMasterBlocker(blocker: InsertScrumMasterBlocker): Promise<ScrumMasterBlocker>;
+  getScrumMasterBlockersBySession(sessionId: string): Promise<ScrumMasterBlocker[]>;
+  getScrumMasterBlockersByMeeting(meetingId: string): Promise<ScrumMasterBlocker[]>;
+  updateScrumMasterBlocker(id: string, data: Partial<InsertScrumMasterBlocker>): Promise<ScrumMasterBlocker | undefined>;
+
+  // Scrum Master Actions
+  createScrumMasterAction(action: InsertScrumMasterAction): Promise<ScrumMasterAction>;
+  getScrumMasterActionsBySession(sessionId: string): Promise<ScrumMasterAction[]>;
+  getScrumMasterActionsByMeeting(meetingId: string): Promise<ScrumMasterAction[]>;
+  updateScrumMasterAction(id: string, data: Partial<InsertScrumMasterAction>): Promise<ScrumMasterAction | undefined>;
+
+  // Scrum Meeting Records
+  createScrumMeetingRecord(record: InsertScrumMeetingRecord): Promise<ScrumMeetingRecord>;
+  getScrumMeetingRecord(id: string): Promise<ScrumMeetingRecord | undefined>;
+  getScrumMeetingRecordByMeeting(meetingId: string): Promise<ScrumMeetingRecord | undefined>;
+  getScrumMeetingRecordsBySeries(meetingSeriesId: string): Promise<ScrumMeetingRecord[]>;
+  getLatestScrumMeetingRecordForSeries(meetingSeriesId: string, excludeMeetingId?: string): Promise<ScrumMeetingRecord | undefined>;
+  getPreviousScrumMeetingRecord(meetingId: string): Promise<ScrumMeetingRecord | undefined>;
+  updateScrumMeetingRecord(id: string, data: Partial<InsertScrumMeetingRecord>): Promise<ScrumMeetingRecord | undefined>;
+  deleteScrumMeetingRecord(id: string): Promise<boolean>;
+
+  // Agent Team Tasks
+  createAgentTeamTask(task: InsertAgentTeamTask): Promise<AgentTeamTask>;
+  getAgentTeamTask(id: string): Promise<AgentTeamTask | undefined>;
+  getAgentTeamTasksByMeeting(meetingId: string): Promise<AgentTeamTask[]>;
+  updateAgentTeamTask(id: string, data: Partial<InsertAgentTeamTask>): Promise<AgentTeamTask | undefined>;
+
+  // Agent Team Messages
+  createAgentTeamMessage(message: InsertAgentTeamMessage): Promise<AgentTeamMessage>;
+  getAgentTeamMessagesByMeeting(meetingId: string): Promise<AgentTeamMessage[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -405,9 +482,38 @@ export class DatabaseStorage implements IStorage {
     return recording;
   }
 
+  async getRecordingByShareToken(token: string): Promise<Recording | undefined> {
+    const [recording] = await db.select().from(recordings).where(eq(recordings.shareToken, token));
+    return recording;
+  }
+
   async createRecording(insertRecording: InsertRecording): Promise<Recording> {
     const [recording] = await db.insert(recordings).values(insertRecording).returning();
     return recording;
+  }
+
+  async createOrUpdateRecording(insertRecording: InsertRecording): Promise<Recording> {
+    const existing = await this.getRecordingsByMeeting(insertRecording.meetingId);
+    if (existing.length > 0) {
+      const best = existing.sort((a, b) => {
+        const scoreA = (a.videoUrl ? 10 : 0) + (a.summary ? a.summary.length : 0) + (a.sopContent ? 5 : 0) + (a.croContent ? 5 : 0);
+        const scoreB = (b.videoUrl ? 10 : 0) + (b.summary ? b.summary.length : 0) + (b.sopContent ? 5 : 0) + (b.croContent ? 5 : 0);
+        return scoreB - scoreA;
+      })[0];
+      const { meetingId, ...updateData } = insertRecording;
+      const filteredUpdate: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(updateData)) {
+        if (value !== null && value !== undefined && value !== "" && value !== "00:00" && value !== "Unknown") {
+          filteredUpdate[key] = value;
+        }
+      }
+      if (Object.keys(filteredUpdate).length > 0) {
+        const updated = await this.updateRecording(best.id, filteredUpdate as Partial<InsertRecording>);
+        if (updated) return updated;
+      }
+      return best;
+    }
+    return this.createRecording(insertRecording);
   }
 
   async listRecordings(limit: number = 10): Promise<Recording[]> {
@@ -826,6 +932,98 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getPreviousScrumSummary(meetingTitle: string, currentMeetingId: string, createdBy?: string | null): Promise<MeetingSummary | undefined> {
+    const matchingMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        createdBy
+          ? and(eq(meetings.title, meetingTitle), eq(meetings.createdBy, createdBy))
+          : eq(meetings.title, meetingTitle)
+      );
+
+    const meetingIds = matchingMeetings.map(m => m.id).filter(id => id !== currentMeetingId);
+
+    if (meetingIds.length > 0) {
+      const results = await db
+        .select()
+        .from(meetingSummaries)
+        .where(
+          and(
+            eq(meetingSummaries.summaryType, "scrum"),
+            or(...meetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+          )
+        )
+        .orderBy(desc(meetingSummaries.createdAt))
+        .limit(1);
+
+      if (results[0]) return results[0];
+    }
+
+    if (!createdBy) return undefined;
+
+    const userMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.createdBy, createdBy),
+          not(eq(meetings.id, currentMeetingId))
+        )
+      );
+
+    const userMeetingIds = userMeetings.map(m => m.id);
+    if (userMeetingIds.length === 0) return undefined;
+
+    const fallbackResults = await db
+      .select()
+      .from(meetingSummaries)
+      .where(
+        and(
+          eq(meetingSummaries.summaryType, "scrum"),
+          or(...userMeetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+        )
+      )
+      .orderBy(desc(meetingSummaries.createdAt))
+      .limit(1);
+
+    return fallbackResults[0];
+  }
+
+  async getPreviousScrumSummaries(currentMeetingId: string, createdBy: string, limit: number = 5, meetingTitle?: string, meetingSeriesId?: string | null): Promise<MeetingSummary[]> {
+    const conditions = [
+      eq(meetings.createdBy, createdBy),
+      not(eq(meetings.id, currentMeetingId)),
+    ];
+    if (meetingSeriesId) {
+      conditions.push(eq(meetings.meetingSeriesId, meetingSeriesId));
+    } else if (meetingTitle) {
+      conditions.push(eq(meetings.title, meetingTitle));
+    }
+
+    const userMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(and(...conditions));
+
+    const userMeetingIds = userMeetings.map(m => m.id);
+    if (userMeetingIds.length === 0) return [];
+
+    const results = await db
+      .select()
+      .from(meetingSummaries)
+      .where(
+        and(
+          eq(meetingSummaries.summaryType, "scrum"),
+          or(...userMeetingIds.map(id => eq(meetingSummaries.meetingId, id)))
+        )
+      )
+      .orderBy(desc(meetingSummaries.createdAt))
+      .limit(limit);
+
+    return results;
+  }
+
   // EVA - Settings
   async getEvaSettings(userId: string): Promise<EvaSettings | undefined> {
     const [settings] = await db
@@ -847,6 +1045,34 @@ export class DatabaseStorage implements IStorage {
       .where(eq(evaSettings.userId, userId))
       .returning();
     return result;
+  }
+
+  // Scrum Action Items
+  async createScrumActionItem(item: InsertScrumActionItem): Promise<ScrumActionItem> {
+    const [result] = await db.insert(scrumActionItems).values(item).returning();
+    return result;
+  }
+
+  async getScrumActionItemsByMeeting(meetingId: string): Promise<ScrumActionItem[]> {
+    return db
+      .select()
+      .from(scrumActionItems)
+      .where(eq(scrumActionItems.meetingId, meetingId))
+      .orderBy(desc(scrumActionItems.createdAt));
+  }
+
+  async updateScrumActionItem(id: string, data: Partial<InsertScrumActionItem>): Promise<ScrumActionItem | undefined> {
+    const [result] = await db
+      .update(scrumActionItems)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumActionItems.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteScrumActionItem(id: string): Promise<boolean> {
+    const result = await db.delete(scrumActionItems).where(eq(scrumActionItems.id, id)).returning();
+    return result.length > 0;
   }
 
   // API Keys
@@ -881,6 +1107,249 @@ export class DatabaseStorage implements IStorage {
       .update(apiKeys)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiKeys.id, id));
+  }
+
+  // Scrum Master Sessions
+  async createScrumMasterSession(session: InsertScrumMasterSession): Promise<ScrumMasterSession> {
+    const [result] = await db.insert(scrumMasterSessions).values(session).returning();
+    return result;
+  }
+
+  async getScrumMasterSession(id: string): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db.select().from(scrumMasterSessions).where(eq(scrumMasterSessions.id, id));
+    return result;
+  }
+
+  async getScrumMasterSessionByMeeting(meetingId: string): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db
+      .select()
+      .from(scrumMasterSessions)
+      .where(and(eq(scrumMasterSessions.meetingId, meetingId), eq(scrumMasterSessions.status, "active")))
+      .orderBy(desc(scrumMasterSessions.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async updateScrumMasterSession(id: string, data: Partial<InsertScrumMasterSession>): Promise<ScrumMasterSession | undefined> {
+    const [result] = await db
+      .update(scrumMasterSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterSessions.id, id))
+      .returning();
+    return result;
+  }
+
+  async getScrumMasterSessionsByCreator(createdBy: string, limit = 10): Promise<ScrumMasterSession[]> {
+    return db
+      .select({ session: scrumMasterSessions })
+      .from(scrumMasterSessions)
+      .innerJoin(meetings, eq(scrumMasterSessions.meetingId, meetings.id))
+      .where(eq(meetings.createdBy, createdBy))
+      .orderBy(desc(scrumMasterSessions.createdAt))
+      .limit(limit)
+      .then(rows => rows.map(r => r.session));
+  }
+
+  // Scrum Master Interventions
+  async createScrumMasterIntervention(intervention: InsertScrumMasterIntervention): Promise<ScrumMasterIntervention> {
+    const [result] = await db.insert(scrumMasterInterventions).values(intervention).returning();
+    return result;
+  }
+
+  async getScrumMasterInterventionsBySession(sessionId: string): Promise<ScrumMasterIntervention[]> {
+    return db
+      .select()
+      .from(scrumMasterInterventions)
+      .where(eq(scrumMasterInterventions.sessionId, sessionId))
+      .orderBy(desc(scrumMasterInterventions.createdAt));
+  }
+
+  // Scrum Master Blockers
+  async createScrumMasterBlocker(blocker: InsertScrumMasterBlocker): Promise<ScrumMasterBlocker> {
+    const [result] = await db.insert(scrumMasterBlockers).values(blocker).returning();
+    return result;
+  }
+
+  async getScrumMasterBlockersBySession(sessionId: string): Promise<ScrumMasterBlocker[]> {
+    return db
+      .select()
+      .from(scrumMasterBlockers)
+      .where(eq(scrumMasterBlockers.sessionId, sessionId))
+      .orderBy(desc(scrumMasterBlockers.createdAt));
+  }
+
+  async getScrumMasterBlockersByMeeting(meetingId: string): Promise<ScrumMasterBlocker[]> {
+    return db
+      .select()
+      .from(scrumMasterBlockers)
+      .where(eq(scrumMasterBlockers.meetingId, meetingId))
+      .orderBy(desc(scrumMasterBlockers.createdAt));
+  }
+
+  async updateScrumMasterBlocker(id: string, data: Partial<InsertScrumMasterBlocker>): Promise<ScrumMasterBlocker | undefined> {
+    const [result] = await db
+      .update(scrumMasterBlockers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterBlockers.id, id))
+      .returning();
+    return result;
+  }
+
+  // Scrum Master Actions
+  async createScrumMasterAction(action: InsertScrumMasterAction): Promise<ScrumMasterAction> {
+    const [result] = await db.insert(scrumMasterActions).values(action).returning();
+    return result;
+  }
+
+  async getScrumMasterActionsBySession(sessionId: string): Promise<ScrumMasterAction[]> {
+    return db
+      .select()
+      .from(scrumMasterActions)
+      .where(eq(scrumMasterActions.sessionId, sessionId))
+      .orderBy(desc(scrumMasterActions.createdAt));
+  }
+
+  async getScrumMasterActionsByMeeting(meetingId: string): Promise<ScrumMasterAction[]> {
+    return db
+      .select()
+      .from(scrumMasterActions)
+      .where(eq(scrumMasterActions.meetingId, meetingId))
+      .orderBy(desc(scrumMasterActions.createdAt));
+  }
+
+  async updateScrumMasterAction(id: string, data: Partial<InsertScrumMasterAction>): Promise<ScrumMasterAction | undefined> {
+    const [result] = await db
+      .update(scrumMasterActions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMasterActions.id, id))
+      .returning();
+    return result;
+  }
+
+  // Scrum Meeting Records
+  async createScrumMeetingRecord(record: InsertScrumMeetingRecord): Promise<ScrumMeetingRecord> {
+    const [result] = await db.insert(scrumMeetingRecords).values(record).returning();
+    return result;
+  }
+
+  async getScrumMeetingRecord(id: string): Promise<ScrumMeetingRecord | undefined> {
+    const [result] = await db.select().from(scrumMeetingRecords).where(eq(scrumMeetingRecords.id, id));
+    return result;
+  }
+
+  async getScrumMeetingRecordByMeeting(meetingId: string): Promise<ScrumMeetingRecord | undefined> {
+    const [result] = await db
+      .select()
+      .from(scrumMeetingRecords)
+      .where(eq(scrumMeetingRecords.meetingId, meetingId))
+      .orderBy(desc(scrumMeetingRecords.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async getScrumMeetingRecordsBySeries(meetingSeriesId: string): Promise<ScrumMeetingRecord[]> {
+    return db
+      .select()
+      .from(scrumMeetingRecords)
+      .where(eq(scrumMeetingRecords.meetingSeriesId, meetingSeriesId))
+      .orderBy(desc(scrumMeetingRecords.createdAt));
+  }
+
+  async getLatestScrumMeetingRecordForSeries(meetingSeriesId: string, excludeMeetingId?: string): Promise<ScrumMeetingRecord | undefined> {
+    if (excludeMeetingId) {
+      const [result] = await db
+        .select()
+        .from(scrumMeetingRecords)
+        .where(and(
+          eq(scrumMeetingRecords.meetingSeriesId, meetingSeriesId),
+          ne(scrumMeetingRecords.meetingId, excludeMeetingId)
+        ))
+        .orderBy(desc(scrumMeetingRecords.createdAt))
+        .limit(1);
+      return result;
+    }
+    const [result] = await db
+      .select()
+      .from(scrumMeetingRecords)
+      .where(eq(scrumMeetingRecords.meetingSeriesId, meetingSeriesId))
+      .orderBy(desc(scrumMeetingRecords.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async getPreviousScrumMeetingRecord(meetingId: string): Promise<ScrumMeetingRecord | undefined> {
+    const meeting = await this.getMeeting(meetingId);
+    if (!meeting) return undefined;
+
+    if (meeting.previousMeetingId) {
+      const record = await this.getScrumMeetingRecordByMeeting(meeting.previousMeetingId);
+      if (record) return record;
+    }
+
+    if (meeting.meetingSeriesId) {
+      return this.getLatestScrumMeetingRecordForSeries(meeting.meetingSeriesId, meetingId);
+    }
+
+    if (meeting.createdBy && meeting.title) {
+      const [result] = await db
+        .select({ record: scrumMeetingRecords })
+        .from(scrumMeetingRecords)
+        .innerJoin(meetings, eq(scrumMeetingRecords.meetingId, meetings.id))
+        .where(and(
+          eq(meetings.createdBy, meeting.createdBy),
+          eq(meetings.title, meeting.title),
+          ne(meetings.id, meetingId)
+        ))
+        .orderBy(desc(scrumMeetingRecords.createdAt))
+        .limit(1);
+      return result?.record;
+    }
+
+    return undefined;
+  }
+
+  async updateScrumMeetingRecord(id: string, data: Partial<InsertScrumMeetingRecord>): Promise<ScrumMeetingRecord | undefined> {
+    const [result] = await db
+      .update(scrumMeetingRecords)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scrumMeetingRecords.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteScrumMeetingRecord(id: string): Promise<boolean> {
+    const result = await db.delete(scrumMeetingRecords).where(eq(scrumMeetingRecords.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Agent Team Tasks
+  async createAgentTeamTask(task: InsertAgentTeamTask): Promise<AgentTeamTask> {
+    const [result] = await db.insert(agentTeamTasks).values(task).returning();
+    return result;
+  }
+
+  async getAgentTeamTask(id: string): Promise<AgentTeamTask | undefined> {
+    const [result] = await db.select().from(agentTeamTasks).where(eq(agentTeamTasks.id, id));
+    return result;
+  }
+
+  async getAgentTeamTasksByMeeting(meetingId: string): Promise<AgentTeamTask[]> {
+    return db.select().from(agentTeamTasks).where(eq(agentTeamTasks.meetingId, meetingId)).orderBy(desc(agentTeamTasks.createdAt));
+  }
+
+  async updateAgentTeamTask(id: string, data: Partial<InsertAgentTeamTask>): Promise<AgentTeamTask | undefined> {
+    const [result] = await db.update(agentTeamTasks).set(data).where(eq(agentTeamTasks.id, id)).returning();
+    return result;
+  }
+
+  // Agent Team Messages
+  async createAgentTeamMessage(message: InsertAgentTeamMessage): Promise<AgentTeamMessage> {
+    const [result] = await db.insert(agentTeamMessages).values(message).returning();
+    return result;
+  }
+
+  async getAgentTeamMessagesByMeeting(meetingId: string): Promise<AgentTeamMessage[]> {
+    return db.select().from(agentTeamMessages).where(eq(agentTeamMessages.meetingId, meetingId)).orderBy(desc(agentTeamMessages.createdAt));
   }
 }
 

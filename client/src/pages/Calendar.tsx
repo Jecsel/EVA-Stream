@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { 
   ArrowLeft, 
@@ -7,14 +7,22 @@ import {
   Calendar as CalendarIcon,
   Clock,
   ExternalLink,
-  Plus
+  Plus,
+  Users,
+  Bot,
+  Repeat,
+  ChevronDown,
+  Mail,
+  Pencil,
+  FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday, getDay, addDays, addWeeks, addYears } from "date-fns";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import type { Meeting } from "@shared/schema";
 
 export default function Calendar() {
   const { user } = useAuth();
@@ -22,6 +30,13 @@ export default function Calendar() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null);
+  const [editMeetingData, setEditMeetingData] = useState<any>(null);
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+  });
 
   const { data: upcomingMeetings = [] } = useQuery({
     queryKey: ["upcomingMeetings"],
@@ -33,7 +48,25 @@ export default function Calendar() {
     queryFn: () => api.getPastMeetings(50),
   });
 
-  const allMeetings = [...upcomingMeetings, ...pastMeetings];
+  const { data: recordings = [] } = useQuery({
+    queryKey: ["recordings"],
+    queryFn: () => api.listRecordings(100),
+  });
+
+  const recordingByMeetingId = useMemo(() => {
+    const map: Record<string, { id: string; recordedAt: string }> = {};
+    for (const rec of recordings) {
+      const mid = (rec as any).meetingId;
+      if (!mid) continue;
+      const recDate = (rec as any).recordedAt || (rec as any).createdAt || "";
+      if (!map[mid] || recDate > map[mid].recordedAt) {
+        map[mid] = { id: rec.id, recordedAt: recDate };
+      }
+    }
+    return map;
+  }, [recordings]);
+
+  const rawMeetings = [...upcomingMeetings, ...pastMeetings];
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -41,6 +74,95 @@ export default function Calendar() {
 
   const startDayOfWeek = monthStart.getDay();
   const paddingDays = Array(startDayOfWeek).fill(null);
+
+  const allMeetings = useMemo(() => {
+    const expanded: typeof rawMeetings = [];
+    const addedOriginals = new Set<string>();
+
+    for (const meeting of rawMeetings) {
+      const recurrence = (meeting as any).recurrence || "none";
+      if (recurrence === "none" || recurrence === "custom") {
+        expanded.push(meeting);
+        continue;
+      }
+
+      const originalDate = meeting.scheduledDate
+        ? new Date(meeting.scheduledDate)
+        : meeting.createdAt
+          ? new Date(meeting.createdAt)
+          : null;
+      if (!originalDate) {
+        expanded.push(meeting);
+        continue;
+      }
+
+      const recurrenceEnd = (meeting as any).recurrenceEndDate
+        ? new Date((meeting as any).recurrenceEndDate)
+        : null;
+
+      const endBound = recurrenceEnd && recurrenceEnd < monthEnd ? recurrenceEnd : monthEnd;
+      const iterStart = monthStart > originalDate ? monthStart : originalDate;
+
+      if (iterStart > endBound) {
+        if (isSameMonth(originalDate, currentMonth)) {
+          expanded.push(meeting);
+        }
+        continue;
+      }
+
+      let cursor = new Date(iterStart);
+
+      while (cursor <= endBound) {
+        const isOriginalDay = isSameDay(cursor, originalDate);
+        const shouldInclude = (() => {
+          if (isOriginalDay) return true;
+          switch (recurrence) {
+            case "daily":
+              return true;
+            case "weekdays": {
+              const dow = getDay(cursor);
+              return dow >= 1 && dow <= 5;
+            }
+            case "weekly":
+              return getDay(cursor) === getDay(originalDate);
+            case "monthly":
+              return cursor.getDate() === originalDate.getDate();
+            case "annually":
+              return cursor.getDate() === originalDate.getDate() &&
+                     cursor.getMonth() === originalDate.getMonth();
+            default:
+              return false;
+          }
+        })();
+
+        if (shouldInclude) {
+          if (isOriginalDay) {
+            expanded.push(meeting);
+            addedOriginals.add(meeting.id);
+          } else {
+            const virtualDate = new Date(cursor);
+            virtualDate.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
+            const virtualId = `${meeting.id}_${format(cursor, 'yyyy-MM-dd')}`;
+            expanded.push({
+              ...meeting,
+              id: virtualId,
+              scheduledDate: virtualDate as any,
+              endDate: meeting.endDate
+                ? new Date(
+                    virtualDate.getTime() +
+                    (new Date(meeting.endDate as any).getTime() - originalDate.getTime())
+                  ) as any
+                : meeting.endDate,
+            });
+          }
+        }
+
+        cursor = addDays(cursor, 1);
+      }
+    }
+
+    return expanded;
+  }, [rawMeetings, monthStart, monthEnd, currentMonth]);
 
   const getMeetingsForDay = (date: Date) => {
     return allMeetings.filter(meeting => {
@@ -194,24 +316,165 @@ export default function Calendar() {
                       const dateToUse = meeting.scheduledDate || meeting.createdAt || meeting.updatedAt;
                       if (!dateToUse) return null;
                       const meetingDate = new Date(dateToUse);
+                      const isExpanded = expandedMeetingId === meeting.id;
+                      const meetingAgents = (meeting as any).selectedAgents
+                        ? agents.filter((a: any) => (meeting as any).selectedAgents.includes(a.id))
+                        : [];
+                      const attendees: string[] = (meeting as any).attendeeEmails || [];
+                      const recurrence = (meeting as any).recurrence || "none";
+
+                      const recurrenceLabel: Record<string, string> = {
+                        daily: "Daily",
+                        weekdays: "Every weekday (Mon–Fri)",
+                        weekly: "Weekly",
+                        monthly: "Monthly",
+                        annually: "Annually",
+                        custom: "Custom",
+                      };
+
                       return (
                         <div 
                           key={meeting.id}
-                          className="p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
+                          className="rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors overflow-hidden"
                         >
-                          <h4 className="font-medium text-foreground mb-1">{meeting.title}</h4>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                            <Clock className="w-3 h-3" />
-                            {format(meetingDate, "h:mm a")}
-                            {meeting.endDate && typeof meeting.endDate === 'object' && (
-                              <> - {format(meeting.endDate, "h:mm a")}</>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedMeetingId(isExpanded ? null : meeting.id)}
+                            className="w-full p-4 text-left"
+                            data-testid={`button-expand-meeting-${meeting.id}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h4 className="font-medium text-foreground mb-1">{meeting.title}</h4>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Clock className="w-3 h-3" />
+                                  {format(meetingDate, "h:mm a")}
+                                  {meeting.endDate && typeof meeting.endDate === 'object' && (
+                                    <> - {format(new Date(meeting.endDate as any), "h:mm a")}</>
+                                  )}
+                                </div>
+                              </div>
+                              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                            </div>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
+                              {recurrence !== "none" && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Repeat className="w-3 h-3 flex-shrink-0" />
+                                  <span>{recurrenceLabel[recurrence] || recurrence}</span>
+                                </div>
+                              )}
+
+                              {attendees.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <Users className="w-3 h-3" />
+                                    <span>Attendees</span>
+                                  </div>
+                                  <div className="space-y-1 pl-4">
+                                    {attendees.map((email: string) => (
+                                      <div key={email} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Mail className="w-3 h-3 flex-shrink-0" />
+                                        <span className="truncate">{email}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {meetingAgents.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <Bot className="w-3 h-3" />
+                                    <span>AI Agents</span>
+                                  </div>
+                                  <div className="space-y-1 pl-4">
+                                    {meetingAgents.map((agent: any) => (
+                                      <div key={agent.id} className="flex items-center gap-2 text-xs">
+                                        <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
+                                          agent.type === "scrum"
+                                            ? "bg-blue-500/10 text-blue-500"
+                                            : "bg-orange-500/10 text-orange-500"
+                                        }`}>
+                                          {agent.type === "scrum" ? <Users className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                                        </div>
+                                        <span className="text-foreground">{agent.name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {attendees.length === 0 && meetingAgents.length === 0 && recurrence === "none" && (
+                                <p className="text-xs text-muted-foreground italic">No additional details</p>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="px-4 pb-4 space-y-2">
+                            {isExpanded && !String(meeting.id).includes("_") && meeting.status !== "completed" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                data-testid={`button-edit-meeting-${meeting.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditMeetingData({
+                                    id: meeting.id,
+                                    title: meeting.title,
+                                    scheduledDate: meeting.scheduledDate,
+                                    endDate: meeting.endDate,
+                                    attendeeEmails: (meeting as any).attendeeEmails,
+                                    selectedAgents: (meeting as any).selectedAgents,
+                                    recurrence: (meeting as any).recurrence,
+                                    eventType: (meeting as any).eventType,
+                                    isAllDay: (meeting as any).isAllDay,
+                                    description: (meeting as any).description,
+                                  });
+                                  setScheduleDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                                Edit Meeting
+                              </Button>
                             )}
+                            {(() => {
+                              const originalMeetingId = String(meeting.id).includes("_") 
+                                ? String(meeting.id).split("_")[0] 
+                                : String(meeting.id);
+                              const recording = recordingByMeetingId[originalMeetingId];
+                              const isCompleted = meeting.status === "completed";
+
+                              if (isCompleted && recording) {
+                                return (
+                                  <Link href={`/recording/${recording.id}`}>
+                                    <Button size="sm" variant="outline" className="w-full" data-testid={`button-view-summary-${meeting.id}`}>
+                                      <FileText className="w-3.5 h-3.5 mr-1.5" />
+                                      View Summary
+                                    </Button>
+                                  </Link>
+                                );
+                              }
+                              if (isCompleted && !recording) {
+                                return (
+                                  <Button size="sm" variant="outline" className="w-full opacity-50 cursor-not-allowed" disabled data-testid={`button-no-summary-${meeting.id}`}>
+                                    <FileText className="w-3.5 h-3.5 mr-1.5" />
+                                    No Summary Available
+                                  </Button>
+                                );
+                              }
+                              return (
+                                <Link href={`/meeting/${meeting.roomId}`}>
+                                  <Button size="sm" className="w-full" data-testid={`button-join-${meeting.id}`}>
+                                    Join Meeting
+                                  </Button>
+                                </Link>
+                              );
+                            })()}
                           </div>
-                          <Link href={`/meeting/${meeting.roomId}`}>
-                            <Button size="sm" className="w-full" data-testid={`button-join-${meeting.id}`}>
-                              Join Meeting
-                            </Button>
-                          </Link>
                         </div>
                       );
                     })}
@@ -242,10 +505,15 @@ export default function Calendar() {
 
       <ScheduleMeetingDialog 
         open={scheduleDialogOpen} 
-        onOpenChange={setScheduleDialogOpen}
+        onOpenChange={(open) => {
+          setScheduleDialogOpen(open);
+          if (!open) setEditMeetingData(null);
+        }}
         initialDate={selectedDate || undefined}
+        editMeeting={editMeetingData}
         onSuccess={() => {
           setScheduleDialogOpen(false);
+          setEditMeetingData(null);
           queryClient.invalidateQueries({ queryKey: ["upcomingMeetings"] });
           queryClient.invalidateQueries({ queryKey: ["pastMeetings"] });
         }}

@@ -40,9 +40,11 @@ waitForPort = 5000
 
 [agent]
 mockupState = "FULLSTACK"
-integrations = ["javascript_gemini:1.0.0", "firebase_barebones_javascript:1.0.0"]
+integrations = ["javascript_gemini:1.0.0", "firebase_barebones_javascript:1.0.0", "javascript_anthropic_ai_integrations:2.0.0", "javascript_openai_ai_integrations:2.0.0", "javascript_object_storage:2.0.0"]
 
 [userenv]
 
 [userenv.shared]
 GOOGLE_REDIRECT_URI = "https://eva-stream.replit.app/api/google/callback"
+
+[userenv.production]

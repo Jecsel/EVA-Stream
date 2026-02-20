@@ -28,6 +28,9 @@ import {
   Link2,
   Copy,
   ExternalLink,
+  Book,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -62,7 +65,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "users" | "prompts" | "agents" | "api-test";
+type Tab = "users" | "prompts" | "agents" | "api-test" | "api-docs";
 
 interface User {
   id: string;
@@ -177,6 +180,385 @@ async function fetchCurrentUser(email: string): Promise<User | null> {
   } catch {
     return null;
   }
+}
+
+interface ApiEndpoint {
+  method: "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
+  path: string;
+  description: string;
+  auth?: "API Key" | "None";
+  requestBody?: string;
+  responseBody?: string;
+  queryParams?: string;
+}
+
+interface ApiCategory {
+  name: string;
+  description: string;
+  endpoints: ApiEndpoint[];
+}
+
+const API_CATEGORIES: ApiCategory[] = [
+  {
+    name: "External API (Requires API Key)",
+    description: "External endpoints for third-party integrations. Requires Bearer token authentication.",
+    endpoints: [
+      {
+        method: "POST",
+        path: "/api/external/create-meeting",
+        description: "Create an instant meeting with SOP generation enabled",
+        auth: "API Key",
+        requestBody: `{
+  "title": "Meeting Title",           // optional
+  "scheduledDate": "2026-01-30T14:00:00.000Z",  // optional
+  "moderatorCode": "secret123"        // optional, auto-generated if not provided
+}`,
+        responseBody: `{
+  "success": true,
+  "meeting": { "id", "title", "roomId", "status", "scheduledDate", "createdAt" },
+  "link": "https://your-domain/meeting/abc-defg-hij",
+  "moderatorLink": "https://your-domain/meeting/abc-defg-hij?mod=secret123"
+}`
+      },
+      {
+        method: "POST",
+        path: "/api/external/schedule-meeting",
+        description: "Schedule a meeting with calendar integration",
+        auth: "API Key",
+        requestBody: `{
+  "title": "Meeting Title",           // required
+  "scheduledDate": "2026-01-30T14:00:00.000Z",  // required
+  "endDate": "2026-01-30T15:00:00.000Z",        // optional
+  "attendeeEmails": ["user@example.com"],       // optional
+  "description": "Meeting description",         // optional
+  "userId": "user-uuid",              // optional, for calendar integration
+  "userEmail": "user@example.com",    // optional, fallback for userId lookup
+  "eventType": "event",               // optional: "event" or "task"
+  "isAllDay": false,                  // optional
+  "recurrence": "none",               // optional: "none", "daily", "weekly", "monthly", "annually", "weekdays"
+  "recurrenceEndDate": "2026-06-30T00:00:00.000Z", // optional
+  "moderatorCode": "secret123"        // optional
+}`,
+        responseBody: `{
+  "success": true,
+  "meeting": { "id", "title", "roomId", "status", "scheduledDate", "endDate", "attendeeEmails", "recurrence", "recurrenceEndDate", "calendarEventId", "createdAt" },
+  "link": "https://your-domain/meeting/abc-defg-hij",
+  "moderatorLink": "https://your-domain/meeting/abc-defg-hij?mod=secret123",
+  "calendarEventCreated": true
+}`
+      },
+      {
+        method: "GET",
+        path: "/api/external/meetings",
+        description: "Get meetings by userId or userEmail",
+        auth: "API Key",
+        queryParams: `userId=xxx or userEmail=xxx  // one required
+status=scheduled|live|ended          // optional
+limit=50                             // optional, default 50
+offset=0                             // optional, for pagination`,
+        responseBody: `{
+  "success": true,
+  "meetings": [{ "id", "title", "roomId", "status", "scheduledDate", "endDate", "link", ... }],
+  "total": 100,
+  "limit": 50,
+  "offset": 0
+}`
+      }
+    ]
+  },
+  {
+    name: "Meetings",
+    description: "Internal meeting management endpoints",
+    endpoints: [
+      { method: "POST", path: "/api/meetings", description: "Create a new meeting", auth: "None" },
+      { method: "GET", path: "/api/meetings/upcoming", description: "Get upcoming meetings", auth: "None" },
+      { method: "GET", path: "/api/meetings/past", description: "Get past meetings", auth: "None", queryParams: "limit=10 // optional" },
+      { method: "GET", path: "/api/meetings/:id", description: "Get meeting by ID", auth: "None" },
+      { method: "GET", path: "/api/meetings/room/:roomId", description: "Get or create meeting by room ID", auth: "None" },
+      { method: "PATCH", path: "/api/meetings/:id", description: "Update meeting", auth: "None" },
+      { method: "POST", path: "/api/meetings/:meetingId/end", description: "End meeting and create recording with SOP", auth: "None", responseBody: `{ "recording": {...}, "summary": "..." }` },
+      { method: "GET", path: "/api/meetings/:meetingId/messages", description: "Get chat messages for meeting", auth: "None" },
+      { method: "POST", path: "/api/meetings/:meetingId/messages", description: "Create chat message", auth: "None" },
+      { method: "GET", path: "/api/meetings/:meetingId/transcripts", description: "Get transcript segments", auth: "None" },
+      { method: "POST", path: "/api/meetings/:meetingId/transcripts", description: "Create transcript segment", auth: "None" },
+      { method: "GET", path: "/api/meetings/:meetingId/sops", description: "Get SOPs for meeting", auth: "None" },
+      { method: "GET", path: "/api/meetings/:meetingId/transcriptions", description: "Get transcriptions for meeting", auth: "None" },
+      { method: "POST", path: "/api/meetings/:meetingId/chat", description: "EVA SOP Assistant chat endpoint", auth: "None" }
+    ]
+  },
+  {
+    name: "Recordings",
+    description: "Recording management and transcription",
+    endpoints: [
+      { method: "POST", path: "/api/recordings", description: "Create a recording", auth: "None" },
+      { method: "GET", path: "/api/recordings", description: "List recordings", auth: "None", queryParams: "limit=10 // optional" },
+      { method: "GET", path: "/api/recordings/:id", description: "Get recording by ID", auth: "None" },
+      { method: "PATCH", path: "/api/recordings/:id", description: "Update recording", auth: "None" },
+      { method: "DELETE", path: "/api/recordings/:id", description: "Delete recording", auth: "None" },
+      { method: "POST", path: "/api/recordings/:id/transcribe", description: "Trigger AI transcription for recording", auth: "None" }
+    ]
+  },
+  {
+    name: "SOPs",
+    description: "Standard Operating Procedure management",
+    endpoints: [
+      { method: "POST", path: "/api/sops", description: "Create SOP", auth: "None" },
+      { method: "GET", path: "/api/sops", description: "List all SOPs", auth: "None" },
+      { method: "GET", path: "/api/sops/:id", description: "Get SOP by ID", auth: "None" },
+      { method: "PATCH", path: "/api/sops/:id", description: "Update SOP", auth: "None" },
+      { method: "GET", path: "/api/sops/:id/versions", description: "Get SOP version history", auth: "None" },
+      { method: "POST", path: "/api/sops/:id/versions", description: "Create SOP version", auth: "None" }
+    ]
+  },
+  {
+    name: "Observation Sessions",
+    description: "Observation and SOP generation workflow",
+    endpoints: [
+      { method: "POST", path: "/api/observation-sessions", description: "Create observation session", auth: "None" },
+      { method: "GET", path: "/api/observation-sessions/:id", description: "Get session by ID", auth: "None" },
+      { method: "PATCH", path: "/api/observation-sessions/:id", description: "Update session", auth: "None" },
+      { method: "GET", path: "/api/observation-sessions", description: "List sessions", auth: "None" },
+      { method: "POST", path: "/api/observation-sessions/:sessionId/observations", description: "Add observation", auth: "None" },
+      { method: "GET", path: "/api/observation-sessions/:sessionId/observations", description: "Get observations", auth: "None" },
+      { method: "POST", path: "/api/observation-sessions/:sessionId/clarifications", description: "Add clarification", auth: "None" },
+      { method: "GET", path: "/api/observation-sessions/:sessionId/clarifications", description: "Get clarifications", auth: "None" },
+      { method: "PATCH", path: "/api/clarifications/:id", description: "Update clarification", auth: "None" },
+      { method: "POST", path: "/api/observation-sessions/:sessionId/generate-sop", description: "Generate SOP from observations", auth: "None" }
+    ]
+  },
+  {
+    name: "EVA Assistant",
+    description: "EVA meeting assistant features",
+    endpoints: [
+      { method: "GET", path: "/api/eva/meetings/:meetingId/agenda", description: "Get meeting agenda", auth: "None" },
+      { method: "POST", path: "/api/eva/meetings/:meetingId/agenda", description: "Save meeting agenda", auth: "None" },
+      { method: "GET", path: "/api/eva/meetings/:meetingId/notes", description: "Get meeting notes", auth: "None" },
+      { method: "POST", path: "/api/eva/meetings/:meetingId/notes", description: "Create meeting note", auth: "None" },
+      { method: "DELETE", path: "/api/eva/notes/:noteId", description: "Delete meeting note", auth: "None" },
+      { method: "GET", path: "/api/eva/meetings/:meetingId/files", description: "Get meeting files", auth: "None" },
+      { method: "POST", path: "/api/eva/meetings/:meetingId/files", description: "Upload meeting file", auth: "None" },
+      { method: "DELETE", path: "/api/eva/files/:fileId", description: "Delete meeting file", auth: "None" },
+      { method: "GET", path: "/api/eva/meetings/:meetingId/summary", description: "Get meeting summary", auth: "None" },
+      { method: "POST", path: "/api/eva/meetings/:meetingId/summary", description: "Generate meeting summary", auth: "None" },
+      { method: "POST", path: "/api/eva/tts", description: "Text-to-speech conversion", auth: "None" },
+      { method: "POST", path: "/api/eva/tts/stream", description: "Streaming text-to-speech", auth: "None" },
+      { method: "GET", path: "/api/eva/voices", description: "Get available voices", auth: "None" },
+      { method: "POST", path: "/api/eva/stt", description: "Speech-to-text conversion", auth: "None" },
+      { method: "POST", path: "/api/eva/ask", description: "Ask EVA a question", auth: "None" },
+      { method: "GET", path: "/api/eva/settings/:userId", description: "Get EVA settings for user", auth: "None" },
+      { method: "POST", path: "/api/eva/settings/:userId", description: "Save EVA settings for user", auth: "None" }
+    ]
+  },
+  {
+    name: "Agents",
+    description: "AI agent management",
+    endpoints: [
+      { method: "GET", path: "/api/agents", description: "List all active agents (public)", auth: "None" },
+      { method: "GET", path: "/api/admin/agents", description: "List all agents (admin)", auth: "None" },
+      { method: "GET", path: "/api/admin/agents/:id", description: "Get agent by ID", auth: "None" },
+      { method: "POST", path: "/api/admin/agents", description: "Create agent", auth: "None" },
+      { method: "PATCH", path: "/api/admin/agents/:id", description: "Update agent", auth: "None" },
+      { method: "DELETE", path: "/api/admin/agents/:id", description: "Delete agent", auth: "None" }
+    ]
+  },
+  {
+    name: "Admin - Users",
+    description: "User management (admin)",
+    endpoints: [
+      { method: "GET", path: "/api/admin/users", description: "List all users", auth: "None" },
+      { method: "GET", path: "/api/admin/users/:id", description: "Get user by ID", auth: "None" },
+      { method: "GET", path: "/api/admin/users/by-email/:email", description: "Get user by email", auth: "None" },
+      { method: "POST", path: "/api/admin/users", description: "Create user", auth: "None" },
+      { method: "PATCH", path: "/api/admin/users/:id", description: "Update user", auth: "None" },
+      { method: "DELETE", path: "/api/admin/users/:id", description: "Delete user", auth: "None" }
+    ]
+  },
+  {
+    name: "Admin - Prompts",
+    description: "Prompt template management (admin)",
+    endpoints: [
+      { method: "GET", path: "/api/admin/prompts", description: "List all prompts", auth: "None" },
+      { method: "GET", path: "/api/admin/prompts/:id", description: "Get prompt by ID", auth: "None" },
+      { method: "POST", path: "/api/admin/prompts", description: "Create prompt", auth: "None" },
+      { method: "PATCH", path: "/api/admin/prompts/:id", description: "Update prompt", auth: "None" },
+      { method: "DELETE", path: "/api/admin/prompts/:id", description: "Delete prompt", auth: "None" },
+      { method: "GET", path: "/api/admin/prompts/:id/versions", description: "Get prompt version history", auth: "None" },
+      { method: "POST", path: "/api/admin/prompts/:id/revert/:versionId", description: "Revert prompt to version", auth: "None" }
+    ]
+  },
+  {
+    name: "Admin - API Keys",
+    description: "API key management",
+    endpoints: [
+      { method: "GET", path: "/api/admin/api-keys", description: "List all API keys", auth: "None" },
+      { method: "POST", path: "/api/admin/api-keys", description: "Create new API key", auth: "None", responseBody: `{ "id", "name", "key" (full key), "keyPrefix", "isActive", "createdAt" }` },
+      { method: "DELETE", path: "/api/admin/api-keys/:id", description: "Revoke API key", auth: "None" }
+    ]
+  },
+  {
+    name: "Google Calendar",
+    description: "Google Calendar integration",
+    endpoints: [
+      { method: "POST", path: "/api/google/auth-url", description: "Get Google OAuth URL", auth: "None" },
+      { method: "GET", path: "/api/google/callback", description: "Google OAuth callback", auth: "None" },
+      { method: "GET", path: "/api/google/status/:userId", description: "Check Google connection status", auth: "None" },
+      { method: "POST", path: "/api/google/disconnect/:userId", description: "Disconnect Google account", auth: "None" },
+      { method: "POST", path: "/api/meetings/schedule-with-calendar", description: "Schedule meeting with Google Calendar", auth: "None" }
+    ]
+  },
+  {
+    name: "Utilities",
+    description: "Utility endpoints",
+    endpoints: [
+      { method: "GET", path: "/api/config/sentry", description: "Get Sentry configuration", auth: "None" },
+      { method: "POST", path: "/api/generate-flowchart", description: "Generate Mermaid flowchart from text", auth: "None" },
+      { method: "POST", path: "/api/jaas/token", description: "Generate JaaS (Jitsi) token", auth: "None" },
+      { method: "POST", path: "/api/jaas/webhook", description: "JaaS webhook endpoint", auth: "None" },
+      { method: "GET", path: "/api/elevenlabs/signed-url", description: "Get ElevenLabs signed URL", auth: "None" }
+    ]
+  }
+];
+
+function MethodBadge({ method }: { method: ApiEndpoint["method"] }) {
+  const colors: Record<ApiEndpoint["method"], string> = {
+    GET: "bg-green-500",
+    POST: "bg-blue-500",
+    PATCH: "bg-yellow-500",
+    PUT: "bg-orange-500",
+    DELETE: "bg-red-500"
+  };
+  
+  return (
+    <span className={`inline-flex items-center justify-center w-16 px-2 py-1 text-xs font-bold text-white rounded ${colors[method]}`}>
+      {method}
+    </span>
+  );
+}
+
+function EndpointRow({ endpoint }: { endpoint: ApiEndpoint }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasDetails = endpoint.requestBody || endpoint.responseBody || endpoint.queryParams;
+  
+  return (
+    <div className="border-b last:border-b-0">
+      <div
+        className={`flex items-center gap-3 p-3 ${hasDetails ? "cursor-pointer hover:bg-muted/50" : ""}`}
+        onClick={() => hasDetails && setIsExpanded(!isExpanded)}
+        data-testid={`endpoint-${endpoint.method.toLowerCase()}-${endpoint.path.replace(/[/:]/g, "-")}`}
+      >
+        <MethodBadge method={endpoint.method} />
+        <code className="flex-1 font-mono text-sm">{endpoint.path}</code>
+        <span className="text-sm text-muted-foreground hidden md:inline">{endpoint.description}</span>
+        {endpoint.auth === "API Key" && (
+          <Badge variant="outline" className="text-xs">
+            🔐 API Key
+          </Badge>
+        )}
+        {hasDetails && (
+          <span className="text-muted-foreground">
+            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </span>
+        )}
+      </div>
+      {isExpanded && hasDetails && (
+        <div className="px-3 pb-3 ml-20 space-y-3 text-sm">
+          <p className="text-muted-foreground md:hidden">{endpoint.description}</p>
+          {endpoint.queryParams && (
+            <div>
+              <p className="font-medium text-muted-foreground mb-1">Query Parameters:</p>
+              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">{endpoint.queryParams}</pre>
+            </div>
+          )}
+          {endpoint.requestBody && (
+            <div>
+              <p className="font-medium text-muted-foreground mb-1">Request Body:</p>
+              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">{endpoint.requestBody}</pre>
+            </div>
+          )}
+          {endpoint.responseBody && (
+            <div>
+              <p className="font-medium text-muted-foreground mb-1">Response:</p>
+              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">{endpoint.responseBody}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategorySection({ category }: { category: ApiCategory }) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  
+  return (
+    <div className="border rounded-lg overflow-hidden" data-testid={`category-${category.name.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div
+        className="flex items-center justify-between p-4 bg-muted/30 cursor-pointer hover:bg-muted/50"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div>
+          <h3 className="font-semibold">{category.name}</h3>
+          <p className="text-sm text-muted-foreground">{category.description}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{category.endpoints.length} endpoints</Badge>
+          {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </div>
+      </div>
+      {isExpanded && (
+        <div className="divide-y">
+          {category.endpoints.map((endpoint, idx) => (
+            <EndpointRow key={idx} endpoint={endpoint} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApiDocsTab() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start gap-4">
+        <div className="p-3 bg-primary/10 rounded-lg">
+          <Book className="w-8 h-8 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold">EVA SOP REST API</h2>
+          <p className="text-muted-foreground mt-1">
+            Complete API documentation for integrating with the EVA SOP platform.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h3 className="font-medium">Authentication</h3>
+        <p className="text-sm text-muted-foreground">
+          External API endpoints require authentication via Bearer token. Include your API key in the Authorization header:
+        </p>
+        <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+{`Authorization: Bearer YOUR_API_KEY`}
+        </pre>
+        <p className="text-sm text-muted-foreground">
+          API keys can be generated in the <span className="font-medium">API Test</span> tab. Internal endpoints do not require authentication.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-sm">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500"></span> GET</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500"></span> POST</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-500"></span> PATCH</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500"></span> PUT</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500"></span> DELETE</span>
+      </div>
+
+      <div className="space-y-4">
+        {API_CATEGORIES.map((category, idx) => (
+          <CategorySection key={idx} category={category} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function Admin() {
@@ -754,6 +1136,18 @@ export default function Admin() {
           >
             <Zap className="w-4 h-4" />
             API Test
+          </button>
+          <button
+            onClick={() => setActiveTab("api-docs")}
+            className={`pb-4 px-2 flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === "api-docs"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-api-docs"
+          >
+            <Book className="w-4 h-4" />
+            API Docs
           </button>
         </div>
 
@@ -1538,6 +1932,8 @@ Authorization: Bearer YOUR_API_KEY`}
             </div>
           </div>
         )}
+
+        {activeTab === "api-docs" && <ApiDocsTab />}
       </main>
 
       <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown, Paperclip, FileText, Trash2, List, Upload } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Calendar, Clock, Users, Mail, X, ExternalLink, Check, AlertCircle, Repeat, ChevronDown, Paperclip, FileText, Trash2, List, Upload, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,11 +32,34 @@ interface GoogleStatus {
   email: string | null;
 }
 
+interface EditMeetingData {
+  id: string;
+  title: string;
+  scheduledDate: string | null;
+  endDate: string | null;
+  attendeeEmails: string[] | null;
+  selectedAgents: string[] | null;
+  recurrence: string | null;
+  eventType: string | null;
+  isAllDay: boolean | null;
+  description?: string | null;
+}
+
+interface FollowUpContext {
+  previousMeetingId?: string;
+  meetingSeriesId?: string;
+  documentContext?: string;
+}
+
 interface ScheduleMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: (meetingLink: string) => void;
   initialDate?: Date;
+  editMeeting?: EditMeetingData | null;
+  initialSelectedAgents?: string[];
+  initialTitle?: string;
+  followUpContext?: FollowUpContext;
 }
 
 type EventType = "event" | "task";
@@ -59,9 +83,10 @@ function getWeekOrdinal(week: number): string {
   return ordinals[week - 1] || `${week}${getOrdinalSuffix(week)}`;
 }
 
-export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate }: ScheduleMeetingDialogProps) {
+export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDate, editMeeting, initialSelectedAgents, initialTitle, followUpContext }: ScheduleMeetingDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const isEditMode = !!editMeeting;
   const [eventType, setEventType] = useState<EventType>("event");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -81,17 +106,56 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
   }>>([]);
   const [attendeeInput, setAttendeeInput] = useState("");
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ connected: false, email: null });
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isLoadingGoogleStatus, setIsLoadingGoogleStatus] = useState(true);
 
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.listAgents(),
+    enabled: open,
+  });
+
   useEffect(() => {
-    if (open && initialDate) {
-      setDate(format(initialDate, "yyyy-MM-dd"));
+    if (open && editMeeting) {
+      setTitle(editMeeting.title || "");
+      setEventType((editMeeting.eventType as EventType) || "event");
+      setIsAllDay(editMeeting.isAllDay || false);
+      setRecurrence((editMeeting.recurrence as RecurrenceType) || "none");
+      setAttendeeEmails(editMeeting.attendeeEmails || []);
+      setSelectedAgentIds(editMeeting.selectedAgents || []);
+      setDescription(editMeeting.description || "");
+
+      if (editMeeting.scheduledDate) {
+        const sd = new Date(editMeeting.scheduledDate);
+        setDate(format(sd, "yyyy-MM-dd"));
+        if (!editMeeting.isAllDay) {
+          setStartTime(format(sd, "HH:mm"));
+        }
+      }
+      if (editMeeting.endDate) {
+        const ed = new Date(editMeeting.endDate);
+        if (editMeeting.isAllDay) {
+          setEndDateStr(format(ed, "yyyy-MM-dd"));
+        } else {
+          setEndTime(format(ed, "HH:mm"));
+        }
+      }
+    } else if (open) {
+      if (initialDate) {
+        setDate(format(initialDate, "yyyy-MM-dd"));
+      }
+      if (initialSelectedAgents && initialSelectedAgents.length > 0) {
+        setSelectedAgentIds(initialSelectedAgents);
+      }
+      if (initialTitle) {
+        setTitle(initialTitle);
+      }
     }
-  }, [initialDate, open]);
+  }, [initialDate, open, editMeeting, initialSelectedAgents, initialTitle]);
 
   const recurrenceOptions = useMemo(() => {
     if (!date) {
@@ -321,42 +385,69 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
         endDate = endTime ? new Date(`${date}T${endTime}`) : undefined;
       }
 
-      const result = await api.scheduleWithCalendar({
-        title,
-        scheduledDate: scheduledDate.toISOString(),
-        endDate: endDate?.toISOString(),
-        attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
-        description: description || (agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined),
-        agenda: agenda || undefined,
-        files: attachedFiles.length > 0 ? attachedFiles : undefined,
-        userId: user?.uid,
-        userEmail: user?.email || undefined,
-        eventType,
-        isAllDay,
-        recurrence,
-      });
+      if (isEditMode && editMeeting) {
+        await api.updateMeeting(editMeeting.id, {
+          title,
+          scheduledDate: scheduledDate.toISOString(),
+          endDate: endDate ? endDate.toISOString() : null,
+          attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : null,
+          eventType,
+          isAllDay,
+          recurrence,
+          selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : null,
+          description: description || null,
+        } as any);
 
-      toast({
-        title: eventType === "event" ? "Meeting Scheduled!" : "Task Created!",
-        description: result.calendarEventCreated 
-          ? "Calendar invitations have been sent to attendees." 
-          : `${eventType === "event" ? "Meeting" : "Task"} created successfully.`,
-      });
+        toast({
+          title: "Meeting Updated!",
+          description: "Your changes have been saved.",
+        });
+      } else {
+        const result = await api.scheduleWithCalendar({
+          title,
+          scheduledDate: scheduledDate.toISOString(),
+          endDate: endDate?.toISOString(),
+          attendeeEmails: attendeeEmails.length > 0 ? attendeeEmails : undefined,
+          description: description || (agenda ? agenda.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : undefined),
+          agenda: followUpContext?.documentContext
+            ? `[Previous Meeting Context]\n${followUpContext.documentContext}\n\n${agenda || ''}`
+            : (agenda || undefined),
+          files: attachedFiles.length > 0 ? attachedFiles : undefined,
+          userId: user?.uid,
+          userEmail: user?.email || undefined,
+          eventType,
+          isAllDay,
+          recurrence,
+          selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
+          previousMeetingId: followUpContext?.previousMeetingId,
+          meetingSeriesId: followUpContext?.meetingSeriesId,
+        });
 
-      setTitle("");
-      setDate("");
-      setEndDateStr("");
-      setStartTime("");
-      setEndTime("");
-      setIsAllDay(false);
-      setRecurrence("none");
-      setDescription("");
-      setAgenda("");
-      setAttachedFiles([]);
-      setAttendeeEmails([]);
-      setEventType("event");
+        toast({
+          title: eventType === "event" ? "Meeting Scheduled!" : "Task Created!",
+          description: result.calendarEventCreated 
+            ? "Calendar invitations have been sent to attendees." 
+            : `${eventType === "event" ? "Meeting" : "Task"} created successfully.`,
+        });
+      }
+
+      if (!isEditMode) {
+        setTitle("");
+        setDate("");
+        setEndDateStr("");
+        setStartTime("");
+        setEndTime("");
+        setIsAllDay(false);
+        setRecurrence("none");
+        setDescription("");
+        setAgenda("");
+        setAttachedFiles([]);
+        setAttendeeEmails([]);
+        setSelectedAgentIds([]);
+        setEventType("event");
+      }
       onOpenChange(false);
-      onSuccess?.(result.link);
+      onSuccess?.("");
     } catch (error) {
       toast({
         title: "Failed to Schedule",
@@ -376,10 +467,10 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
         <DialogHeader className="p-6 pb-4 border-b border-gray-100 dark:border-zinc-800">
           <DialogTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
             <Calendar className="w-5 h-5 text-orange-500" />
-            Schedule Meeting
+            {isEditMode ? "Edit Meeting" : "Schedule Meeting"}
           </DialogTitle>
           <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
-            Schedule a meeting with your client to discuss this task.
+            {isEditMode ? "Update the meeting details below." : "Schedule a meeting with your client to discuss this task."}
           </DialogDescription>
         </DialogHeader>
 
@@ -496,6 +587,60 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
               </SelectContent>
             </Select>
           </div>
+
+          {agents.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-gray-400" />
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Agent (Optional)</Label>
+              </div>
+              <div className="space-y-2">
+                {agents.filter((a: any) => a.status === "active").map((agent: any) => {
+                  const isSelected = selectedAgentIds.includes(agent.id);
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAgentIds(prev =>
+                          isSelected
+                            ? prev.filter(id => id !== agent.id)
+                            : [...prev, agent.id]
+                        );
+                      }}
+                      className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${
+                        isSelected
+                          ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                          : "border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600"
+                      }`}
+                      data-testid={`button-select-agent-${agent.id}`}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isSelected
+                          ? "bg-orange-500 text-white"
+                          : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400"
+                      }`}>
+                        {agent.type === "scrum" ? (
+                          <Users className="w-4 h-4" />
+                        ) : (
+                          <Bot className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{agent.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-orange-500" />}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
+                          {agent.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description (Optional)</Label>
@@ -708,7 +853,7 @@ export function ScheduleMeetingDialog({ open, onOpenChange, onSuccess, initialDa
             data-testid="button-schedule-meeting"
           >
             <Calendar className="w-4 h-4 mr-2" />
-            {isLoading ? "Scheduling..." : "Schedule Meeting"}
+            {isLoading ? (isEditMode ? "Saving..." : "Scheduling...") : (isEditMode ? "Save Changes" : "Schedule Meeting")}
           </Button>
         </DialogFooter>
       </DialogContent>

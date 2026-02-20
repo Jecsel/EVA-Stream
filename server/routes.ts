@@ -4,13 +4,18 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema, insertMeetingNoteSchema, insertMeetingFileSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateSOPFromTranscript, generateDecisionBasedSOP, generateCROFromChatMessages } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import { textToSpeech, textToSpeechStream, getVoices, getDefaultVoiceId } from "./elevenlabs";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
 import admin from "firebase-admin";
+import { runDevAgent, type AgentMessage } from "./dev-agent";
+import { downloadAndStoreVideo, fixStoredVideoContentType, uploadVideoToStorage } from "./video-storage";
+import multer from "multer";
+import { Readable } from "stream";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 // Initialize Firebase Admin SDK for token verification
 if (!admin.apps.length) {
@@ -76,10 +81,70 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  registerObjectStorageRoutes(app);
+
+  // Developer AI Agent - Chat endpoint with streaming
+  app.post("/api/dev-agent/chat", async (req, res) => {
+    try {
+      const { messages, screenContext } = req.body as {
+        messages: AgentMessage[];
+        screenContext?: string;
+      };
+
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        res.status(400).json({ error: "Messages array is required" });
+        return;
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      await runDevAgent(messages, screenContext || null, {
+        onText: (text) => {
+          res.write(`data: ${JSON.stringify({ type: "text", content: text })}\n\n`);
+        },
+        onToolUse: (toolName, input) => {
+          res.write(`data: ${JSON.stringify({ type: "tool_use", tool: toolName, input })}\n\n`);
+        },
+        onToolResult: (toolName, result) => {
+          const truncated = result.length > 2000 ? result.slice(0, 2000) + "..." : result;
+          res.write(`data: ${JSON.stringify({ type: "tool_result", tool: toolName, result: truncated })}\n\n`);
+        },
+        onDone: (fullResponse) => {
+          res.write(`data: ${JSON.stringify({ type: "done", content: fullResponse })}\n\n`);
+          res.end();
+        },
+        onError: (error) => {
+          res.write(`data: ${JSON.stringify({ type: "error", content: error.message })}\n\n`);
+          res.end();
+        },
+      });
+    } catch (error: any) {
+      console.error("Dev agent error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to process dev agent request" });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: "error", content: error.message })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
+  // Sentry config endpoint for frontend (production only)
+  app.get("/api/config/sentry", (req, res) => {
+    if (process.env.NODE_ENV === "production" && process.env.SENTRY_DSN) {
+      res.json({ dsn: process.env.SENTRY_DSN });
+    } else {
+      res.json({ dsn: null });
+    }
+  });
+
   // External API - Create meeting endpoint for other systems
   const externalCreateMeetingSchema = z.object({
     title: z.string().optional(),
     scheduledDate: z.string().datetime().optional(),
+    moderatorCode: z.string().min(4).max(32).optional(), // Secret code for moderator access without login
   });
 
   // External API - Schedule meeting with calendar integration
@@ -95,6 +160,7 @@ export async function registerRoutes(
     isAllDay: z.boolean().optional().default(false),
     recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays"]).optional().default("none"),
     recurrenceEndDate: z.string().datetime().optional(),
+    moderatorCode: z.string().min(4).max(32).optional(), // Secret code for moderator access without login
   });
 
   app.post("/api/external/schedule-meeting", validateApiKey, async (req, res) => {
@@ -112,9 +178,13 @@ export async function registerRoutes(
         return;
       }
 
+      // Auto-generate moderator code if not provided
+      const moderatorCode = validated.moderatorCode || uuidv4().substring(0, 8);
+
       const host = req.headers.host || "localhost:5000";
       const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
       const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+      const moderatorLink = `${meetingLink}?mod=${encodeURIComponent(moderatorCode)}`;
 
       const allAgents = await storage.listAgents();
       const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
@@ -133,6 +203,7 @@ export async function registerRoutes(
         recurrenceEndDate: validated.recurrenceEndDate ? new Date(validated.recurrenceEndDate) : null,
         createdBy: validated.userId || null,
         selectedAgents: selectedAgentIds,
+        moderatorCode,
       });
 
       let calendarEvent = null;
@@ -182,6 +253,7 @@ export async function registerRoutes(
           createdAt: meeting.createdAt,
         },
         link: meetingLink,
+        moderatorLink,
         calendarEventCreated: !!calendarEvent,
       });
     } catch (error) {
@@ -261,6 +333,9 @@ export async function registerRoutes(
       const roomId = generateRoomId();
       const title = validated.title || `Meeting ${roomId}`;
       
+      // Auto-generate moderator code if not provided
+      const moderatorCode = validated.moderatorCode || uuidv4().substring(0, 8);
+      
       // Get the SOP Generator agent to auto-enable for external meetings
       const allAgents = await storage.listAgents();
       const sopAgent = allAgents.find(a => a.type === "sop" || a.name.toLowerCase().includes("sop"));
@@ -273,12 +348,14 @@ export async function registerRoutes(
         status: validated.scheduledDate ? "scheduled" : "live",
         scheduledDate: validated.scheduledDate ? new Date(validated.scheduledDate) : new Date(),
         selectedAgents: selectedAgentIds,
+        moderatorCode,
       });
       
       // Build the full meeting link
       const host = req.headers.host || "localhost:5000";
       const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
       const meetingLink = `${protocol}://${host}/meeting/${roomId}`;
+      const moderatorLink = `${meetingLink}?mod=${encodeURIComponent(moderatorCode)}`;
       
       res.json({
         success: true,
@@ -291,6 +368,7 @@ export async function registerRoutes(
           createdAt: meeting.createdAt,
         },
         link: meetingLink,
+        moderatorLink,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -422,18 +500,67 @@ export async function registerRoutes(
       
       // Auto-create meeting if it doesn't exist (for ad-hoc meetings)
       if (!meeting) {
-        // Auto-select all agents when creating a new meeting
-        const allAgents = await storage.listAgents();
-        const allAgentIds = allAgents.map(agent => agent.id);
+        const followUpMeetingId = req.query.followUp as string | undefined;
+        let meetingTitle = `Meeting ${req.params.roomId}`;
+        let selectedAgentIds: string[] | null = null;
+        let previousMeetingId: string | null = null;
+        let meetingSeriesId: string | null = null;
+
+        let meetingDescription: string | null = null;
+
+        if (followUpMeetingId) {
+          const previousMeeting = await storage.getMeeting(followUpMeetingId);
+          if (previousMeeting) {
+            meetingTitle = previousMeeting.title;
+            selectedAgentIds = previousMeeting.selectedAgents || null;
+            previousMeetingId = previousMeeting.id;
+            meetingSeriesId = previousMeeting.meetingSeriesId || `series_${previousMeeting.id}`;
+            if (!previousMeeting.meetingSeriesId) {
+              await storage.updateMeeting(previousMeeting.id, { meetingSeriesId });
+            }
+            const recordings = await storage.getRecordingsByMeeting(followUpMeetingId);
+            const lastRecording = recordings[0];
+            if (lastRecording?.sopContent || lastRecording?.croContent) {
+              const parts: string[] = [];
+              if (lastRecording.sopContent) {
+                parts.push(`[Previous SOP Content]\n${lastRecording.sopContent}`);
+              }
+              if (lastRecording.croContent) {
+                parts.push(`[Previous CRO Content]\n${lastRecording.croContent}`);
+              }
+              meetingDescription = parts.join("\n\n---\n\n");
+            }
+          }
+        }
+
+        if (!selectedAgentIds) {
+          const allAgents = await storage.listAgents();
+          selectedAgentIds = allAgents.map(agent => agent.id);
+        }
         
         meeting = await storage.createMeeting({
-          title: `Meeting ${req.params.roomId}`,
+          title: meetingTitle,
           roomId: req.params.roomId,
           status: "live",
           scheduledDate: new Date(),
-          selectedAgents: allAgentIds.length > 0 ? allAgentIds : null,
+          selectedAgents: selectedAgentIds.length > 0 ? selectedAgentIds : null,
           createdBy: userId || null,
+          previousMeetingId,
+          meetingSeriesId,
         });
+
+        // Store document context from previous meeting as an agenda entry
+        if (meetingDescription) {
+          try {
+            await storage.createMeetingAgenda({
+              meetingId: meeting.id,
+              items: [],
+              content: meetingDescription,
+            });
+          } catch (agendaError) {
+            console.error("Failed to create follow-up agenda context:", agendaError);
+          }
+        }
       } else if (!meeting.createdBy && userId) {
         // Atomically claim moderator role for API-created meetings (first authenticated user)
         meeting = await storage.updateMeeting(meeting.id, { createdBy: userId }) || meeting;
@@ -462,7 +589,7 @@ export async function registerRoutes(
   app.post("/api/recordings", async (req, res) => {
     try {
       const validated = insertRecordingSchema.parse(req.body);
-      const recording = await storage.createRecording(validated);
+      const recording = await storage.createOrUpdateRecording(validated);
       res.json(recording);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -496,6 +623,53 @@ export async function registerRoutes(
     }
   });
 
+  // Public SOP view endpoint - requires share token for security
+  app.get("/api/public/sop/:token", async (req, res) => {
+    try {
+      const recording = await storage.getRecordingByShareToken(req.params.token);
+      if (!recording) {
+        res.status(404).json({ error: "SOP not found or invalid share link" });
+        return;
+      }
+      // Return only the SOP-related fields for public viewing
+      res.json({
+        id: recording.id,
+        title: recording.title,
+        sopContent: recording.sopContent,
+        flowchartCode: recording.flowchartCode,
+        recordedAt: recording.recordedAt,
+        duration: recording.duration,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch SOP" });
+    }
+  });
+
+  // Generate or get share token for a recording
+  app.post("/api/recordings/:id/share-token", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      
+      // If already has a share token, return it
+      if (recording.shareToken) {
+        res.json({ shareToken: recording.shareToken });
+        return;
+      }
+      
+      // Generate new share token
+      const shareToken = uuidv4();
+      await storage.updateRecording(req.params.id, { shareToken });
+      
+      res.json({ shareToken });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate share token" });
+    }
+  });
+
   app.patch("/api/recordings/:id", async (req, res) => {
     try {
       const recording = await storage.updateRecording(req.params.id, req.body);
@@ -520,6 +694,230 @@ export async function registerRoutes(
     } catch (error) {
       res.status(500).json({ error: "Failed to delete recording" });
     }
+  });
+
+  // Manual backup endpoint - trigger video backup for a specific recording
+  app.post("/api/recordings/:id/backup-video", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      const videoUrl = recording.originalVideoUrl || recording.videoUrl;
+      if (!videoUrl) {
+        res.status(400).json({ error: "Recording has no video URL to backup" });
+        return;
+      }
+
+      const forceRebackup = req.body?.force === true;
+      if (recording.storageStatus === "stored" && !forceRebackup) {
+        if (recording.storedVideoPath) {
+          const fixed = await fixStoredVideoContentType(recording.storedVideoPath);
+          if (fixed) {
+            res.json({ message: "Video content type fixed", storedVideoPath: recording.storedVideoPath });
+            return;
+          }
+        }
+        res.json({ message: "Recording already backed up", storedVideoPath: recording.storedVideoPath });
+        return;
+      }
+
+      if (recording.storageStatus === "downloading") {
+        res.json({ message: "Recording backup already in progress" });
+        return;
+      }
+
+      await storage.updateRecording(req.params.id, { storageStatus: "downloading" });
+
+      backupRecordingVideo(req.params.id, videoUrl)
+        .catch(err => console.error(`[VideoStorage] Manual backup failed for recording ${req.params.id}:`, err));
+
+      res.json({ message: "Video backup started" });
+    } catch (error) {
+      console.error("Error starting video backup:", error);
+      res.status(500).json({ error: "Failed to start video backup" });
+    }
+  });
+
+  const videoUpload = multer({
+    storage: multer.diskStorage({
+      destination: "/tmp",
+      filename: (_req, _file, cb) => cb(null, `upload-${Date.now()}.mp4`),
+    }),
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith("video/")) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only video files are allowed"));
+      }
+    },
+  });
+
+  app.post("/api/recordings/:id/upload-video", videoUpload.single("video"), async (req, res) => {
+    const tempFilePath = req.file?.path;
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      if (!req.file || !tempFilePath) {
+        res.status(400).json({ error: "No video file provided" });
+        return;
+      }
+
+      await storage.updateRecording(req.params.id, { storageStatus: "downloading" });
+
+      const fs = await import("fs");
+      const fileStream = fs.createReadStream(tempFilePath);
+
+      try {
+        const { storedVideoPath } = await uploadVideoToStorage(
+          fileStream,
+          req.params.id,
+          req.file.size
+        );
+
+        await storage.updateRecording(req.params.id, {
+          storedVideoPath,
+          storageStatus: "stored",
+        });
+
+        res.json({ message: "Video uploaded successfully", storedVideoPath });
+      } catch (uploadError) {
+        console.error(`[VideoStorage] Upload failed for recording ${req.params.id}:`, uploadError);
+        await storage.updateRecording(req.params.id, { storageStatus: "failed" })
+          .catch(err => console.error(`[VideoStorage] Failed to update status:`, err));
+        res.status(500).json({ error: "Failed to upload video to storage" });
+      }
+    } catch (error) {
+      console.error("Error handling video upload:", error);
+      res.status(500).json({ error: "Failed to process video upload" });
+    } finally {
+      if (tempFilePath) {
+        const fs = await import("fs");
+        fs.unlink(tempFilePath, () => {});
+      }
+    }
+  });
+
+  // Get backup status for a recording
+  app.get("/api/recordings/:id/backup-status", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      res.json({
+        storageStatus: recording.storageStatus,
+        storedVideoPath: recording.storedVideoPath,
+        originalVideoUrl: recording.originalVideoUrl,
+        hasVideo: !!recording.videoUrl,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get backup status" });
+    }
+  });
+
+  const reanalysisStatus = new Map<string, { status: string; step: string; progress: number; completed: boolean; error?: string }>();
+
+  app.post("/api/recordings/:id/reanalyze", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      if (!recording.videoUrl) {
+        res.status(400).json({ error: "Recording has no video URL to re-analyze" });
+        return;
+      }
+
+      const { outputs } = req.body;
+      if (!outputs || !Array.isArray(outputs) || outputs.length === 0) {
+        res.status(400).json({ error: "No output types selected" });
+        return;
+      }
+
+      const validOutputs = ["document", "sop", "cro", "flowchart", "transcript", "meeting_notes", "meeting_record"];
+      const selectedOutputs = outputs.filter((o: string) => validOutputs.includes(o));
+
+      if (selectedOutputs.length === 0) {
+        res.status(400).json({ error: "No valid output types selected" });
+        return;
+      }
+
+      const existingStatus = reanalysisStatus.get(recording.id);
+      if (existingStatus && !existingStatus.completed) {
+        res.status(409).json({ error: "Re-analysis is already in progress for this recording" });
+        return;
+      }
+
+      const meeting = await storage.getMeeting(recording.meetingId);
+      const meetingTitle = meeting?.title || recording.title || "Meeting";
+
+      reanalysisStatus.set(recording.id, {
+        status: "Starting re-analysis...",
+        step: "starting",
+        progress: 0,
+        completed: false,
+      });
+
+      processReanalysis(
+        recording.id,
+        recording.videoUrl,
+        recording.meetingId,
+        meetingTitle,
+        selectedOutputs,
+        (status: string, step: string, progress: number) => {
+          reanalysisStatus.set(recording.id, { status, step, progress, completed: false });
+        }
+      ).then(() => {
+        reanalysisStatus.set(recording.id, {
+          status: "Re-analysis completed successfully!",
+          step: "done",
+          progress: 100,
+          completed: true,
+        });
+        setTimeout(() => reanalysisStatus.delete(recording.id), 60000);
+      }).catch(err => {
+        console.error("Re-analysis error:", err);
+        const failMessage = err.message || "Re-analysis failed. Please try again.";
+        reanalysisStatus.set(recording.id, {
+          status: failMessage,
+          step: "error",
+          progress: 0,
+          completed: true,
+          error: failMessage,
+        });
+        setTimeout(() => reanalysisStatus.delete(recording.id), 120000);
+      });
+
+      res.json({
+        success: true,
+        message: "Re-analysis started. Results will be available shortly.",
+        recordingId: recording.id,
+        selectedOutputs,
+      });
+    } catch (error) {
+      console.error("Failed to start re-analysis:", error);
+      res.status(500).json({ error: "Failed to start re-analysis" });
+    }
+  });
+
+  app.get("/api/recordings/:id/reanalyze-status", (req, res) => {
+    const status = reanalysisStatus.get(req.params.id);
+    if (!status) {
+      res.json({ active: false });
+      return;
+    }
+    res.json({ active: true, ...status });
   });
 
   // Trigger AI transcription for a recording
@@ -624,16 +1022,26 @@ export async function registerRoutes(
       const meeting = await storage.getMeeting(meetingId);
       const meetingContext = meeting ? `Meeting: ${meeting.title}` : "General Meeting";
 
-      // Get the EVA agent's prompt if one is selected for this meeting
+      // Get the agent's prompt if one is selected for this meeting
       let customPrompt: string | undefined;
       if (meeting?.selectedAgents && meeting.selectedAgents.length > 0) {
         const agentsWithPrompts = await storage.listAgentsWithPrompts();
-        // Support both legacy "sop" type and new "eva" type for backward compatibility
-        const evaAgent = agentsWithPrompts.find(
-          a => (a.type === "eva" || a.type === "sop") && meeting.selectedAgents?.includes(a.id)
+        
+        // Check if Scrum Master agent is selected
+        const scrumAgent = agentsWithPrompts.find(
+          a => a.type === "scrum" && meeting.selectedAgents?.includes(a.id)
         );
-        if (evaAgent?.prompt?.content) {
-          customPrompt = evaAgent.prompt.content;
+        if (scrumAgent) {
+          const { getScrumMasterChatPrompt } = await import("./gemini");
+          customPrompt = scrumAgent.prompt?.content || getScrumMasterChatPrompt();
+        } else {
+          // Support both legacy "sop" type and new "eva" type for backward compatibility
+          const evaAgent = agentsWithPrompts.find(
+            a => (a.type === "eva" || a.type === "sop") && meeting.selectedAgents?.includes(a.id)
+          );
+          if (evaAgent?.prompt?.content) {
+            customPrompt = evaAgent.prompt.content;
+          }
         }
       }
 
@@ -752,8 +1160,8 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      // Create recording
-      await storage.createRecording({
+      // Create or update recording (prevents duplicates)
+      await storage.createOrUpdateRecording({
         meetingId,
         title: meeting.title,
         duration,
@@ -762,6 +1170,21 @@ export async function registerRoutes(
       });
 
       console.log(`Meeting ${meetingId} auto-saved via beacon`);
+
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        const allAgents = await storage.listAgentsWithPrompts();
+        const scrumAgent = allAgents.find(a => a.type === "scrum");
+        if (scrumAgent && meeting.selectedAgents.includes(scrumAgent.id)) {
+          try {
+            const { generateScrumMeetingRecord } = await import("./scrum-master");
+            const record = await generateScrumMeetingRecord(meetingId);
+            if (record) console.log(`[Beacon] Generated scrum meeting record for ${meetingId}`);
+          } catch (err) {
+            console.error("[Beacon] Failed to generate meeting record:", err);
+          }
+        }
+      }
+
       res.status(200).json({ success: true });
     } catch (error) {
       console.error("End meeting (beacon) error:", error);
@@ -782,20 +1205,149 @@ export async function registerRoutes(
         return;
       }
 
+      // Check if meeting was already ended - return existing recording instead of creating duplicate
+      if (meeting.status === "completed") {
+        const existingRecordings = await storage.getRecordingsByMeeting(meetingId);
+        if (existingRecordings.length > 0) {
+          console.log(`Meeting ${meetingId} already completed, returning existing recording`);
+          res.json({ recording: existingRecordings[0], summary: existingRecordings[0].summary || "" });
+          return;
+        }
+        // If status is completed but no recording exists, proceed to create one
+      }
+
       // Get all chat messages and transcript segments for summary
       const messages = await storage.getChatMessagesByMeeting(meetingId);
       const transcriptSegments = await storage.getTranscriptsByMeeting(meetingId);
+
+      // Check if Scrum Master agent is selected for this meeting
+      let isScrumMeeting = false;
+      let scrumPromptContent: string | undefined;
+      if (meeting.selectedAgents && meeting.selectedAgents.length > 0) {
+        const allAgents = await storage.listAgentsWithPrompts();
+        const scrumAgent = allAgents.find(a => a.type === "scrum");
+        if (scrumAgent && meeting.selectedAgents.includes(scrumAgent.id)) {
+          isScrumMeeting = true;
+          scrumPromptContent = scrumAgent.prompt?.content || undefined;
+        }
+      }
       
       // Generate AI summary of the meeting
       let summary = "Meeting ended without discussion.";
-      
-      // First try to use transcript segments (local speech-to-text)
+      let scrumResult = null;
+
+      // Build transcript text
+      let transcriptText = "";
       if (transcriptSegments.length > 0) {
-        const transcriptText = transcriptSegments
+        transcriptText = transcriptSegments
           .filter(t => t.isFinal && t.text.trim().length > 0)
           .map(t => `${t.speaker}: ${t.text}`)
           .join("\n");
+      }
+
+      if (isScrumMeeting) {
+        // Fetch previous standup history for continuity (up to 5 past standups)
+        let previousStandupContext: string | undefined;
+        try {
+          const prevSummaries = meeting.createdBy
+            ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting.title, meeting.meetingSeriesId)
+            : [];
+
+          if (prevSummaries.length > 0) {
+            const allParts: string[] = [];
+
+            for (let idx = 0; idx < prevSummaries.length; idx++) {
+              const prevSummary = prevSummaries[idx];
+              const prevData = prevSummary.scrumData as any;
+              const dateStr = prevSummary.createdAt
+                ? new Date(prevSummary.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : `Standup ${idx + 1}`;
+
+              const parts: string[] = [];
+              parts.push(`--- Standup ${idx === 0 ? "(Most Recent)" : `#${idx + 1}`}: ${dateStr} ---`);
+
+              if (prevSummary.fullSummary) {
+                parts.push(`Overview: ${prevSummary.fullSummary}`);
+              }
+              if (prevData?.participants?.length > 0) {
+                parts.push("Per-person updates:");
+                for (const p of prevData.participants) {
+                  parts.push(`  ${p.name}:`);
+                  if (p.today?.length > 0) parts.push(`    Working on: ${p.today.join(", ")}`);
+                  if (p.blockers?.length > 0) parts.push(`    Blockers: ${p.blockers.join(", ")}`);
+                }
+              }
+              if (prevData?.blockers?.length > 0) {
+                parts.push("Active blockers:");
+                for (const b of prevData.blockers) {
+                  parts.push(`  - ${b.description} (Owner: ${b.owner}, Severity: ${b.severity}, Status: ${b.status})`);
+                }
+              }
+              if (prevData?.actionItems?.length > 0) {
+                parts.push("Action items:");
+                for (const a of prevData.actionItems) {
+                  parts.push(`  - ${a.title} (Assigned to: ${a.assignee}, Priority: ${a.priority})`);
+                }
+              }
+              allParts.push(parts.join("\n"));
+            }
+
+            previousStandupContext = allParts.join("\n\n");
+            console.log(`[Meeting End] Found ${prevSummaries.length} previous standup(s) for context (${previousStandupContext.length} chars)`);
+          }
+        } catch (err) {
+          console.error("[Meeting End] Failed to fetch previous standup:", err);
+        }
+
+        // Use Scrum Master summary generation
+        const { generateScrumSummary } = await import("./gemini");
+        scrumResult = await generateScrumSummary(
+          transcriptText,
+          meeting.title,
+          messages.length > 0 ? messages : undefined,
+          scrumPromptContent,
+          previousStandupContext
+        );
         
+        if (scrumResult) {
+          summary = scrumResult.fullSummary;
+          
+          // Save structured scrum summary
+          try {
+            await storage.createMeetingSummary({
+              meetingId,
+              fullSummary: scrumResult.fullSummary,
+              summaryType: "scrum",
+              scrumData: scrumResult.scrumData,
+              keyTopics: scrumResult.scrumData.participants.map(p => `${p.name}'s update`),
+              decisions: [],
+              openQuestions: scrumResult.scrumData.blockers.filter(b => b.status === "active").map(b => `[BLOCKER] ${b.description} (${b.owner})`),
+            });
+          } catch (summaryError) {
+            console.error("[Meeting End] Failed to save scrum summary:", summaryError);
+          }
+
+          // Save action items from scrum data
+          if (scrumResult.scrumData.actionItems && scrumResult.scrumData.actionItems.length > 0) {
+            for (const item of scrumResult.scrumData.actionItems) {
+              try {
+                await storage.createScrumActionItem({
+                  meetingId,
+                  title: item.title,
+                  assignee: item.assignee,
+                  priority: item.priority,
+                  status: "open",
+                });
+              } catch (itemError) {
+                console.error("[Meeting End] Failed to save action item:", itemError);
+              }
+            }
+          }
+        }
+      }
+      
+      // Standard summary generation (for non-scrum meetings or as fallback)
+      if (!scrumResult) {
         if (transcriptText.length > 10) {
           const summaryResponse = await analyzeChat(
             `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${transcriptText.slice(0, 4000)}`,
@@ -803,23 +1355,20 @@ export async function registerRoutes(
             false
           );
           summary = summaryResponse.message;
+        } else if (messages.length > 0) {
+          const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+          const summaryResponse = await analyzeChat(
+            `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,
+            `Meeting: ${meeting.title}`,
+            false
+          );
+          summary = summaryResponse.message;
         }
-      }
-      // Fall back to chat messages if no transcript
-      else if (messages.length > 0) {
-        const chatHistory = messages.map(m => `${m.role}: ${m.content}`).join("\n");
-        const summaryResponse = await analyzeChat(
-          `Summarize this meeting in 2-3 sentences. Focus on key decisions and action items:\n\n${chatHistory.slice(0, 4000)}`,
-          `Meeting: ${meeting.title}`,
-          false
-        );
-        summary = summaryResponse.message;
       }
 
       // Generate CRO from chat messages if not provided and we have CRO interview data
       let finalCroContent = croContent || null;
       if (!finalCroContent && messages.length >= 5) {
-        // Check if messages look like a CRO interview (contains role/business/task questions)
         const messageText = messages.map(m => m.content.toLowerCase()).join(" ");
         const isCroInterview = messageText.includes("responsibilities") || 
                                messageText.includes("bottleneck") || 
@@ -837,21 +1386,440 @@ export async function registerRoutes(
       // Update meeting status to completed
       await storage.updateMeeting(meetingId, { status: "completed" });
 
-      // Create recording - use CRO content as sopContent if no SOP was generated
-      // (both are stored in the same field for now)
-      const documentContent = sopContent || finalCroContent || null;
-      const recording = await storage.createRecording({
+      const recording = await storage.createOrUpdateRecording({
         meetingId,
         title: meeting.title,
         duration: duration || "00:00",
         summary,
-        sopContent: documentContent,
+        sopContent: sopContent || null,
+        croContent: finalCroContent || null,
       });
 
-      res.json({ recording, summary, croGenerated: !!finalCroContent && !croContent });
+      if (isScrumMeeting && !meeting.meetingSeriesId && meeting.recurrence && meeting.recurrence !== "none") {
+        const seriesId = `series_${meetingId}`;
+        await storage.updateMeeting(meetingId, { meetingSeriesId: seriesId });
+      }
+
+      if (isScrumMeeting && !meeting.previousMeetingId && meeting.createdBy) {
+        try {
+          const allMeetings = await storage.listMeetings();
+          const candidates = allMeetings
+            .filter(m => 
+              m.id !== meetingId && 
+              m.title === meeting.title && 
+              m.createdBy === meeting.createdBy &&
+              m.status === "completed"
+            )
+            .sort((a, b) => {
+              const dateA = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+              const dateB = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+              return dateB - dateA;
+            });
+          const previousMeeting = candidates[0];
+          if (previousMeeting) {
+            const seriesId = previousMeeting.meetingSeriesId || meeting.meetingSeriesId || `series_${previousMeeting.id}`;
+            await storage.updateMeeting(meetingId, { 
+              previousMeetingId: previousMeeting.id,
+              meetingSeriesId: seriesId,
+            });
+            if (!previousMeeting.meetingSeriesId) {
+              await storage.updateMeeting(previousMeeting.id, { meetingSeriesId: seriesId });
+            }
+          }
+        } catch (err) {
+          console.error("[Meeting End] Failed to auto-link meeting:", err);
+        }
+      }
+
+      let meetingRecordId = null;
+      if (isScrumMeeting) {
+        try {
+          const { generateScrumMeetingRecord } = await import("./scrum-master");
+          const record = await generateScrumMeetingRecord(meetingId);
+          meetingRecordId = record?.id || null;
+        } catch (err) {
+          console.error("[Meeting End] Failed to generate meeting record:", err);
+        }
+      }
+
+      res.json({ 
+        recording, 
+        summary, 
+        croGenerated: !!finalCroContent && !croContent,
+        isScrumMeeting,
+        scrumData: scrumResult?.scrumData || null,
+        meetingRecordId,
+      });
     } catch (error) {
       console.error("End meeting error:", error);
       res.status(500).json({ error: "Failed to end meeting" });
+    }
+  });
+
+  // Get scrum summary for a meeting
+  app.get("/api/meetings/:meetingId/scrum-summary", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const summary = await storage.getMeetingSummary(meetingId);
+      
+      if (!summary || summary.summaryType !== "scrum") {
+        res.status(404).json({ error: "No scrum summary found for this meeting" });
+        return;
+      }
+
+      const actionItems = await storage.getScrumActionItemsByMeeting(meetingId);
+      
+      res.json({ summary, actionItems });
+    } catch (error) {
+      console.error("Get scrum summary error:", error);
+      res.status(500).json({ error: "Failed to get scrum summary" });
+    }
+  });
+
+  // Get scrum action items for a meeting
+  app.get("/api/meetings/:meetingId/scrum-action-items", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const actionItems = await storage.getScrumActionItemsByMeeting(meetingId);
+      res.json(actionItems);
+    } catch (error) {
+      console.error("Get scrum action items error:", error);
+      res.status(500).json({ error: "Failed to get action items" });
+    }
+  });
+
+  // Update a scrum action item
+  app.patch("/api/scrum-action-items/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, priority, assignee, notes, title } = req.body;
+      const updated = await storage.updateScrumActionItem(id, { 
+        status, priority, assignee, notes, title 
+      });
+      if (!updated) {
+        res.status(404).json({ error: "Action item not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update scrum action item error:", error);
+      res.status(500).json({ error: "Failed to update action item" });
+    }
+  });
+
+  // Delete a scrum action item
+  app.delete("/api/scrum-action-items/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteScrumActionItem(id);
+      if (!deleted) {
+        res.status(404).json({ error: "Action item not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete scrum action item error:", error);
+      res.status(500).json({ error: "Failed to delete action item" });
+    }
+  });
+
+  // Get consolidated scrum board data for the meeting guide
+  app.get("/api/meetings/:meetingId/previous-standup", async (req, res) => {
+    try {
+      const meetingId = req.params.meetingId;
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        res.status(404).json({ error: "Meeting not found" });
+        return;
+      }
+
+      if (!meeting.createdBy) {
+        res.json({ hasPreviousStandup: false });
+        return;
+      }
+
+      const allSummaries = await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting.title, meeting.meetingSeriesId);
+
+      // Also try to get scrum meeting records (from the meeting record generator)
+      let scrumRecords: any[] = [];
+      if (meeting.meetingSeriesId) {
+        scrumRecords = await storage.getScrumMeetingRecordsBySeries(meeting.meetingSeriesId);
+        scrumRecords = scrumRecords.filter(r => r.meetingId !== meetingId);
+      }
+      if (scrumRecords.length === 0 && meeting.previousMeetingId) {
+        const prevRecord = await storage.getScrumMeetingRecordByMeeting(meeting.previousMeetingId);
+        if (prevRecord) scrumRecords = [prevRecord];
+      }
+      // Sort records newest-first
+      scrumRecords.sort((a: any, b: any) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      if (allSummaries.length === 0 && scrumRecords.length === 0) {
+        res.json({ hasPreviousStandup: false });
+        return;
+      }
+
+      const allActionItems: any[] = [];
+      for (const s of allSummaries) {
+        if (s.meetingId) {
+          const items = await storage.getScrumActionItemsByMeeting(s.meetingId);
+          allActionItems.push(...items);
+        }
+      }
+
+      const openActionItems = allActionItems.filter(a => a.status !== "done");
+      const doneActionItems = allActionItems.filter(a => a.status === "done");
+
+      const allBlockers: Array<{
+        description: string;
+        owner: string;
+        severity: string;
+        status: string;
+        firstSeen: string | null;
+        meetingTitle: string;
+      }> = [];
+      const personStatusMap: Record<string, {
+        name: string;
+        lastWorkingOn: string[];
+        lastCompleted: string[];
+        currentBlockers: string[];
+        lastSeen: string | null;
+        meetingTitle: string;
+      }> = {};
+      const discussionHistory: Array<{
+        date: string | null;
+        meetingTitle: string;
+        summary: string;
+        meetingId: string;
+      }> = [];
+
+      for (const s of allSummaries) {
+        const scrumData = s.scrumData as any;
+        const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
+        const meetingTitle = mtg?.title || "Standup";
+        const dateStr = s.createdAt ? new Date(s.createdAt).toISOString() : null;
+
+        if (s.fullSummary) {
+          discussionHistory.push({
+            date: dateStr,
+            meetingTitle,
+            summary: s.fullSummary,
+            meetingId: s.meetingId || "",
+          });
+        }
+
+        if (scrumData?.blockers?.length > 0) {
+          for (const b of scrumData.blockers) {
+            if (b.status === "active") {
+              const existing = allBlockers.find(
+                eb => eb.description.toLowerCase() === b.description.toLowerCase() && eb.owner === b.owner
+              );
+              if (existing) {
+                if (dateStr && (!existing.firstSeen || new Date(dateStr) < new Date(existing.firstSeen))) {
+                  existing.firstSeen = dateStr;
+                }
+              } else {
+                allBlockers.push({
+                  description: b.description,
+                  owner: b.owner,
+                  severity: b.severity || "medium",
+                  status: b.status,
+                  firstSeen: dateStr,
+                  meetingTitle,
+                });
+              }
+            }
+          }
+        }
+
+        if (scrumData?.participants?.length > 0) {
+          for (const p of scrumData.participants) {
+            if (!personStatusMap[p.name]) {
+              personStatusMap[p.name] = {
+                name: p.name,
+                lastWorkingOn: p.today || [],
+                lastCompleted: p.yesterday || [],
+                currentBlockers: p.blockers || [],
+                lastSeen: dateStr,
+                meetingTitle,
+              };
+            }
+          }
+        }
+      }
+
+      // Supplement with data from scrum meeting records (fallback when meeting_summaries are empty)
+      for (const record of scrumRecords) {
+        const recordMtg = record.meetingId ? await storage.getMeeting(record.meetingId) : null;
+        const meetingTitle = recordMtg?.title || "Standup";
+        const dateStr = record.createdAt ? new Date(record.createdAt).toISOString() : null;
+
+        if (record.documentMarkdown && !discussionHistory.find((d: any) => d.meetingId === record.meetingId)) {
+          const docPreview = record.documentMarkdown.substring(0, 500);
+          discussionHistory.push({
+            date: dateStr,
+            meetingTitle,
+            summary: docPreview,
+            meetingId: record.meetingId || "",
+          });
+        }
+
+        const recordBlockers = Array.isArray(record.blockers) ? record.blockers : [];
+        for (const b of recordBlockers) {
+          if (typeof b !== 'object' || !b) continue;
+          if (b.status !== "resolved") {
+            const desc = b.blocker || b.description || b.item || "";
+            const owner = b.owner || "Unknown";
+            if (desc && !allBlockers.find(eb => eb.description.toLowerCase() === desc.toLowerCase() && eb.owner.toLowerCase() === owner.toLowerCase())) {
+              allBlockers.push({
+                description: desc,
+                owner,
+                severity: b.severity || "medium",
+                status: b.status || "active",
+                firstSeen: dateStr,
+                meetingTitle,
+              });
+            }
+          }
+        }
+
+        const recordActions = Array.isArray(record.actionItems) ? record.actionItems : [];
+        for (let ai = 0; ai < recordActions.length; ai++) {
+          const a = recordActions[ai];
+          if (typeof a !== 'object' || !a) continue;
+          const actionTitle = a.action || a.description || a.item || "";
+          if (!actionTitle) continue;
+          if (a.status !== "done" && a.status !== "completed") {
+            openActionItems.push({
+              id: `record_${record.id}_action_${ai}`,
+              title: actionTitle,
+              assignee: a.owner || null,
+              status: a.status || "open",
+              priority: a.priority || null,
+              meetingId: record.meetingId,
+            });
+          } else {
+            doneActionItems.push({
+              id: `record_${record.id}_action_${ai}`,
+              title: actionTitle,
+              assignee: a.owner || null,
+              status: a.status || "done",
+              priority: a.priority || null,
+              meetingId: record.meetingId,
+            });
+          }
+        }
+
+        const recordTeamUpdates = Array.isArray(record.teamUpdates) ? record.teamUpdates : [];
+        for (const t of recordTeamUpdates) {
+          if (typeof t !== 'object' || !t) continue;
+          const name = t.name || t.member || "";
+          if (name && !personStatusMap[name]) {
+            personStatusMap[name] = {
+              name,
+              lastWorkingOn: Array.isArray(t.workingOn) ? t.workingOn : (Array.isArray(t.today) ? t.today : []),
+              lastCompleted: Array.isArray(t.completed) ? t.completed : (Array.isArray(t.yesterday) ? t.yesterday : []),
+              currentBlockers: Array.isArray(t.blockers) ? t.blockers : [],
+              lastSeen: dateStr,
+              meetingTitle,
+            };
+          }
+        }
+
+        // Extract participants as team members if team_updates is empty
+        const recordParticipants = Array.isArray(record.participants) ? record.participants : [];
+        if (recordTeamUpdates.length === 0 && recordParticipants.length > 0) {
+          for (const pName of recordParticipants) {
+            const name = typeof pName === 'string' ? pName : (typeof pName === 'object' && pName ? (pName.name || "") : "");
+            if (name && !personStatusMap[name]) {
+              personStatusMap[name] = {
+                name,
+                lastWorkingOn: [],
+                lastCompleted: [],
+                currentBlockers: [],
+                lastSeen: dateStr,
+                meetingTitle,
+              };
+            }
+          }
+        }
+
+        const carriedOver = Array.isArray(record.carriedOverItems) ? record.carriedOverItems : [];
+        for (let ci = 0; ci < carriedOver.length; ci++) {
+          const c = carriedOver[ci];
+          if (typeof c !== 'object' || !c) continue;
+          const itemDesc = c.item || c.description || "";
+          if (itemDesc && !openActionItems.find((a: any) => a.title === itemDesc)) {
+            openActionItems.push({
+              id: `carry_${record.id}_${ci}`,
+              title: itemDesc,
+              assignee: c.owner || null,
+              status: c.status || "carried-over",
+              priority: null,
+              meetingId: record.meetingId,
+            });
+          }
+        }
+      }
+
+      // Count distinct meetings across both sources
+      const meetingIds = new Set<string>();
+      allSummaries.forEach(s => { if (s.meetingId) meetingIds.add(s.meetingId); });
+      scrumRecords.forEach(r => { if (r.meetingId) meetingIds.add(r.meetingId); });
+      const totalStandups = meetingIds.size;
+      const lastStandupDate = allSummaries[0]?.createdAt
+        ? new Date(allSummaries[0].createdAt).toISOString()
+        : (scrumRecords[0]?.createdAt ? new Date(scrumRecords[0].createdAt).toISOString() : null);
+
+      // Fetch generated documents from the most recent previous meeting's recording
+      let documents: { sopContent: string | null; croContent: string | null; meetingRecordMarkdown: string | null; meetingTitle: string } | null = null;
+      const prevMeetingIds = Array.from(meetingIds);
+      for (const pmId of prevMeetingIds) {
+        const recs = await storage.getRecordingsByMeeting(pmId);
+        const rec = recs[0];
+        if (rec && (rec.sopContent || rec.croContent)) {
+          const pmtg = await storage.getMeeting(pmId);
+          documents = {
+            sopContent: rec.sopContent || null,
+            croContent: rec.croContent || null,
+            meetingRecordMarkdown: null,
+            meetingTitle: pmtg?.title || "Previous Meeting",
+          };
+          break;
+        }
+      }
+      // Also fetch the latest scrum meeting record document
+      if (scrumRecords.length > 0 && scrumRecords[0].documentMarkdown) {
+        if (!documents) {
+          const recordMtg = scrumRecords[0].meetingId ? await storage.getMeeting(scrumRecords[0].meetingId) : null;
+          documents = {
+            sopContent: null,
+            croContent: null,
+            meetingRecordMarkdown: scrumRecords[0].documentMarkdown,
+            meetingTitle: recordMtg?.title || "Previous Meeting",
+          };
+        } else {
+          documents.meetingRecordMarkdown = scrumRecords[0].documentMarkdown;
+        }
+      }
+
+      res.json({
+        hasPreviousStandup: true,
+        totalStandups,
+        lastStandupDate,
+        carryOverBlockers: allBlockers,
+        openActionItems,
+        completedActionItems: doneActionItems,
+        teamStatus: Object.values(personStatusMap),
+        discussionHistory,
+        documents,
+      });
+    } catch (error) {
+      console.error("Get previous standup error:", error);
+      res.status(500).json({ error: "Failed to get previous standup data" });
     }
   });
 
@@ -1011,6 +1979,9 @@ export async function registerRoutes(
     eventType: z.enum(["event", "task"]).optional().default("event"),
     isAllDay: z.boolean().optional().default(false),
     recurrence: z.enum(["none", "daily", "weekly", "monthly", "annually", "weekdays", "custom"]).optional().default("none"),
+    selectedAgents: z.array(z.string()).optional(),
+    previousMeetingId: z.string().optional(),
+    meetingSeriesId: z.string().optional(),
   });
 
   app.post("/api/meetings/schedule-with-calendar", async (req, res) => {
@@ -1036,10 +2007,13 @@ export async function registerRoutes(
         scheduledDate: startTime,
         endDate: endTime,
         attendeeEmails: validated.attendeeEmails || null,
+        selectedAgents: validated.selectedAgents || null,
         eventType: validated.eventType,
         isAllDay: validated.isAllDay,
         recurrence: validated.recurrence,
         createdBy: validated.userId || null,
+        previousMeetingId: validated.previousMeetingId || null,
+        meetingSeriesId: validated.meetingSeriesId || null,
       });
 
       let calendarEvent = null;
@@ -1136,7 +2110,7 @@ export async function registerRoutes(
   // JaaS JWT Token Generation
   app.post("/api/jaas/token", async (req, res) => {
     try {
-      const { roomName, userName, userEmail, userAvatar, wantsModerator } = req.body;
+      const { roomName, userName, userEmail, userAvatar, wantsModerator, moderatorCode } = req.body;
       
       // Determine if user should be moderator by verifying Firebase ID token
       let isModerator = false;
@@ -1161,25 +2135,38 @@ export async function registerRoutes(
         }
       }
       
-      // Check if verified user is the meeting creator (only if they want moderator role)
-      if (verifiedUserId && roomName && wantsModerator !== false) {
+      // Check if user should be moderator (like Zoom: creator auto-moderator, or anyone with valid code)
+      if (wantsModerator !== false && roomName) {
         // Extract roomId from roomName (format: "VideoAI-{roomId}")
         const roomId = roomName.replace(/^VideoAI-/i, "");
         if (roomId) {
           const meeting = await storage.getMeetingByRoomId(roomId);
-          console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId });
-          // User is moderator only if they created the meeting
-          if (meeting && meeting.createdBy === verifiedUserId) {
+          console.log("[JaaS Token] Meeting lookup:", { roomId, meetingCreatedBy: meeting?.createdBy, verifiedUserId, hasModeratorCode: !!moderatorCode });
+          
+          // Priority 1: Meeting creator is always a moderator (automatic, no code needed)
+          if (verifiedUserId && meeting && meeting.createdBy === verifiedUserId) {
             isModerator = true;
-            console.log("[JaaS Token] User is moderator (creator match)");
-          } else {
-            console.log("[JaaS Token] User is NOT moderator (creator mismatch or no creator)");
+            console.log("[JaaS Token] User is moderator (creator match - automatic)");
+          }
+          // Priority 2: Anyone (logged-in or not) with valid moderator code becomes moderator
+          else if (wantsModerator === true && moderatorCode) {
+            if (meeting && meeting.moderatorCode && meeting.moderatorCode === moderatorCode) {
+              isModerator = true;
+              console.log("[JaaS Token] User is moderator (valid moderator code provided)");
+            } else if (!meeting?.moderatorCode) {
+              // Meeting has no moderator code set - deny access for security
+              console.log("[JaaS Token] User is NOT moderator (meeting has no moderator code set)");
+            } else {
+              console.log("[JaaS Token] User is NOT moderator (invalid moderator code)");
+            }
+          } else if (wantsModerator === true && !moderatorCode) {
+            console.log("[JaaS Token] User wants moderator but no code provided");
           }
         }
       } else if (wantsModerator === false) {
         console.log("[JaaS Token] User declined moderator role, moderator=false");
       } else {
-        console.log("[JaaS Token] No verified user or no roomName, moderator=false");
+        console.log("[JaaS Token] No roomName provided, moderator=false");
       }
       
       console.log("[JaaS Token] Final moderator status:", isModerator);
@@ -1260,7 +2247,7 @@ export async function registerRoutes(
         { algorithm: "RS256", header: { kid: apiKey, typ: "JWT", alg: "RS256" } }
       );
 
-      res.json({ token, appId });
+      res.json({ token, appId, isModerator });
     } catch (error) {
       console.error("JaaS token generation error:", error);
       res.status(500).json({ error: "Failed to generate JaaS token" });
@@ -1429,23 +2416,29 @@ export async function registerRoutes(
               
               let recordingId: string;
               if (existingRecording) {
-                // Update existing recording with video URL
                 await storage.updateRecording(existingRecording.id, {
-                  videoUrl: data.preAuthenticatedLink
+                  videoUrl: data.preAuthenticatedLink,
+                  originalVideoUrl: data.preAuthenticatedLink,
+                  storageStatus: "downloading",
                 });
                 recordingId = existingRecording.id;
                 console.log(`Updated recording ${existingRecording.id} with video URL`);
               } else {
-                // Create new recording with video URL
-                const newRecording = await storage.createRecording({
+                const newRecording = await storage.createOrUpdateRecording({
                   meetingId: meeting.id,
                   title: meeting.title,
                   duration: "Unknown",
                   videoUrl: data.preAuthenticatedLink,
+                  originalVideoUrl: data.preAuthenticatedLink,
+                  storageStatus: "downloading",
                 });
                 recordingId = newRecording.id;
                 console.log(`Created new recording for meeting ${meeting.id} with video URL`);
               }
+
+              // Download and store video permanently in App Storage (async)
+              backupRecordingVideo(recordingId, data.preAuthenticatedLink)
+                .catch(err => console.error(`[VideoStorage] Backup failed for recording ${recordingId}:`, err));
 
               // Trigger AI transcription of the recording asynchronously
               processRecordingTranscription(
@@ -1833,6 +2826,28 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete prompt" });
+    }
+  });
+
+  // ============================================
+  // Agent Team Routes
+  // ============================================
+
+  app.get("/api/meetings/:meetingId/agent-team/tasks", async (req, res) => {
+    try {
+      const tasks = await storage.getAgentTeamTasksByMeeting(req.params.meetingId);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agent team tasks" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/agent-team/messages", async (req, res) => {
+    try {
+      const messages = await storage.getAgentTeamMessagesByMeeting(req.params.meetingId);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch agent team messages" });
     }
   });
 
@@ -2634,102 +3649,24 @@ Format the response as JSON with these fields:
   });
 
   // ElevenLabs Conversational AI - get signed URL for WebSocket connection
-  // Supports multiple agent types: eva (default), sop, cro_interview
   app.get("/api/elevenlabs/signed-url", async (req, res) => {
     try {
-      const agentType = (req.query.agentType as string) || 'eva';
-      
-      // Map agent types to their respective environment variable agent IDs
-      let agentId: string | undefined;
-      switch (agentType) {
-        case 'sop':
-          agentId = process.env.ELEVENLABS_SOP_AGENT_ID;
-          break;
-        case 'cro_interview':
-          agentId = process.env.ELEVENLABS_CRO_INTERVIEW_AGENT_ID;
-          break;
-        case 'eva':
-        default:
-          agentId = process.env.ELEVENLABS_AGENT_ID;
-          break;
-      }
+      const agentId = process.env.ELEVENLABS_AGENT_ID;
       
       if (!agentId) {
         res.status(400).json({ 
-          error: `ElevenLabs Agent ID not configured for type: ${agentType}`,
-          hint: agentType === 'sop' 
-            ? 'Set ELEVENLABS_SOP_AGENT_ID environment variable'
-            : agentType === 'cro_interview'
-              ? 'Set ELEVENLABS_CRO_INTERVIEW_AGENT_ID environment variable'
-              : 'Set ELEVENLABS_AGENT_ID environment variable'
+          error: 'ElevenLabs Agent ID not configured',
+          hint: 'Set ELEVENLABS_AGENT_ID environment variable'
         });
         return;
       }
 
       const { getConversationalAgentSignedUrl } = await import('./elevenlabs');
       const signedUrl = await getConversationalAgentSignedUrl(agentId);
-      res.json({ signedUrl, agentType });
+      res.json({ signedUrl });
     } catch (error: any) {
       console.error("Failed to get signed URL:", error);
       res.status(500).json({ error: error.message || "Failed to get signed URL" });
-    }
-  });
-  
-  // Get available 11Labs agent types and their configuration status
-  app.get("/api/elevenlabs/agents", async (req, res) => {
-    try {
-      const agents = [
-        {
-          type: 'eva',
-          name: 'EVA Meeting Assistant',
-          description: 'General meeting help, Q&A, and document analysis',
-          configured: !!process.env.ELEVENLABS_AGENT_ID,
-        },
-        {
-          type: 'sop',
-          name: 'SOP Voice Agent',
-          description: 'Guides screen sharing and process documentation',
-          configured: !!process.env.ELEVENLABS_SOP_AGENT_ID,
-        },
-        {
-          type: 'cro_interview',
-          name: 'CRO Interview Agent',
-          description: 'Conducts business discovery interviews for role definition',
-          configured: !!process.env.ELEVENLABS_CRO_INTERVIEW_AGENT_ID,
-        },
-      ];
-      res.json({ agents });
-    } catch (error: any) {
-      console.error("Failed to get agents:", error);
-      res.status(500).json({ error: error.message || "Failed to get agents" });
-    }
-  });
-  
-  // Get CRO Interview questions for the CRO Interview Agent
-  app.get("/api/elevenlabs/cro-interview-questions", async (req, res) => {
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const questionsPath = path.join(process.cwd(), 'server', 'data', 'cro-interview-questions.json');
-      const questions = JSON.parse(fs.readFileSync(questionsPath, 'utf-8'));
-      res.json({ questions });
-    } catch (error: any) {
-      console.error("Failed to get CRO interview questions:", error);
-      res.status(500).json({ error: error.message || "Failed to get interview questions" });
-    }
-  });
-  
-  // Get CRO Interview prompt for reference
-  app.get("/api/elevenlabs/cro-interview-prompt", async (req, res) => {
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const promptPath = path.join(process.cwd(), 'server', 'data', 'cro-interview-prompt.txt');
-      const prompt = fs.readFileSync(promptPath, 'utf-8');
-      res.json({ prompt });
-    } catch (error: any) {
-      console.error("Failed to get CRO interview prompt:", error);
-      res.status(500).json({ error: error.message || "Failed to get interview prompt" });
     }
   });
 
@@ -2753,6 +3690,25 @@ Format the response as JSON with these fields:
     }
   });
 
+  app.post("/api/transcribe/whisper", express.json({ limit: '50mb' }), async (req, res) => {
+    try {
+      const { audio } = req.body;
+      if (!audio) {
+        res.status(400).json({ error: "Audio data (base64) is required" });
+        return;
+      }
+
+      const { ensureCompatibleFormat, speechToText } = await import('./replit_integrations/audio/client');
+      const rawBuffer = Buffer.from(audio, 'base64');
+      const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
+      const transcript = await speechToText(audioBuffer, inputFormat);
+      res.json({ text: transcript });
+    } catch (error: any) {
+      console.error("Whisper transcription error:", error);
+      res.status(500).json({ error: error.message || "Failed to transcribe audio" });
+    }
+  });
+
   // Ask EVA - AI chat endpoint
   app.post("/api/eva/ask", async (req, res) => {
     try {
@@ -2768,6 +3724,11 @@ Format the response as JSON with these fields:
       const notes = meetingId ? await storage.getMeetingNotes(meetingId) : [];
       const files = meetingId ? await storage.getMeetingFiles(meetingId) : [];
       const transcripts = meetingId ? await storage.getTranscriptsByMeeting(meetingId) : [];
+      const scrumActionItemsList = meetingId ? await storage.getScrumActionItemsByMeeting(meetingId) : [];
+      const currentScrumSummary = meetingId ? await storage.getMeetingSummary(meetingId) : undefined;
+      const scrumSummaries = (meetingId && meeting?.createdBy)
+        ? await storage.getPreviousScrumSummaries(meetingId, meeting.createdBy, 5, meeting?.title, meeting?.meetingSeriesId)
+        : [];
 
       // Build context for AI
       let fullContext = "";
@@ -2777,12 +3738,17 @@ Format the response as JSON with these fields:
         fullContext += `Status: ${meeting.status}\n\n`;
       }
       
-      if (agenda && Array.isArray(agenda.items)) {
-        fullContext += "Agenda Items:\n";
-        (agenda.items as any[]).forEach((item: any, i: number) => {
-          fullContext += `${i + 1}. ${item.title} (${item.covered ? "Covered" : "Not covered"})\n`;
-        });
-        fullContext += "\n";
+      if (agenda) {
+        if (Array.isArray(agenda.items) && (agenda.items as any[]).length > 0) {
+          fullContext += "Agenda Items:\n";
+          (agenda.items as any[]).forEach((item: any, i: number) => {
+            fullContext += `${i + 1}. ${item.title} (${item.covered ? "Covered" : "Not covered"})\n`;
+          });
+          fullContext += "\n";
+        }
+        if (agenda.content) {
+          fullContext += `Meeting Context/Agenda:\n${agenda.content}\n\n`;
+        }
       }
       
       if (notes.length > 0) {
@@ -2811,6 +3777,143 @@ Format the response as JSON with these fields:
           fullContext += `${t.speaker}: ${t.text}\n`;
         });
         fullContext += "\n";
+      }
+
+      const allScrumSummaries = currentScrumSummary
+        ? [currentScrumSummary, ...scrumSummaries.filter(s => s.id !== currentScrumSummary.id)]
+        : scrumSummaries;
+
+      if (scrumActionItemsList.length > 0 || allScrumSummaries.length > 0) {
+        fullContext += "=== SCRUM BOARD DATA ===\n\n";
+
+        const safeDate = (val: any): string => {
+          if (!val) return "unknown";
+          const d = new Date(val);
+          return isNaN(d.getTime()) ? "unknown" : d.toLocaleDateString();
+        };
+
+        const allActionItems: typeof scrumActionItemsList = [...scrumActionItemsList];
+        for (const s of allScrumSummaries) {
+          if (s.meetingId && s.meetingId !== meetingId) {
+            const items = await storage.getScrumActionItemsByMeeting(s.meetingId);
+            allActionItems.push(...items);
+          }
+        }
+        const seenIds = new Set<string>();
+        const uniqueActionItems = allActionItems.filter(a => {
+          if (seenIds.has(a.id)) return false;
+          seenIds.add(a.id);
+          return true;
+        });
+        const openItems = uniqueActionItems.filter(a => a.status !== "done");
+        const doneItems = uniqueActionItems.filter(a => a.status === "done");
+
+        const carryOverBlockers: Array<{ description: string; owner: string; severity: string; status: string; firstSeen: string | null; meetingTitle: string }> = [];
+        const personStatusMap: Record<string, { name: string; lastWorkingOn: string[]; lastCompleted: string[]; currentBlockers: string[]; lastSeen: string | null; meetingTitle: string }> = {};
+        const discussionHistory: Array<{ date: string | null; meetingTitle: string; summary: string }> = [];
+
+        for (const s of allScrumSummaries) {
+          const scrumData = s.scrumData as any;
+          const mtg = s.meetingId ? await storage.getMeeting(s.meetingId) : null;
+          const meetingTitle = mtg?.title || "Standup";
+          const dateStr = s.createdAt ? new Date(s.createdAt).toISOString() : null;
+
+          if (s.fullSummary) {
+            discussionHistory.push({ date: dateStr, meetingTitle, summary: s.fullSummary });
+          }
+
+          if (scrumData?.blockers?.length > 0) {
+            for (const b of scrumData.blockers) {
+              if (b.status === "active") {
+                const existing = carryOverBlockers.find(
+                  eb => eb.description.toLowerCase() === b.description.toLowerCase() && eb.owner === b.owner
+                );
+                if (existing) {
+                  if (dateStr && (!existing.firstSeen || new Date(dateStr) < new Date(existing.firstSeen))) {
+                    existing.firstSeen = dateStr;
+                  }
+                } else {
+                  carryOverBlockers.push({
+                    description: b.description,
+                    owner: b.owner,
+                    severity: b.severity || "medium",
+                    status: b.status,
+                    firstSeen: dateStr,
+                    meetingTitle,
+                  });
+                }
+              }
+            }
+          }
+
+          if (scrumData?.participants?.length > 0) {
+            for (const p of scrumData.participants) {
+              if (!personStatusMap[p.name]) {
+                personStatusMap[p.name] = {
+                  name: p.name,
+                  lastWorkingOn: p.today || [],
+                  lastCompleted: p.yesterday || [],
+                  currentBlockers: p.blockers || [],
+                  lastSeen: dateStr,
+                  meetingTitle,
+                };
+              }
+            }
+          }
+        }
+
+        if (allScrumSummaries.length > 0) {
+          fullContext += `Total Standups: ${allScrumSummaries.length} | Last Standup: ${safeDate(allScrumSummaries[0]?.createdAt)}\n\n`;
+        }
+
+        if (carryOverBlockers.length > 0) {
+          fullContext += `CARRY-OVER BLOCKERS (${carryOverBlockers.length} active):\n`;
+          carryOverBlockers.forEach(b => {
+            const firstSeenStr = b.firstSeen ? `, first seen: ${safeDate(b.firstSeen)}` : "";
+            fullContext += `- [${b.severity.toUpperCase()}] ${b.description} (Owner: ${b.owner}, from: ${b.meetingTitle}${firstSeenStr})\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (openItems.length > 0) {
+          fullContext += `ACTION ITEMS - OPEN/IN PROGRESS (${openItems.length}):\n`;
+          openItems.forEach(item => {
+            const dueStr = item.dueDate ? ` Due: ${safeDate(item.dueDate)}` : "";
+            fullContext += `- [${item.status.toUpperCase()}] ${item.title}${item.assignee ? ` (Assigned: ${item.assignee})` : ""}${item.priority ? ` Priority: ${item.priority}` : ""}${dueStr}${item.notes ? ` - ${item.notes}` : ""}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (doneItems.length > 0) {
+          fullContext += `COMPLETED ITEMS (${doneItems.length}):\n`;
+          doneItems.forEach(item => {
+            fullContext += `- [DONE] ${item.title}${item.assignee ? ` (${item.assignee})` : ""}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        const teamMembers = Object.values(personStatusMap);
+        if (teamMembers.length > 0) {
+          fullContext += `TEAM STATUS (${teamMembers.length} members):\n`;
+          teamMembers.forEach(m => {
+            fullContext += `  ${m.name} (last seen: ${safeDate(m.lastSeen)}, meeting: ${m.meetingTitle}):\n`;
+            if (m.lastWorkingOn.length) fullContext += `    Working on: ${m.lastWorkingOn.join("; ")}\n`;
+            if (m.lastCompleted.length) fullContext += `    Completed: ${m.lastCompleted.join("; ")}\n`;
+            if (m.currentBlockers.length) fullContext += `    Blockers: ${m.currentBlockers.join("; ")}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        if (discussionHistory.length > 0) {
+          fullContext += `DISCUSSION HISTORY (${discussionHistory.length} sessions):\n`;
+          discussionHistory.forEach(d => {
+            fullContext += `\n--- ${d.meetingTitle} (${safeDate(d.date)}) ---\n${d.summary}\n`;
+          });
+          fullContext += "\n";
+        }
+
+        fullContext += "=== END SCRUM BOARD DATA ===\n\n";
+        fullContext += "Note: You have direct access to the scrum board data above. You can answer questions about action items, blockers, team status, and standup history without needing to see the screen.\n\n";
       }
 
       if (context) {
@@ -2883,6 +3986,219 @@ Format the response as JSON with these fields:
     } catch (error) {
       console.error("Update EVA settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // ============================================================
+  // Scrum Master API Routes
+  // ============================================================
+
+  app.get("/api/scrum-master/sessions/:meetingId", async (req: Request, res: Response) => {
+    try {
+      const session = await storage.getScrumMasterSessionByMeeting(req.params.meetingId);
+      if (!session) {
+        return res.status(404).json({ error: "No active scrum master session" });
+      }
+      res.json(session);
+    } catch (error) {
+      console.error("Get scrum master session error:", error);
+      res.status(500).json({ error: "Failed to get session" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/interventions", async (req: Request, res: Response) => {
+    try {
+      const session = await storage.getScrumMasterSessionByMeeting(req.params.meetingId);
+      if (!session) {
+        return res.json([]);
+      }
+      const interventions = await storage.getScrumMasterInterventionsBySession(session.id);
+      res.json(interventions);
+    } catch (error) {
+      console.error("Get interventions error:", error);
+      res.status(500).json({ error: "Failed to get interventions" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/blockers", async (req: Request, res: Response) => {
+    try {
+      const blockers = await storage.getScrumMasterBlockersByMeeting(req.params.meetingId);
+      res.json(blockers);
+    } catch (error) {
+      console.error("Get blockers error:", error);
+      res.status(500).json({ error: "Failed to get blockers" });
+    }
+  });
+
+  app.get("/api/scrum-master/sessions/:meetingId/actions", async (req: Request, res: Response) => {
+    try {
+      const actions = await storage.getScrumMasterActionsByMeeting(req.params.meetingId);
+      res.json(actions);
+    } catch (error) {
+      console.error("Get actions error:", error);
+      res.status(500).json({ error: "Failed to get actions" });
+    }
+  });
+
+  const updateBlockerSchema = z.object({
+    status: z.enum(["open", "resolved", "escalated", "wont_fix"]).optional(),
+    severity: z.enum(["critical", "high", "medium", "noise"]).optional(),
+    owner: z.string().min(1).optional(),
+    resolution: z.string().optional(),
+  });
+
+  app.patch("/api/scrum-master/blockers/:id", async (req: Request, res: Response) => {
+    try {
+      const parsed = updateBlockerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).message });
+      }
+      const updated = await storage.updateScrumMasterBlocker(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Blocker not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update blocker error:", error);
+      res.status(500).json({ error: "Failed to update blocker" });
+    }
+  });
+
+  const updateActionSchema = z.object({
+    status: z.enum(["open", "done", "overdue", "cancelled"]).optional(),
+    owner: z.string().min(1).optional(),
+    deadline: z.string().optional(),
+    description: z.string().min(1).optional(),
+  });
+
+  app.patch("/api/scrum-master/actions/:id", async (req: Request, res: Response) => {
+    try {
+      const parsed = updateActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).message });
+      }
+      const updated = await storage.updateScrumMasterAction(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Action not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update action error:", error);
+      res.status(500).json({ error: "Failed to update action" });
+    }
+  });
+
+  app.get("/api/scrum-master/history", async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string;
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+      const sessions = await storage.getScrumMasterSessionsByCreator(userId, 20);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Get session history error:", error);
+      res.status(500).json({ error: "Failed to get history" });
+    }
+  });
+
+  // ============================================================
+  // Scrum Meeting Records API Routes
+  // ============================================================
+
+  app.post("/api/meetings/:meetingId/meeting-record/generate", async (req: Request, res: Response) => {
+    try {
+      const { meetingId } = req.params;
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      const existing = await storage.getScrumMeetingRecordByMeeting(meetingId);
+      if (existing) {
+        return res.json(existing);
+      }
+
+      const { generateScrumMeetingRecord } = await import("./scrum-master");
+      const record = await generateScrumMeetingRecord(meetingId);
+      if (!record) {
+        return res.status(500).json({ error: "Failed to generate meeting record" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Generate meeting record error:", error);
+      res.status(500).json({ error: "Failed to generate meeting record" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/meeting-record", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getScrumMeetingRecordByMeeting(req.params.meetingId);
+      if (!record) {
+        return res.status(404).json({ error: "No meeting record found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get meeting record error:", error);
+      res.status(500).json({ error: "Failed to get meeting record" });
+    }
+  });
+
+  app.get("/api/meeting-records/:id", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getScrumMeetingRecord(req.params.id);
+      if (!record) {
+        return res.status(404).json({ error: "Meeting record not found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get meeting record by ID error:", error);
+      res.status(500).json({ error: "Failed to get meeting record" });
+    }
+  });
+
+  app.get("/api/meeting-records/series/:seriesId", async (req: Request, res: Response) => {
+    try {
+      const records = await storage.getScrumMeetingRecordsBySeries(req.params.seriesId);
+      res.json(records);
+    } catch (error) {
+      console.error("Get meeting records by series error:", error);
+      res.status(500).json({ error: "Failed to get meeting records" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/meeting-record/previous", async (req: Request, res: Response) => {
+    try {
+      const record = await storage.getPreviousScrumMeetingRecord(req.params.meetingId);
+      if (!record) {
+        return res.status(404).json({ error: "No previous meeting record found" });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error("Get previous meeting record error:", error);
+      res.status(500).json({ error: "Failed to get previous meeting record" });
+    }
+  });
+
+  app.post("/api/meetings/:meetingId/link", async (req: Request, res: Response) => {
+    try {
+      const { meetingId } = req.params;
+      const { previousMeetingId, meetingSeriesId } = req.body;
+      
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) {
+        return res.status(404).json({ error: "Meeting not found" });
+      }
+
+      const updateData: any = {};
+      if (previousMeetingId) updateData.previousMeetingId = previousMeetingId;
+      if (meetingSeriesId) updateData.meetingSeriesId = meetingSeriesId;
+
+      const updated = await storage.updateMeeting(meetingId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Link meeting error:", error);
+      res.status(500).json({ error: "Failed to link meeting" });
     }
   });
 
@@ -3092,6 +4408,280 @@ async function attemptLiveTranscriptFallback(
 }
 
 // Process recording transcription using AI
+async function processReanalysis(
+  recordingId: string,
+  videoUrl: string,
+  meetingId: string,
+  meetingTitle: string,
+  selectedOutputs: string[],
+  onProgress?: (status: string, step: string, progress: number) => void
+): Promise<void> {
+  const emit = onProgress || (() => {});
+  try {
+    console.log(`[Re-analysis] Starting for recording ${recordingId}, outputs: ${selectedOutputs.join(", ")}`);
+
+    emit("Downloading and transcribing video...", "transcribing", 10);
+    console.log(`[Re-analysis] Re-transcribing video from scratch...`);
+    const transcription = await transcribeRecording(videoUrl, meetingTitle, (status) => {
+      emit(status, "transcribing", 15);
+    });
+
+    if (!transcription.fullTranscript && transcription.segments.length === 0) {
+      console.error(`[Re-analysis] Video transcription returned empty for recording ${recordingId}`);
+      emit("Video transcription failed. Trying live transcript fallback...", "fallback", 20);
+      console.log(`[Re-analysis] Attempting live transcript fallback for recording ${recordingId}`);
+
+      const liveTranscripts = await storage.getTranscriptsByMeeting(meetingId);
+      const validSegments = liveTranscripts.filter(s => s.text && s.text.trim().length > 0);
+
+      if (validSegments.length === 0) {
+        console.error(`[Re-analysis] No live transcript segments available for fallback`);
+        throw new Error("Re-analysis failed - video transcription failed and no live transcripts available as fallback.");
+      }
+
+      console.log(`[Re-analysis] Found ${validSegments.length} live transcript segments for fallback`);
+      emit("Using live transcripts for re-analysis...", "fallback", 25);
+
+      const transcriptText = validSegments
+        .map(segment => `${segment.speaker}: ${segment.text}`)
+        .join('\n');
+
+      const startTime = validSegments.length > 0 ? new Date(validSegments[0].createdAt) : undefined;
+      const parsedSegments = validSegments.map(s => ({
+        speaker: s.speaker,
+        timestamp: formatTimestamp(new Date(s.createdAt), startTime),
+        text: s.text
+      }));
+
+      const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
+      console.log(`[Re-analysis] Cleared ${deletedTranscriptions} existing transcription(s)`);
+
+      const analysis = await analyzeTranscription(transcriptText, meetingTitle);
+      if (!analysis.summary || analysis.summary === "Error analyzing transcription.") {
+        throw new Error("Re-analysis failed - could not generate summary from live transcripts.");
+      }
+
+      const updateData: Record<string, any> = {
+        summary: analysis.summary,
+      };
+
+      await storage.createMeetingTranscription({
+        meetingId,
+        sessionId: recordingId,
+        fqn: `recording-${recordingId}`,
+        rawTranscript: transcriptText,
+        parsedTranscript: parsedSegments,
+        aiSummary: analysis.summary,
+        actionItems: analysis.actionItems,
+      });
+      console.log(`[Re-analysis] Fallback transcript saved`);
+
+      const totalSteps = selectedOutputs.filter(o => o !== "transcript").length;
+      let currentStep = 0;
+      const getProgress = () => 40 + Math.round((currentStep / Math.max(totalSteps, 1)) * 55);
+
+      if (selectedOutputs.includes("sop") || selectedOutputs.includes("document")) {
+        emit("Generating SOP document...", "generating_sop", getProgress());
+        const sopContent = await generateSOPFromTranscript(transcriptText, meetingTitle);
+        if (sopContent) {
+          updateData.sopContent = sopContent;
+          console.log(`[Re-analysis] SOP generated from fallback (${sopContent.length} chars)`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("cro")) {
+        emit("Generating CRO document...", "generating_cro", getProgress());
+        const chatMessages = parsedSegments.map(seg => ({
+          role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
+          content: seg.text,
+        }));
+        if (chatMessages.length < 3) {
+          chatMessages.push(
+            { role: "user", content: transcriptText.slice(0, 5000) },
+            { role: "ai", content: "Analyzing the discussion..." },
+            { role: "user", content: transcriptText.slice(5000, 10000) || "continued..." }
+          );
+        }
+        const croContent = await generateCROFromChatMessages(chatMessages, meetingTitle);
+        if (croContent) {
+          updateData.croContent = croContent;
+          console.log(`[Re-analysis] CRO generated from fallback (${croContent.length} chars)`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("flowchart")) {
+        emit("Generating flowchart...", "generating_flowchart", getProgress());
+        const sopForFlowchart = updateData.sopContent || (await storage.getRecording(recordingId))?.sopContent;
+        if (sopForFlowchart) {
+          const flowchartCode = await generateMermaidFlowchart(sopForFlowchart);
+          if (flowchartCode) {
+            updateData.flowchartCode = flowchartCode;
+            console.log(`[Re-analysis] Flowchart generated from fallback (${flowchartCode.length} chars)`);
+          }
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("meeting_notes")) {
+        emit("Generating meeting notes...", "generating_notes", getProgress());
+        const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcriptText.slice(0, 30000)}`;
+        const notesResponse = await analyzeChat(notesPrompt, "", false);
+        if (notesResponse?.message) {
+          await storage.createChatMessage({ meetingId, role: "ai", content: notesResponse.message });
+          console.log(`[Re-analysis] Meeting notes saved from fallback`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("meeting_record")) {
+        emit("Generating meeting record...", "generating_record", getProgress());
+        try {
+          const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
+          if (existingRecord) {
+            await storage.deleteScrumMeetingRecord(existingRecord.id);
+          }
+          const { generateScrumMeetingRecord } = await import("./scrum-master");
+          await generateScrumMeetingRecord(meetingId);
+          console.log(`[Re-analysis] Meeting record generated from fallback`);
+        } catch (recordError) {
+          console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
+        }
+        currentStep++;
+      }
+
+      emit("Saving results...", "saving", 95);
+      await storage.updateRecording(recordingId, updateData);
+      console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed via live transcript fallback`);
+      return;
+    }
+
+    emit("Transcription complete. Saving transcript...", "saving_transcript", 35);
+    console.log(`[Re-analysis] Transcription complete: ${transcription.segments.length} segments`);
+
+    const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
+    console.log(`[Re-analysis] Cleared ${deletedTranscriptions} existing transcription(s)`);
+
+    const updateData: Record<string, any> = {
+      summary: transcription.summary,
+    };
+
+    await storage.createMeetingTranscription({
+      meetingId,
+      sessionId: recordingId,
+      fqn: `recording-${recordingId}`,
+      rawTranscript: transcription.fullTranscript,
+      parsedTranscript: transcription.segments,
+      aiSummary: transcription.summary,
+      actionItems: transcription.actionItems,
+    });
+    console.log(`[Re-analysis] Transcript saved`);
+
+    const totalSteps = selectedOutputs.filter(o => o !== "transcript").length;
+    let currentStep = 0;
+    const getProgress = () => 40 + Math.round((currentStep / Math.max(totalSteps, 1)) * 55);
+
+    if (selectedOutputs.includes("sop") || selectedOutputs.includes("document")) {
+      emit("Generating SOP document...", "generating_sop", getProgress());
+      console.log(`[Re-analysis] Generating SOP document...`);
+      const sopContent = await generateSOPFromTranscript(transcription.fullTranscript, meetingTitle);
+      if (sopContent) {
+        updateData.sopContent = sopContent;
+        console.log(`[Re-analysis] SOP generated (${sopContent.length} chars)`);
+      }
+      currentStep++;
+    }
+
+    if (selectedOutputs.includes("cro")) {
+      emit("Generating CRO document...", "generating_cro", getProgress());
+      console.log(`[Re-analysis] Generating CRO document...`);
+      const chatMessages = transcription.segments.map(seg => ({
+        role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
+        content: seg.text,
+      }));
+      if (chatMessages.length < 3) {
+        chatMessages.push(
+          { role: "user", content: transcription.fullTranscript.slice(0, 5000) },
+          { role: "ai", content: "Analyzing the discussion..." },
+          { role: "user", content: transcription.fullTranscript.slice(5000, 10000) || "continued..." }
+        );
+      }
+      const croContent = await generateCROFromChatMessages(chatMessages, meetingTitle);
+      if (croContent) {
+        updateData.croContent = croContent;
+        console.log(`[Re-analysis] CRO generated (${croContent.length} chars)`);
+      }
+      currentStep++;
+    }
+
+    if (selectedOutputs.includes("flowchart")) {
+      emit("Generating flowchart...", "generating_flowchart", getProgress());
+      const sopForFlowchart = updateData.sopContent || (await storage.getRecording(recordingId))?.sopContent;
+      if (sopForFlowchart) {
+        console.log(`[Re-analysis] Generating flowchart...`);
+        const flowchartCode = await generateMermaidFlowchart(sopForFlowchart);
+        if (flowchartCode) {
+          updateData.flowchartCode = flowchartCode;
+          console.log(`[Re-analysis] Flowchart generated (${flowchartCode.length} chars)`);
+        }
+      }
+      currentStep++;
+    }
+
+    if (selectedOutputs.includes("meeting_notes")) {
+      emit("Generating meeting notes...", "generating_notes", getProgress());
+      console.log(`[Re-analysis] Generating meeting notes...`);
+      const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcription.fullTranscript.slice(0, 30000)}`;
+      const notesResponse = await analyzeChat(notesPrompt, "", false);
+      if (notesResponse?.message) {
+        await storage.createChatMessage({
+          meetingId,
+          role: "ai",
+          content: notesResponse.message,
+        });
+        console.log(`[Re-analysis] Meeting notes saved`);
+      }
+      currentStep++;
+    }
+
+    if (selectedOutputs.includes("meeting_record")) {
+      emit("Generating meeting record...", "generating_record", getProgress());
+      console.log(`[Re-analysis] Generating meeting record...`);
+      try {
+        const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
+        if (existingRecord) {
+          await storage.deleteScrumMeetingRecord(existingRecord.id);
+          console.log(`[Re-analysis] Cleared existing meeting record`);
+        }
+        const { generateScrumMeetingRecord } = await import("./scrum-master");
+        const record = await generateScrumMeetingRecord(meetingId);
+        if (record) {
+          console.log(`[Re-analysis] Meeting record generated`);
+        }
+      } catch (recordError) {
+        console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
+      }
+      currentStep++;
+    }
+
+    emit("Saving results...", "saving", 95);
+    await storage.updateRecording(recordingId, updateData);
+    console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed successfully`);
+  } catch (error) {
+    console.error(`[Re-analysis] Error for recording ${recordingId}:`, error);
+    const errorMessage = error instanceof Error ? error.message : "Re-analysis failed - an error occurred during processing.";
+    try {
+      await storage.updateRecording(recordingId, {
+        summary: errorMessage.startsWith("Re-analysis failed") ? errorMessage : `Re-analysis failed - ${errorMessage}`,
+      });
+    } catch (updateError) {
+      console.error(`[Re-analysis] Failed to update recording with error status:`, updateError);
+    }
+    throw error;
+  }
+}
+
 async function processRecordingTranscription(
   recordingId: string,
   videoUrl: string,
@@ -3191,5 +4781,26 @@ async function processRecordingTranscription(
         console.error(`Failed to update recording with error status:`, updateError);
       }
     }
+  }
+}
+
+async function backupRecordingVideo(recordingId: string, videoUrl: string) {
+  try {
+    console.log(`[VideoStorage] Starting backup for recording ${recordingId}`);
+    await storage.updateRecording(recordingId, { storageStatus: "downloading" });
+
+    const { storedVideoPath } = await downloadAndStoreVideo(videoUrl, recordingId);
+
+    await storage.updateRecording(recordingId, {
+      storedVideoPath,
+      storageStatus: "stored",
+    });
+
+    console.log(`[VideoStorage] Recording ${recordingId} backed up successfully to ${storedVideoPath}`);
+  } catch (error) {
+    console.error(`[VideoStorage] Failed to backup recording ${recordingId}:`, error);
+    await storage.updateRecording(recordingId, {
+      storageStatus: "failed",
+    }).catch(err => console.error(`[VideoStorage] Failed to update status:`, err));
   }
 }

@@ -3,13 +3,15 @@ import { useRoute, useLocation } from "wouter";
 import { JitsiMeeting } from "@/components/JitsiMeeting";
 import { EVAPanel } from "@/components/EVAPanel";
 import { EVAMeetingAssistant, type EvaMessage } from "@/components/EVAMeetingAssistant";
-import { type ElevenLabsAgentType } from "@/hooks/useElevenLabsAgent";
 import { SOPDocument } from "@/components/SOPDocument";
 import { SOPFlowchart } from "@/components/SOPFlowchart";
 import { LiveTranscriptPanel } from "@/components/LiveTranscriptPanel";
 import { AgentSelector } from "@/components/AgentSelector";
+import { ScrumBoard } from "@/components/ScrumBoard";
+import { ScrumMasterPanel, type TranscriptEvent } from "@/components/ScrumMasterPanel";
+import { AgentTeamDashboard } from "@/components/AgentTeamDashboard";
 import { useAuth } from "@/contexts/AuthContext";
-import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check } from "lucide-react";
+import { Video, ChevronLeft, FileText, GitGraph, Eye, EyeOff, PhoneOff, ScrollText, Brain, MessageSquare, ToggleLeft, ToggleRight, Play, Pause, Square, Link, Check, Minimize2, Maximize2, Monitor, Users } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -40,30 +42,17 @@ export default function MeetingRoom() {
   const [, setLocation] = useLocation();
   const roomId = params?.id || "demo-room";
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   
   const [isEVAPanelOpen, setIsEVAPanelOpen] = useState(true);
-  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro">("assistant");
+  const [evaPanelMode, setEvaPanelMode] = useState<"assistant" | "observe" | "cro" | "team">("assistant");
   const [isScreenObserverEnabled, setIsScreenObserverEnabled] = useState(false);
+  const [isAppObserving, setIsAppObserving] = useState(false);
   const [isCROEnabled, setIsCROEnabled] = useState(false);
-  const [voiceAgentType, setVoiceAgentType] = useState<ElevenLabsAgentType>('eva');
-  
-  // Handle voice agent type change and auto-toggle corresponding generator (1:1 relationship)
-  const handleVoiceAgentTypeChange = useCallback((type: ElevenLabsAgentType) => {
-    setVoiceAgentType(type);
-    // 1:1 relationship: enable the matching generator, disable the other
-    if (type === 'sop') {
-      setIsScreenObserverEnabled(true);
-      setIsCROEnabled(false);
-    } else if (type === 'cro_interview') {
-      setIsCROEnabled(true);
-      setIsScreenObserverEnabled(false);
-    } else {
-      // EVA agent - turn off both specialized generators
-      setIsScreenObserverEnabled(false);
-      setIsCROEnabled(false);
-    }
-  }, []);
+  const [isScrumMasterEnabled, setIsScrumMasterEnabled] = useState(false);
+  const [isScrumPanelMinimized, setIsScrumPanelMinimized] = useState(false);
+  const [scrumPanelView, setScrumPanelView] = useState<"live" | "board">("live");
+  const [latestScrumTranscript, setLatestScrumTranscript] = useState<TranscriptEvent | null>(null);
   const [croContent, setCroContent] = useState(`# CRO Agent - Business Discovery
 
 *Waiting to analyze interview/transcript...*
@@ -101,7 +90,30 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [meetingDuration, setMeetingDuration] = useState(0);
   const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
   const [wantsModerator, setWantsModerator] = useState(false);
+  const [moderatorCode, setModeratorCode] = useState("");
+  const [showModeratorCodeInput, setShowModeratorCodeInput] = useState(false);
+  const modCodeFromUrlRef = useRef<string | null>(null);
   const meetingStartTime = useRef(Date.now());
+  
+  // Read query parameters from URL
+  const followUpMeetingIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const modParam = urlParams.get('mod');
+    const followUpParam = urlParams.get('followUp');
+    if (modParam) {
+      modCodeFromUrlRef.current = modParam;
+      setModeratorCode(modParam);
+      setWantsModerator(true);
+    }
+    if (followUpParam) {
+      followUpMeetingIdRef.current = followUpParam;
+    }
+    // Clean URL without reloading the page
+    if (modParam || followUpParam) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
   const [sopContent, setSopContent] = useState(`# Live SOP Document
 
 *Waiting for screen observations...*
@@ -138,19 +150,46 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     return () => clearTimeout(timer);
   }, []);
 
-  const { data: meeting } = useQuery({
-    queryKey: ["meeting", roomId, user?.uid],
-    queryFn: () => api.getMeetingByRoomId(roomId, user?.uid),
+  // Wait for auth to resolve before fetching meeting to ensure proper ownership claim
+  const authReady = !authLoading;
+  
+  const { data: meeting, refetch: refetchMeeting } = useQuery({
+    queryKey: ["meeting", roomId, user?.uid, authReady],
+    queryFn: async () => {
+      console.log(`[Meeting Query] Fetching meeting for room: ${roomId}, userId: ${user?.uid || 'anonymous'}, authReady: ${authReady}`);
+      const result = await api.getMeetingByRoomId(roomId, user?.uid, followUpMeetingIdRef.current);
+      console.log(`[Meeting Query] Got meeting:`, result?.id, 'createdBy:', result?.createdBy);
+      return result;
+    },
+    // Only run when auth has finished loading
+    enabled: authReady,
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: 2,
   });
+  
+  // Refetch meeting when user becomes authenticated after initial load to claim ownership
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  const prevAuthReadyRef = useRef<boolean>(false);
+  useEffect(() => {
+    // If auth just became ready and we have a user, refetch to claim ownership
+    if (authReady && !prevAuthReadyRef.current && user?.uid) {
+      console.log('[Meeting Query] Auth ready with user, ensuring meeting ownership claim');
+      refetchMeeting();
+    }
+    // If user just became authenticated (was anonymous, now logged in), refetch to claim ownership
+    if (authReady && user?.uid && prevUserIdRef.current === undefined && meeting?.id && !meeting.createdBy) {
+      console.log('[Meeting Query] User authenticated, refetching to claim ownership');
+      refetchMeeting();
+    }
+    prevUserIdRef.current = user?.uid;
+    prevAuthReadyRef.current = authReady;
+  }, [user?.uid, meeting?.id, meeting?.createdBy, authReady, refetchMeeting]);
 
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
   });
-
-  // Check if current user is the meeting moderator (creator who opted to be moderator)
-  // User must be the creator AND have the moderator toggle ON to see AI features
-  const isModerator = user?.uid && meeting?.createdBy === user.uid && wantsModerator;
 
   // Initialize selectedAgents and generator states from meeting data when it loads
   // This handles: 1) API-created meetings with pre-selected agents, 2) Regular meetings without pre-selection
@@ -177,27 +216,62 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         if (selectedAgentTypes.some(t => t?.includes("cro"))) {
           setIsCROEnabled(true);
         }
+        // Check for Scrum Master agent
+        if (selectedAgentTypes.some(t => t === "scrum")) {
+          setIsScrumMasterEnabled(true);
+        }
       } else if (savedToggles) {
         // Returning to a meeting - restore from sessionStorage
-        const allAgentIds = agents.map(a => a.id);
-        setSelectedAgents(allAgentIds);
         try {
           const parsed = JSON.parse(savedToggles);
-          if (typeof parsed.screenObserver === 'boolean') {
-            setIsScreenObserverEnabled(parsed.screenObserver);
+          const restoredScreenObserver = typeof parsed.screenObserver === 'boolean' ? parsed.screenObserver : false;
+          const restoredCro = typeof parsed.cro === 'boolean' ? parsed.cro : false;
+          const restoredScrum = typeof parsed.scrumMaster === 'boolean' ? parsed.scrumMaster : false;
+          
+          setIsScreenObserverEnabled(restoredScreenObserver);
+          setIsCROEnabled(restoredCro);
+          setIsScrumMasterEnabled(restoredScrum);
+          
+          // Build selectedAgents based on restored toggle states
+          const evaAgent = agents.find(a => a.type === "eva");
+          const effectiveAgents: string[] = evaAgent ? [evaAgent.id] : [];
+          if (restoredScreenObserver) {
+            const sopAgent = agents.find(a => a.type === "sop");
+            if (sopAgent) effectiveAgents.push(sopAgent.id);
           }
-          if (typeof parsed.cro === 'boolean') {
-            setIsCROEnabled(parsed.cro);
+          if (restoredCro) {
+            const croAgent = agents.find(a => a.type?.toLowerCase().includes("cro"));
+            if (croAgent) effectiveAgents.push(croAgent.id);
+          }
+          if (restoredScrum) {
+            const scrumAgent = agents.find(a => a.type === "scrum");
+            if (scrumAgent) effectiveAgents.push(scrumAgent.id);
+          }
+          setSelectedAgents(effectiveAgents);
+          // Persist restored selection to server
+          if (meeting?.id) {
+            api.updateMeetingAgents(meeting.id, effectiveAgents).catch(() => {});
           }
         } catch (e) {
-          // ignore parse errors
+          // Fallback: just EVA assistant
+          const evaAgent = agents.find(a => a.type === "eva");
+          const fallbackAgents = evaAgent ? [evaAgent.id] : [];
+          setSelectedAgents(fallbackAgents);
+          if (meeting?.id) {
+            api.updateMeetingAgents(meeting.id, fallbackAgents).catch(() => {});
+          }
         }
       } else {
-        // New meeting without pre-selected agents - select all agents, disable generators
-        const allAgentIds = agents.map(a => a.id);
-        setSelectedAgents(allAgentIds);
+        // New meeting without pre-selected agents - only EVA assistant is always on
+        const evaAgent = agents.find(a => a.type === "eva");
+        const initialAgents = evaAgent ? [evaAgent.id] : [];
+        setSelectedAgents(initialAgents);
         setIsScreenObserverEnabled(false);
         setIsCROEnabled(false);
+        // Save initial agent selection to server
+        if (meeting?.id) {
+          api.updateMeetingAgents(meeting.id, initialAgents).catch(() => {});
+        }
       }
       
       setHasInitializedAgents(true);
@@ -213,8 +287,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, [agents, selectedAgents]);
 
   const { data: jaasToken } = useQuery({
-    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator],
+    queryKey: ["jaas-token", roomId, user?.uid, meeting?.id, wantsModerator, moderatorCode],
     queryFn: async () => {
+      console.log(`[JaaS Token Query] Requesting token with wantsModerator: ${wantsModerator}, hasModeratorCode: ${!!moderatorCode}`);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       
       // If user is authenticated, get their ID token for server-side verification
@@ -233,20 +308,33 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         body: JSON.stringify({
           roomName: `VideoAI-${roomId}`,
           userName: user?.displayName || "User",
-          wantsModerator: user ? wantsModerator : false,
+          wantsModerator: wantsModerator,
+          moderatorCode: moderatorCode || undefined,
         }),
       });
       if (!response.ok) {
         return null;
       }
-      return response.json();
+      const result = await response.json();
+      console.log(`[JaaS Token Query] Got token, moderator status in token context:`, result?.token?.substring(0, 50) + '...');
+      return result;
     },
     // Wait for meeting to be created/claimed before requesting token
     // This ensures createdBy is set before we check moderator status
     enabled: !!meeting?.id,
     retry: false,
-    staleTime: 1000 * 60 * 60 * 2,
   });
+
+  // Check if current user is the meeting moderator based on server-verified status
+  // The backend verifies: logged-in users must be the creator, non-logged-in users need correct moderator code
+  const isModerator = jaasToken?.isModerator === true;
+  
+  // Check if logged-in user is the meeting creator (they don't need a code)
+  const isCreator = user && meeting?.createdBy === user.uid;
+  
+  // Track if moderator code was rejected (user entered code but server didn't grant moderator)
+  // This applies to any user who is not the creator and entered a code
+  const moderatorCodeRejected = wantsModerator && !isCreator && moderatorCode.length > 0 && jaasToken && !jaasToken.isModerator;
 
   useEffect(() => {
     if (meeting?.id) {
@@ -270,10 +358,54 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       const key = `agent-toggles-${meeting.id}`;
       sessionStorage.setItem(key, JSON.stringify({
         screenObserver: isScreenObserverEnabled,
-        cro: isCROEnabled
+        cro: isCROEnabled,
+        scrumMaster: isScrumMasterEnabled
       }));
     }
-  }, [meeting?.id, isScreenObserverEnabled, isCROEnabled]);
+  }, [meeting?.id, isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled]);
+
+  const syncAgentsWithToggles = useCallback((overrides?: { screenObserver?: boolean; cro?: boolean; scrum?: boolean }) => {
+    if (!meeting?.id || agents.length === 0) return;
+    const sopEnabled = overrides?.screenObserver ?? isScreenObserverEnabled;
+    const croEnabled = overrides?.cro ?? isCROEnabled;
+    const scrumEnabled = overrides?.scrum ?? isScrumMasterEnabled;
+
+    const evaAgent = agents.find(a => a.type === "eva");
+    const effectiveAgents: string[] = evaAgent ? [evaAgent.id] : [];
+
+    if (sopEnabled) {
+      const sopAgent = agents.find(a => a.type === "sop");
+      if (sopAgent) effectiveAgents.push(sopAgent.id);
+    }
+    if (croEnabled) {
+      const croAgent = agents.find(a => a.type?.toLowerCase().includes("cro"));
+      if (croAgent) effectiveAgents.push(croAgent.id);
+    }
+    if (scrumEnabled) {
+      const scrumAgent = agents.find(a => a.type === "scrum");
+      if (scrumAgent) effectiveAgents.push(scrumAgent.id);
+    }
+
+    setSelectedAgents(effectiveAgents);
+    api.updateMeetingAgents(meeting.id, effectiveAgents).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["meeting", roomId] });
+    }).catch(() => {});
+  }, [meeting?.id, agents, isScreenObserverEnabled, isCROEnabled, isScrumMasterEnabled, queryClient, roomId]);
+
+  const handleScrumMasterToggle = useCallback((enabled: boolean) => {
+    setIsScrumMasterEnabled(enabled);
+    syncAgentsWithToggles({ scrum: enabled });
+  }, [syncAgentsWithToggles]);
+
+  const handleScreenObserverToggle = useCallback((enabled: boolean) => {
+    setIsScreenObserverEnabled(enabled);
+    syncAgentsWithToggles({ screenObserver: enabled });
+  }, [syncAgentsWithToggles]);
+
+  const handleCROToggle = useCallback((enabled: boolean) => {
+    setIsCROEnabled(enabled);
+    syncAgentsWithToggles({ cro: enabled });
+  }, [syncAgentsWithToggles]);
 
   
   const formatDuration = (seconds: number) => {
@@ -339,9 +471,11 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     try {
       stopObserving();
       stopScreenCapture();
+      stopAppCapture();
+      setIsAppObserving(false);
       
       const duration = formatDuration(meetingDuration);
-      const result = await api.endMeeting(meeting.id, sopContent, duration);
+      const result = await api.endMeeting(meeting.id, sopContent, duration, croContent);
       
       if (result.recording) {
         hasEndedMeetingRef.current = true;
@@ -395,15 +529,28 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     console.log(`[CRO] Updated to v${version || 1}`);
   }, []);
 
+  const handleEvaCommand = useCallback((action: string) => {
+    console.log(`[EVA Command] Received: ${action}`);
+    if (action === "start_app_observe") {
+      setIsAppObserving(true);
+    } else if (action === "stop_app_observe") {
+      setIsAppObserving(false);
+    }
+  }, []);
+
   const {
     isConnected: evaConnected,
     isObserving,
+    isTeamActiveRef,
     startObserving,
     stopObserving,
     startScreenCapture,
     stopScreenCapture,
+    startAppCapture,
+    stopAppCapture,
     sendTextMessage,
     sendTranscript,
+    wsRef,
   } = useEvaLive({
     meetingId: meeting?.id || "",
     onMessage: handleEvaMessage,
@@ -411,6 +558,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     onSopStatus: handleSopStatus,
     onCroUpdate: handleCroUpdate,
     onStatusChange: setEvaStatus,
+    onCommand: handleEvaCommand,
   });
 
   // Keep ref in sync with evaConnected for use in callbacks that may have stale closures
@@ -430,12 +578,25 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     console.log(`[CRO Generator] State changed to: ${croGeneratorState}`);
   }, [croGeneratorState]);
 
+
   useEffect(() => {
     if (!isScreenObserverEnabled && isObserving) {
       stopObserving();
       stopScreenCapture();
     }
   }, [isScreenObserverEnabled, isObserving, stopObserving, stopScreenCapture]);
+
+  const prevAppObservingRef = useRef(isAppObserving);
+  useEffect(() => {
+    if (isAppObserving && !prevAppObservingRef.current) {
+      startObserving();
+      startAppCapture();
+    } else if (!isAppObserving && prevAppObservingRef.current) {
+      stopObserving();
+      stopAppCapture();
+    }
+    prevAppObservingRef.current = isAppObserving;
+  }, [isAppObserving, startObserving, stopObserving, startAppCapture, stopAppCapture]);
 
 
   useEffect(() => {
@@ -566,6 +727,8 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         setHasJoinedMeeting(false);
         stopObserving();
         stopScreenCapture();
+        stopAppCapture();
+        setIsAppObserving(false);
         setIsJitsiTranscribing(false);
         setTranscriptStatus("idle");
       }
@@ -607,7 +770,15 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       return [...prev.filter(t => t.isFinal || t.speaker !== participant), transcriptEntry];
     });
     
-    // Save final transcripts to database and send to EVA for SOP/CRO generation
+    if (isScrumMasterEnabled) {
+      setLatestScrumTranscript({
+        text: text.trim(),
+        speaker: participant || "Unknown",
+        timestamp: Date.now(),
+        isFinal,
+      });
+    }
+
     if (isFinal && text.trim().length > 2) {
       try {
         await api.createTranscriptSegment(meeting.id, {
@@ -616,11 +787,12 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
           isFinal: true,
         });
         
-        // Send transcript to EVA for processing (SOP/CRO generation)
+        // Send transcript to EVA for processing (SOP/CRO generation or Agent Team)
         // Use refs to get latest status (callbacks may have stale closures)
         const isConnected = evaConnectedRef.current;
         const currentSopState = sopGeneratorStateRef.current;
         const currentCroState = croGeneratorStateRef.current;
+        const isTeamActive = isTeamActiveRef.current;
         
         // Check if either generator is in "running" state (active generation)
         const isSopGeneratorRunning = currentSopState === "running";
@@ -628,16 +800,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
         const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
         
-        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}`);
+        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}, teamActive=${isTeamActive}`);
         console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
         
-        if (isConnected && (shouldSendToSop || shouldSendToCro)) {
+        if (isConnected && (shouldSendToSop || shouldSendToCro || isTeamActive)) {
           if (shouldSendToSop) setIsSopUpdating(true);
           if (shouldSendToCro) setIsCroUpdating(true);
           sendTranscript(text.trim(), participant || "Unknown", shouldSendToSop, shouldSendToCro);
-          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}`);
+          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}, team=${isTeamActive}`);
         } else {
-          console.log(`[Transcript] NOT sent - EVA not connected or generators not running`);
+          console.log(`[Transcript] NOT sent - EVA not connected or no active processors`);
         }
       } catch (error) {
         console.error("Failed to save transcript segment:", error);
@@ -668,6 +840,9 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     if (isObserving) {
       stopObserving();
       stopScreenCapture();
+      stopAppCapture();
+      setIsAppObserving(false);
+      setSopGeneratorState("stopped");
       addSystemMessage("Screen Observer stopped.");
     } else {
       if (!isScreenObserverEnabled) {
@@ -675,6 +850,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         return;
       }
       startObserving();
+      setSopGeneratorState("running");
       
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
@@ -686,7 +862,19 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon again to try sharing your screen.");
         stopObserving();
+        setSopGeneratorState("stopped");
       }
+    }
+  };
+
+  const toggleAppObservation = () => {
+    if (isAppObserving) {
+      setIsAppObserving(false);
+      addSystemMessage("App observation stopped.");
+    } else {
+      if (!evaConnected) return;
+      setIsAppObserving(true);
+      addSystemMessage("EVA is now observing the app view directly - no screen sharing needed.");
     }
   };
 
@@ -697,6 +885,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     }
     if (!isObserving) {
       startObserving();
+      setSopGeneratorState("running");
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
           video: { frameRate: 1 } 
@@ -707,8 +896,17 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         console.log("Could not start screen capture:", e);
         addSystemMessage("Screen capture was cancelled. Click the eye icon to try sharing your screen.");
         stopObserving();
+        setSopGeneratorState("stopped");
       }
     }
+  };
+  
+  const handleStopObservation = () => {
+    stopObserving();
+    stopScreenCapture();
+    stopAppCapture();
+    setIsAppObserving(false);
+    setSopGeneratorState("stopped");
   };
 
   return (
@@ -772,34 +970,54 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                  selectedAgents={selectedAgents}
                  onAgentsChange={setSelectedAgents}
                  isScreenObserverEnabled={isScreenObserverEnabled}
-                 onScreenObserverChange={setIsScreenObserverEnabled}
+                 onScreenObserverChange={handleScreenObserverToggle}
                  isCROEnabled={isCROEnabled}
-                 onCROChange={setIsCROEnabled}
+                 onCROChange={handleCROToggle}
+                 isScrumMasterEnabled={isScrumMasterEnabled}
+                 onScrumMasterChange={handleScrumMasterToggle}
                />
              )}
              {hasJoinedMeeting && evaConnected && isModerator && (
-               <Button
-                 size="sm"
-                 variant={isObserving ? "destructive" : "default"}
-                 onClick={isObserving ? () => {
-                   stopObserving();
-                   stopScreenCapture();
-                 } : handleStartObservation}
-                 className="gap-1.5"
-                 data-testid="button-observation-toggle"
-               >
-                 {isObserving ? (
-                   <>
-                     <EyeOff className="w-4 h-4" />
-                     <span className="hidden sm:inline">Stop Observing</span>
-                   </>
-                 ) : (
-                   <>
-                     <Eye className="w-4 h-4" />
-                     <span className="hidden sm:inline">Start Observing</span>
-                   </>
-                 )}
-               </Button>
+               <div className="flex gap-1">
+                 <Button
+                   size="sm"
+                   variant={isObserving && !isAppObserving ? "destructive" : "default"}
+                   onClick={isObserving && !isAppObserving ? handleStopObservation : handleStartObservation}
+                   className="gap-1.5"
+                   data-testid="button-observation-toggle"
+                 >
+                   {isObserving && !isAppObserving ? (
+                     <>
+                       <EyeOff className="w-4 h-4" />
+                       <span className="hidden sm:inline">Stop Screen</span>
+                     </>
+                   ) : (
+                     <>
+                       <Eye className="w-4 h-4" />
+                       <span className="hidden sm:inline">Share Screen</span>
+                     </>
+                   )}
+                 </Button>
+                 <Button
+                   size="sm"
+                   variant={isAppObserving ? "destructive" : "outline"}
+                   onClick={toggleAppObservation}
+                   className="gap-1.5"
+                   data-testid="button-app-observe-toggle"
+                 >
+                   {isAppObserving ? (
+                     <>
+                       <EyeOff className="w-4 h-4" />
+                       <span className="hidden sm:inline">Stop App View</span>
+                     </>
+                   ) : (
+                     <>
+                       <Monitor className="w-4 h-4" />
+                       <span className="hidden sm:inline">Observe App</span>
+                     </>
+                   )}
+                 </Button>
+               </div>
              )}
              {hasJoinedMeeting && isModerator && (
                <div className={`bg-card/50 border px-3 py-1.5 rounded-full flex items-center gap-2 ${
@@ -824,27 +1042,46 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
         <div className="flex-1 p-4 relative flex gap-4 overflow-hidden">
           <div className={`flex-1 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 relative`}>
-             <JitsiMeeting 
-               key={`jitsi-${roomId}-${jaasToken?.token?.substring(0, 20) || 'no-token'}`}
-               roomName={`VideoAI-${roomId}`}
-               displayName="User"
-               onApiReady={handleJitsiApiReady}
-               onTranscriptionReceived={handleTranscriptionReceived}
-               className="bg-zinc-900"
-               jwt={jaasToken?.token}
-               appId={jaasToken?.appId}
-               roomId={roomId}
-             />
+             {/* Only render Jitsi once we have a valid token - this ensures moderator JWT is ready */}
+             {jaasToken?.token ? (
+               <JitsiMeeting 
+                 key={`jitsi-${roomId}-${jaasToken.isModerator ? 'mod' : 'user'}-${jaasToken.token.slice(-8)}`}
+                 roomName={`VideoAI-${roomId}`}
+                 displayName="User"
+                 onApiReady={handleJitsiApiReady}
+                 onTranscriptionReceived={handleTranscriptionReceived}
+                 className="bg-zinc-900"
+                 jwt={jaasToken.token}
+                 appId={jaasToken.appId}
+                 roomId={roomId}
+               />
+             ) : (
+               <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                 <div className="text-center">
+                   <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+                   <p className="text-muted-foreground">Preparing meeting room...</p>
+                 </div>
+               </div>
+             )}
              
-             {/* Moderator toggle overlay - shows before joining for authenticated users */}
-             {user && !hasJoinedMeeting && (
+             {/* Moderator toggle overlay - shows before joining for all users */}
+             {!hasJoinedMeeting && (
                <div className="absolute bottom-4 left-4 z-20">
-                 <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg">
+                 <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg min-w-[240px]">
                    <div className="flex items-center gap-3">
                      <Switch
                        id="moderator-toggle"
                        checked={wantsModerator}
-                       onCheckedChange={setWantsModerator}
+                       onCheckedChange={(checked) => {
+                         setWantsModerator(checked);
+                         // Show code input when non-logged-in user toggles moderator on
+                         if (checked && !user) {
+                           setShowModeratorCodeInput(true);
+                         } else if (!checked) {
+                           setShowModeratorCodeInput(false);
+                           setModeratorCode("");
+                         }
+                       }}
                        data-testid="switch-moderator"
                      />
                      <label 
@@ -855,14 +1092,49 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                      </label>
                    </div>
                    <p className="text-xs text-muted-foreground mt-1">
-                     Moderators can control meeting settings and recording
+                     Moderators can control meeting settings and AI features
                    </p>
+                   
+                   {/* Moderator code input - shows for anyone who is not the meeting creator when toggle is on */}
+                   {wantsModerator && !isCreator && (
+                     <div className="mt-3 pt-3 border-t border-border">
+                       <label 
+                         htmlFor="moderator-code" 
+                         className="text-xs text-muted-foreground block mb-1.5"
+                       >
+                         Enter moderator code:
+                       </label>
+                       <input
+                         type="password"
+                         id="moderator-code"
+                         value={moderatorCode}
+                         onChange={(e) => setModeratorCode(e.target.value)}
+                         placeholder="Enter code"
+                         className={`w-full px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 ${
+                           moderatorCodeRejected 
+                             ? 'border-red-500 focus:ring-red-500' 
+                             : 'border-border focus:ring-purple-500'
+                         }`}
+                         data-testid="input-moderator-code"
+                       />
+                       {moderatorCodeRejected ? (
+                         <p className="text-xs text-red-500 mt-1.5">
+                           Invalid moderator code. Please check and try again.
+                         </p>
+                       ) : (
+                         <p className="text-xs text-muted-foreground mt-1.5">
+                           Get this code from the meeting organizer
+                         </p>
+                       )}
+                     </div>
+                   )}
                  </div>
                </div>
              )}
           </div>
 
-          {meeting?.id && hasJoinedMeeting && isModerator && (
+          {/* Live SOP Panel - visible to all participants */}
+          {meeting?.id && hasJoinedMeeting && (
             <div 
               className={`
                 transition-all duration-500 ease-in-out transform origin-right
@@ -872,53 +1144,75 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
             >
               {/* Panel header with mode tabs */}
               <div className="bg-muted/30 border-b">
-                {/* Mode tabs - show Screen Observer tab only if SOP Agent is enabled */}
-                <div className="flex bg-background/50">
-                  <button
-                    onClick={() => setEvaPanelMode("assistant")}
-                    className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                      evaPanelMode === "assistant" 
-                        ? "bg-background text-foreground border-b-2 border-purple-500" 
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    data-testid="button-eva-mode-assistant"
-                  >
-                    <MessageSquare className="w-3 h-3 inline mr-1" />
-                    Meeting Assistant
-                  </button>
-                  {isScreenObserverEnabled && (
+                {/* Mode tabs - Moderators see full controls, participants see read-only SOP */}
+                {isModerator ? (
+                  <div className="flex bg-background/50">
                     <button
-                      onClick={() => setEvaPanelMode("observe")}
+                      onClick={() => setEvaPanelMode("assistant")}
                       className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                        evaPanelMode === "observe" 
-                          ? "bg-background text-foreground border-b-2 border-blue-500" 
+                        evaPanelMode === "assistant" 
+                          ? "bg-background text-foreground border-b-2 border-purple-500" 
                           : "text-muted-foreground hover:text-foreground"
                       }`}
-                      data-testid="button-eva-mode-observe"
+                      data-testid="button-eva-mode-assistant"
                     >
-                      <FileText className="w-3 h-3 inline mr-1" />
-                      SOP
+                      <MessageSquare className="w-3 h-3 inline mr-1" />
+                      Meeting Assistant
                     </button>
-                  )}
-                  {isCROEnabled && (
+                    {isScreenObserverEnabled && (
+                      <button
+                        onClick={() => setEvaPanelMode("observe")}
+                        className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                          evaPanelMode === "observe" 
+                            ? "bg-background text-foreground border-b-2 border-blue-500" 
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid="button-eva-mode-observe"
+                      >
+                        <FileText className="w-3 h-3 inline mr-1" />
+                        SOP
+                      </button>
+                    )}
+                    {isCROEnabled && (
+                      <button
+                        onClick={() => setEvaPanelMode("cro")}
+                        className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
+                          evaPanelMode === "cro" 
+                            ? "bg-background text-foreground border-b-2 border-green-500" 
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid="button-eva-mode-cro"
+                      >
+                        <FileText className="w-3 h-3 inline mr-1" />
+                        CRO Generator
+                      </button>
+                    )}
                     <button
-                      onClick={() => setEvaPanelMode("cro")}
+                      onClick={() => setEvaPanelMode("team")}
                       className={`flex-1 py-2.5 px-3 text-xs font-medium transition-colors ${
-                        evaPanelMode === "cro" 
-                          ? "bg-background text-foreground border-b-2 border-green-500" 
+                        evaPanelMode === "team" 
+                          ? "bg-background text-foreground border-b-2 border-purple-500" 
                           : "text-muted-foreground hover:text-foreground"
                       }`}
-                      data-testid="button-eva-mode-cro"
+                      data-testid="button-eva-mode-team"
                     >
-                      <FileText className="w-3 h-3 inline mr-1" />
-                      CRO Generator
+                      <Users className="w-3 h-3 inline mr-1" />
+                      Agent Team
                     </button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center bg-background/50 py-2.5 px-3">
+                    <FileText className="w-3 h-3 inline mr-1 text-blue-500" />
+                    <span className="text-xs font-medium text-blue-500">Live SOP Document</span>
+                    {isSopUpdating && (
+                      <span className="ml-2 w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    )}
+                  </div>
+                )}
               </div>
               
-              {/* Show content based on selected mode */}
-              {evaPanelMode === "assistant" && (
+              {/* Moderator view - full controls */}
+              {isModerator && evaPanelMode === "assistant" && (
                 <EVAMeetingAssistant
                   meetingId={meeting.id}
                   meetingTitle={meeting.title}
@@ -929,20 +1223,26 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       setEvaPanelMode("observe");
                     }
                   }}
+                  onStartAppObserve={() => {
+                    if (!isAppObserving) {
+                      if (evaConnected) {
+                        setIsAppObserving(true);
+                        addSystemMessage("EVA is now observing the app view.");
+                      } else {
+                        addSystemMessage("EVA is not connected yet. Please wait for the connection.");
+                      }
+                    }
+                  }}
                   currentSopContent={sopContent}
                   messages={evaMessages}
                   setMessages={setEvaMessages}
-                  voiceAgentType={voiceAgentType}
-                  onVoiceAgentTypeChange={handleVoiceAgentTypeChange}
                   sendTranscript={sendTranscript}
                   isCroEnabled={isCROEnabled}
                   isSopEnabled={isScreenObserverEnabled}
-                  autoStartVoice={!!(meeting.selectedAgents && meeting.selectedAgents.length > 0)}
-                  hasJoinedMeeting={hasJoinedMeeting}
                 />
               )}
               
-              {evaPanelMode === "observe" && isScreenObserverEnabled && (
+              {isModerator && evaPanelMode === "observe" && isScreenObserverEnabled && (
                 <EVAPanel 
                   meetingId={meeting.id}
                   messages={displayMessages}
@@ -952,16 +1252,43 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   isObserving={isObserving}
                   evaStatus={evaStatus}
                   onStartObservation={handleStartObservation}
-                  onStopObservation={() => {
-                    stopObserving();
-                    stopScreenCapture();
-                  }}
+                  onStopObservation={handleStopObservation}
                   sopContent={sopContent}
                   onSopContentChange={setSopContent}
                   isSopUpdating={isSopUpdating}
                   className="h-[calc(100%-120px)]"
                   generatorState={sopGeneratorState}
                   onGeneratorStateChange={setSopGeneratorState}
+                />
+              )}
+              
+              {/* Participant view - read-only SOP */}
+              {!isModerator && (
+                <div className="h-[calc(100%-120px)] flex flex-col p-4 overflow-y-auto">
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-blue-500" />
+                      <span className="text-xs text-blue-500">
+                        {isSopUpdating ? "SOP is being updated..." : "Viewing live SOP from moderator"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-muted/30 rounded-lg p-4 overflow-y-auto">
+                    <div className="prose prose-sm prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {sopContent}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {evaPanelMode === "team" && (
+                <AgentTeamDashboard
+                  meetingId={meeting.id}
+                  ws={wsRef.current}
+                  isConnected={evaConnected}
+                  className="h-[calc(100%-120px)]"
                 />
               )}
               
@@ -1062,6 +1389,83 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                   </div>
                 </div>
               )}
+
+            </div>
+          )}
+
+          {isScrumMasterEnabled && meeting?.id && hasJoinedMeeting && (
+            <div 
+              className={`
+                transition-all duration-300 ease-in-out transform origin-right
+                ${isScrumPanelMinimized ? 'w-[48px]' : 'w-[360px]'}
+                rounded-2xl overflow-hidden shadow-xl border border-indigo-500/20 bg-card
+              `}
+            >
+              {isScrumPanelMinimized ? (
+                <div className="h-full flex flex-col items-center py-3 gap-2">
+                  <button
+                    onClick={() => setIsScrumPanelMinimized(false)}
+                    className="p-2 rounded-lg hover:bg-indigo-500/10 text-indigo-400 transition-colors"
+                    data-testid="button-expand-scrum-panel"
+                    title="Expand Scrum Board"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                  <span className="text-[10px] font-medium text-indigo-400 [writing-mode:vertical-lr] tracking-wider">
+                    SCRUM BOARD
+                  </span>
+                </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-indigo-500/20">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setScrumPanelView("live")}
+                        className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                          scrumPanelView === "live"
+                            ? "bg-indigo-500/20 text-indigo-400"
+                            : "text-muted-foreground hover:text-indigo-400"
+                        }`}
+                        data-testid="btn-scrum-view-live"
+                      >
+                        Live Agent
+                      </button>
+                      <button
+                        onClick={() => setScrumPanelView("board")}
+                        className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                          scrumPanelView === "board"
+                            ? "bg-indigo-500/20 text-indigo-400"
+                            : "text-muted-foreground hover:text-indigo-400"
+                        }`}
+                        data-testid="btn-scrum-view-board"
+                      >
+                        Board
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setIsScrumPanelMinimized(true)}
+                      className="p-1.5 rounded-lg hover:bg-indigo-500/10 text-muted-foreground hover:text-indigo-400 transition-colors"
+                      data-testid="button-minimize-scrum-panel"
+                      title="Minimize Scrum Panel"
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className={scrumPanelView === "live" ? "flex-1 overflow-auto flex flex-col" : "hidden"}>
+                    <ScrumMasterPanel
+                      meetingId={meeting.id}
+                      className="flex-1 overflow-auto border-0 rounded-none shadow-none"
+                      latestTranscript={latestScrumTranscript}
+                    />
+                  </div>
+                  <div className={scrumPanelView === "board" ? "flex-1 overflow-auto flex flex-col" : "hidden"}>
+                    <ScrumBoard
+                      meetingId={meeting.id}
+                      className="flex-1 overflow-auto"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1139,7 +1543,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
               </TooltipProvider>
             )}
 
-            {hasJoinedMeeting && isModerator && (
+            {hasJoinedMeeting && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1153,7 +1557,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                       <Brain className="h-5 w-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle EVA Assistant</TooltipContent>
+                  <TooltipContent>{isModerator ? "Toggle EVA Assistant" : "Toggle Live SOP"}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

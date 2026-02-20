@@ -26,10 +26,12 @@ export const api = {
     return response.json();
   },
 
-  async getMeetingByRoomId(roomId: string, userId?: string): Promise<Meeting> {
-    const url = userId 
-      ? `${API_BASE}/meetings/room/${roomId}?userId=${encodeURIComponent(userId)}`
-      : `${API_BASE}/meetings/room/${roomId}`;
+  async getMeetingByRoomId(roomId: string, userId?: string, followUp?: string): Promise<Meeting> {
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (followUp) params.set('followUp', followUp);
+    const queryStr = params.toString();
+    const url = `${API_BASE}/meetings/room/${roomId}${queryStr ? `?${queryStr}` : ''}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch meeting by room ID");
     return response.json();
@@ -90,6 +92,16 @@ export const api = {
     return response.json();
   },
 
+  async getOrCreateShareToken(recordingId: string): Promise<string> {
+    const response = await fetch(`${API_BASE}/recordings/${recordingId}/share-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to generate share token");
+    const data = await response.json();
+    return data.shareToken;
+  },
+
   async deleteRecording(id: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE}/recordings/${id}`, {
       method: "DELETE",
@@ -103,6 +115,41 @@ export const api = {
       method: "POST",
     });
     if (!response.ok) throw new Error("Failed to start transcription");
+    return response.json();
+  },
+
+  async backupRecordingVideo(id: string): Promise<{ message: string }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/backup-video`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("Failed to start video backup");
+    return response.json();
+  },
+
+  async uploadRecordingVideo(id: string, file: File): Promise<{ message: string; storedVideoPath: string }> {
+    const formData = new FormData();
+    formData.append("video", file);
+    const response = await fetch(`${API_BASE}/recordings/${id}/upload-video`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) throw new Error("Failed to upload video");
+    return response.json();
+  },
+
+  async getBackupStatus(id: string): Promise<{ storageStatus: string; storedVideoPath: string | null; originalVideoUrl: string | null; hasVideo: boolean }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/backup-status`);
+    if (!response.ok) throw new Error("Failed to get backup status");
+    return response.json();
+  },
+
+  async reanalyzeRecording(id: string, outputs: string[]): Promise<{ success: boolean; message: string; recordingId: string; selectedOutputs: string[] }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/reanalyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputs }),
+    });
+    if (!response.ok) throw new Error("Failed to start re-analysis");
     return response.json();
   },
 
@@ -151,11 +198,11 @@ export const api = {
   },
 
   // End meeting and create recording
-  async endMeeting(meetingId: string, sopContent?: string, duration?: string): Promise<{ recording: Recording; summary: string }> {
+  async endMeeting(meetingId: string, sopContent?: string, duration?: string, croContent?: string): Promise<{ recording: Recording; summary: string }> {
     const response = await fetch(`${API_BASE}/meetings/${meetingId}/end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sopContent, duration }),
+      body: JSON.stringify({ sopContent, croContent, duration }),
     });
     if (!response.ok) throw new Error("Failed to end meeting");
     return response.json();
@@ -199,6 +246,13 @@ export const api = {
       body: JSON.stringify({ selectedAgents }),
     });
     if (!response.ok) throw new Error("Failed to update meeting agents");
+    return response.json();
+  },
+
+  // Scrum Board - previous standup data
+  async getPreviousStandup(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/previous-standup`);
+    if (!response.ok) throw new Error("Failed to fetch previous standup");
     return response.json();
   },
 
@@ -256,6 +310,9 @@ export const api = {
     eventType?: "event" | "task";
     isAllDay?: boolean;
     recurrence?: "none" | "daily" | "weekly" | "monthly" | "annually" | "weekdays" | "custom";
+    selectedAgents?: string[];
+    previousMeetingId?: string;
+    meetingSeriesId?: string;
   }): Promise<{
     success: boolean;
     meeting: Meeting;
@@ -397,4 +454,71 @@ export const api = {
     }
     return response.json();
   },
+
+  async getScrumSummary(meetingId: string): Promise<{ summary: any; actionItems: any[] }> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/scrum-summary`);
+    if (!response.ok) throw new Error("No scrum summary found");
+    return response.json();
+  },
+
+  async getScrumActionItems(meetingId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/scrum-action-items`);
+    if (!response.ok) throw new Error("Failed to fetch action items");
+    return response.json();
+  },
+
+  async updateScrumActionItem(id: string, data: any): Promise<any> {
+    const response = await fetch(`${API_BASE}/scrum-action-items/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to update action item");
+    return response.json();
+  },
+
+  async deleteScrumActionItem(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/scrum-action-items/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("Failed to delete action item");
+  },
+
+  async generateMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to generate meeting record");
+    return response.json();
+  },
+
+  async getMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record`);
+    if (!response.ok) throw new Error("No meeting record found");
+    return response.json();
+  },
+
+  async getMeetingRecordsBySeries(seriesId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/meeting-records/series/${seriesId}`);
+    if (!response.ok) throw new Error("Failed to fetch series records");
+    return response.json();
+  },
+
+  async getPreviousMeetingRecord(meetingId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/meeting-record/previous`);
+    if (!response.ok) throw new Error("No previous meeting record found");
+    return response.json();
+  },
+
+  async linkMeeting(meetingId: string, data: { previousMeetingId?: string; meetingSeriesId?: string }): Promise<any> {
+    const response = await fetch(`${API_BASE}/meetings/${meetingId}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to link meeting");
+    return response.json();
+  },
+
 };
