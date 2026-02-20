@@ -564,12 +564,12 @@ export async function transcribeRecording(
     console.log(`Starting AI transcription for recording: ${meetingTitle || "Unknown"}`);
     console.log(`Video URL: ${videoUrl.substring(0, 100)}...`);
 
-    const prompt = `You are a professional transcription service. Transcribe this video/audio recording with the following requirements:
+    const prompt = `You are a professional transcription service specializing in multi-speaker meeting transcription. Transcribe this video/audio recording with the following requirements:
 
-1. **Speaker Identification**: Identify different speakers as "Speaker 1", "Speaker 2", etc. If you can identify names from context, use those instead.
+1. **Speaker Identification (CRITICAL)**: Listen carefully for ALL distinct voices/speakers in the recording. Identify each unique speaker as "Speaker 1", "Speaker 2", "Speaker 3", etc. Pay close attention to voice pitch, tone, accent, and speaking style differences to distinguish speakers. If you can identify names from context (e.g., someone addressing another by name), use those names instead. Most meetings have 2 or more speakers — ensure you identify ALL of them.
 2. **Timestamps**: Provide approximate timestamps in MM:SS format for each speaker change.
 3. **Accuracy**: Transcribe speech accurately, including filler words only if significant.
-4. **Structure**: Format as a natural conversation with clear speaker labels.
+4. **Structure**: Format as a natural conversation with clear speaker labels. Each time the speaker changes, create a new segment.
 
 After the transcription, also provide:
 - A concise summary (2-3 paragraphs)

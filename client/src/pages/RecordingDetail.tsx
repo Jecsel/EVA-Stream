@@ -95,6 +95,12 @@ export default function RecordingDetail() {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showNewMeetingPopover, setShowNewMeetingPopover] = useState(false);
   const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+  const [showReanalyzeResults, setShowReanalyzeResults] = useState(false);
+  const [reanalyzeResultsData, setReanalyzeResultsData] = useState<{
+    outputs: Record<string, string>;
+    startedAt?: string;
+    completedAt?: string;
+  } | null>(null);
   const [reanalyzeOutputs, setReanalyzeOutputs] = useState<Record<string, boolean>>({
     document: true,
     sop: true,
@@ -297,6 +303,8 @@ export default function RecordingDetail() {
     error?: string;
     errorCode?: ReanalysisErrorCode;
     outputs?: Record<string, ReanalysisOutputStatus>;
+    startedAt?: string;
+    updatedAt?: string;
   };
 
   const [reanalyzeStatus, setReanalyzeStatus] = useState<ReanalyzeStatusState>({ active: false });
@@ -311,15 +319,35 @@ export default function RecordingDetail() {
         toast.success("Re-analysis completed!");
         setReanalyzeSuccessFlash(true);
         setTimeout(() => setReanalyzeSuccessFlash(false), 2500);
-        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
-        queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
-        queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
-        queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
+        const resultsPayload = {
+          outputs: data.outputs ?? {},
+          startedAt: data.startedAt,
+          completedAt: data.updatedAt,
+        };
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["recording", recordingId] }),
+          queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] }),
+          queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] }),
+          queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] }),
+        ]).then(() => {
+          setReanalyzeResultsData(resultsPayload);
+          setShowReanalyzeResults(true);
+        });
       } else if (data.errorCode !== "partial_failure") {
         toast.error(data.status || "Re-analysis failed");
       } else {
         toast.warning("Re-analysis partially completed — some outputs failed.");
-        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+        const resultsPayload = {
+          outputs: data.outputs ?? {},
+          startedAt: data.startedAt,
+          completedAt: data.updatedAt,
+        };
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["recording", recordingId] }),
+        ]).then(() => {
+          setReanalyzeResultsData(resultsPayload);
+          setShowReanalyzeResults(true);
+        });
       }
       setTimeout(() => setReanalyzeStatus({ active: false }), 6000);
     }
@@ -1826,6 +1854,150 @@ export default function RecordingDetail() {
                   Re-analyze
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReanalyzeResults} onOpenChange={setShowReanalyzeResults}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              Re-analysis Results
+            </DialogTitle>
+            <DialogDescription>
+              {reanalyzeResultsData?.startedAt && reanalyzeResultsData?.completedAt
+                ? `Completed in ${Math.round((new Date(reanalyzeResultsData.completedAt).getTime() - new Date(reanalyzeResultsData.startedAt).getTime()) / 1000)}s`
+                : "Re-analysis completed"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {reanalyzeResultsData?.outputs && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                {Object.entries(reanalyzeResultsData.outputs).map(([key, status]) => {
+                  const outputLabels: Record<string, string> = {
+                    transcript: "Transcript", document: "Document", sop: "SOP",
+                    cro: "CRO", flowchart: "Flowchart", meeting_notes: "Meeting Notes", meeting_record: "Meeting Record",
+                  };
+                  const outputIcons: Record<string, React.ReactNode> = {
+                    transcript: <FileText className="w-4 h-4" />,
+                    document: <FileText className="w-4 h-4" />,
+                    sop: <ClipboardList className="w-4 h-4" />,
+                    cro: <Target className="w-4 h-4" />,
+                    flowchart: <GitBranch className="w-4 h-4" />,
+                    meeting_notes: <ScrollText className="w-4 h-4" />,
+                    meeting_record: <ClipboardList className="w-4 h-4" />,
+                  };
+                  const statusStyle = status === "done"
+                    ? { border: 'border-green-500/20 bg-green-500/5', color: 'text-green-500', icon: <CheckCircle className="w-4 h-4 text-green-500" /> }
+                    : status === "error"
+                    ? { border: 'border-destructive/20 bg-destructive/5', color: 'text-destructive', icon: <AlertCircle className="w-4 h-4 text-destructive" /> }
+                    : { border: 'border-border bg-muted/30', color: 'text-muted-foreground', icon: <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" /> };
+                  return (
+                    <div
+                      key={key}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${statusStyle.border}`}
+                      data-testid={`reanalyze-result-${key}`}
+                    >
+                      <div className={statusStyle.color}>
+                        {outputIcons[key] || <FileText className="w-4 h-4" />}
+                      </div>
+                      <span className="flex-1 text-sm font-medium">{outputLabels[key] ?? key}</span>
+                      {statusStyle.icon}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {recording?.summary && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Updated Summary</h4>
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {recording.summary.length > 500 ? recording.summary.slice(0, 500) + "..." : recording.summary}
+                  </div>
+                </div>
+              )}
+
+              {recording?.sopContent && (reanalyzeResultsData?.outputs?.sop === "done" || reanalyzeResultsData?.outputs?.document === "done") && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    SOP Highlights
+                  </h4>
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {recording.sopContent.length > 800 ? recording.sopContent.slice(0, 800) + "\n\n*...view full SOP in the SOP tab*" : recording.sopContent}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {recording?.croContent && reanalyzeResultsData?.outputs?.cro === "done" && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
+                    <Target className="w-3.5 h-3.5" />
+                    CRO Preview
+                  </h4>
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {recording.croContent.length > 500 ? recording.croContent.slice(0, 500) + "\n\n*...view full CRO in the CRO tab*" : recording.croContent}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {(() => {
+                const transcriptions = jaasTranscriptions || [];
+                const latestTranscription = transcriptions.length > 0 ? transcriptions[transcriptions.length - 1] : null;
+                const actionItems = latestTranscription?.actionItems;
+                if (!actionItems || !Array.isArray(actionItems) || actionItems.length === 0) return null;
+                return (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-muted-foreground">Action Items</h4>
+                    <ul className="space-y-1">
+                      {(actionItems as string[]).slice(0, 5).map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm">
+                          <Check className="w-3.5 h-3.5 mt-0.5 text-green-500 shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                      {actionItems.length > 5 && (
+                        <li className="text-xs text-muted-foreground pl-5">+{actionItems.length - 5} more</li>
+                      )}
+                    </ul>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const transcriptions = jaasTranscriptions || [];
+                const latestTranscription = transcriptions.length > 0 ? transcriptions[transcriptions.length - 1] : null;
+                const segments = latestTranscription?.parsedTranscript;
+                if (!segments || !Array.isArray(segments) || segments.length === 0) return null;
+                const speakers = [...new Set(segments.map((s: any) => s.speaker))];
+                return (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-muted-foreground">Speakers Detected</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {speakers.map((speaker, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary">
+                          <User className="w-3 h-3" />
+                          {speaker as string}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{segments.length} transcript segments</p>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setShowReanalyzeResults(false)} data-testid="button-close-reanalyze-results">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
