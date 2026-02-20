@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertMeetingSchema, insertRecordingSchema, insertChatMessageSchema, insertTranscriptSegmentSchema, insertUserSchema, updateUserSchema, insertPromptSchema, updatePromptSchema, insertAgentSchema, updateAgentSchema, insertMeetingNoteSchema, insertMeetingFileSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateSOPFromTranscript, generateDecisionBasedSOP } from "./gemini";
+import { analyzeChat, analyzeTranscription, generateMermaidFlowchart, transcribeRecording, generateSOPFromTranscript, generateDecisionBasedSOP, generateCROFromChatMessages } from "./gemini";
 import { getAuthUrl, getTokensFromCode, createCalendarEvent, getUserInfo, validateOAuthState } from "./google-calendar";
 import { textToSpeech, textToSpeechStream, getVoices, getDefaultVoiceId } from "./elevenlabs";
 import jwt from "jsonwebtoken";
@@ -687,6 +687,56 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete recording" });
+    }
+  });
+
+  app.post("/api/recordings/:id/reanalyze", async (req, res) => {
+    try {
+      const recording = await storage.getRecording(req.params.id);
+      if (!recording) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+
+      if (!recording.videoUrl) {
+        res.status(400).json({ error: "Recording has no video URL to re-analyze" });
+        return;
+      }
+
+      const { outputs } = req.body;
+      if (!outputs || !Array.isArray(outputs) || outputs.length === 0) {
+        res.status(400).json({ error: "No output types selected" });
+        return;
+      }
+
+      const validOutputs = ["document", "sop", "cro", "flowchart", "transcript", "meeting_notes", "meeting_record"];
+      const selectedOutputs = outputs.filter((o: string) => validOutputs.includes(o));
+
+      if (selectedOutputs.length === 0) {
+        res.status(400).json({ error: "No valid output types selected" });
+        return;
+      }
+
+      const meeting = await storage.getMeeting(recording.meetingId);
+      const meetingTitle = meeting?.title || recording.title || "Meeting";
+
+      processReanalysis(
+        recording.id,
+        recording.videoUrl,
+        recording.meetingId,
+        meetingTitle,
+        selectedOutputs
+      ).catch(err => console.error("Re-analysis error:", err));
+
+      res.json({
+        success: true,
+        message: "Re-analysis started. Results will be available shortly.",
+        recordingId: recording.id,
+        selectedOutputs,
+      });
+    } catch (error) {
+      console.error("Failed to start re-analysis:", error);
+      res.status(500).json({ error: "Failed to start re-analysis" });
     }
   });
 
@@ -4153,6 +4203,134 @@ async function attemptLiveTranscriptFallback(
 }
 
 // Process recording transcription using AI
+async function processReanalysis(
+  recordingId: string,
+  videoUrl: string,
+  meetingId: string,
+  meetingTitle: string,
+  selectedOutputs: string[]
+): Promise<void> {
+  try {
+    console.log(`[Re-analysis] Starting for recording ${recordingId}, outputs: ${selectedOutputs.join(", ")}`);
+
+    console.log(`[Re-analysis] Re-transcribing video from scratch...`);
+    const transcription = await transcribeRecording(videoUrl, meetingTitle);
+
+    if (!transcription.fullTranscript && transcription.segments.length === 0) {
+      console.error(`[Re-analysis] Video transcription returned empty for recording ${recordingId}`);
+      await storage.updateRecording(recordingId, {
+        summary: "Re-analysis failed - no audio detected or unable to process video.",
+      });
+      return;
+    }
+
+    console.log(`[Re-analysis] Transcription complete: ${transcription.segments.length} segments`);
+
+    const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
+    console.log(`[Re-analysis] Cleared ${deletedTranscriptions} existing transcription(s)`);
+
+    const updateData: Record<string, any> = {
+      summary: transcription.summary,
+    };
+
+    await storage.createMeetingTranscription({
+      meetingId,
+      sessionId: recordingId,
+      fqn: `recording-${recordingId}`,
+      rawTranscript: transcription.fullTranscript,
+      parsedTranscript: transcription.segments,
+      aiSummary: transcription.summary,
+      actionItems: transcription.actionItems,
+    });
+    console.log(`[Re-analysis] Transcript saved`);
+
+    if (selectedOutputs.includes("sop") || selectedOutputs.includes("document")) {
+      console.log(`[Re-analysis] Generating SOP document...`);
+      const sopContent = await generateSOPFromTranscript(transcription.fullTranscript, meetingTitle);
+      if (sopContent) {
+        updateData.sopContent = sopContent;
+        console.log(`[Re-analysis] SOP generated (${sopContent.length} chars)`);
+      }
+    }
+
+    if (selectedOutputs.includes("cro")) {
+      console.log(`[Re-analysis] Generating CRO document...`);
+      const chatMessages = transcription.segments.map(seg => ({
+        role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
+        content: seg.text,
+      }));
+      if (chatMessages.length < 3) {
+        chatMessages.push(
+          { role: "user", content: transcription.fullTranscript.slice(0, 5000) },
+          { role: "ai", content: "Analyzing the discussion..." },
+          { role: "user", content: transcription.fullTranscript.slice(5000, 10000) || "continued..." }
+        );
+      }
+      const croContent = await generateCROFromChatMessages(chatMessages, meetingTitle);
+      if (croContent) {
+        updateData.croContent = croContent;
+        console.log(`[Re-analysis] CRO generated (${croContent.length} chars)`);
+      }
+    }
+
+    if (selectedOutputs.includes("flowchart")) {
+      const sopForFlowchart = updateData.sopContent || (await storage.getRecording(recordingId))?.sopContent;
+      if (sopForFlowchart) {
+        console.log(`[Re-analysis] Generating flowchart...`);
+        const flowchartCode = await generateMermaidFlowchart(sopForFlowchart);
+        if (flowchartCode) {
+          updateData.flowchartCode = flowchartCode;
+          console.log(`[Re-analysis] Flowchart generated (${flowchartCode.length} chars)`);
+        }
+      }
+    }
+
+    if (selectedOutputs.includes("meeting_notes")) {
+      console.log(`[Re-analysis] Generating meeting notes...`);
+      const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcription.fullTranscript.slice(0, 30000)}`;
+      const notesResponse = await analyzeChat(notesPrompt, "", false);
+      if (notesResponse?.message) {
+        await storage.createChatMessage({
+          meetingId,
+          role: "ai",
+          content: notesResponse.message,
+        });
+        console.log(`[Re-analysis] Meeting notes saved`);
+      }
+    }
+
+    if (selectedOutputs.includes("meeting_record")) {
+      console.log(`[Re-analysis] Generating meeting record...`);
+      try {
+        const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
+        if (existingRecord) {
+          await storage.deleteScrumMeetingRecord(existingRecord.id);
+          console.log(`[Re-analysis] Cleared existing meeting record`);
+        }
+        const { generateScrumMeetingRecord } = await import("./scrum-master");
+        const record = await generateScrumMeetingRecord(meetingId);
+        if (record) {
+          console.log(`[Re-analysis] Meeting record generated`);
+        }
+      } catch (recordError) {
+        console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
+      }
+    }
+
+    await storage.updateRecording(recordingId, updateData);
+    console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed successfully`);
+  } catch (error) {
+    console.error(`[Re-analysis] Error for recording ${recordingId}:`, error);
+    try {
+      await storage.updateRecording(recordingId, {
+        summary: "Re-analysis failed - an error occurred during processing.",
+      });
+    } catch (updateError) {
+      console.error(`[Re-analysis] Failed to update recording with error status:`, updateError);
+    }
+  }
+}
+
 async function processRecordingTranscription(
   recordingId: string,
   videoUrl: string,

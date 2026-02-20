@@ -3,12 +3,13 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -92,6 +93,16 @@ export default function RecordingDetail() {
   const [shareLinkCopied, setShareLinkCopied] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showNewMeetingPopover, setShowNewMeetingPopover] = useState(false);
+  const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+  const [reanalyzeOutputs, setReanalyzeOutputs] = useState<Record<string, boolean>>({
+    document: true,
+    sop: true,
+    cro: true,
+    flowchart: true,
+    transcript: true,
+    meeting_notes: true,
+    meeting_record: true,
+  });
   const queryClient = useQueryClient();
 
   const { data: recording, isLoading, error } = useQuery({
@@ -219,6 +230,31 @@ export default function RecordingDetail() {
       const message = error.message || "Failed to generate flowchart";
       toast.error(message + ". Please try again.");
       console.error("Flowchart generation error:", error);
+    },
+  });
+
+  const reanalyzeMutation = useMutation({
+    mutationFn: async () => {
+      const selectedOutputs = Object.entries(reanalyzeOutputs)
+        .filter(([, selected]) => selected)
+        .map(([key]) => key);
+      if (selectedOutputs.length === 0) {
+        throw new Error("Please select at least one output type");
+      }
+      return api.reanalyzeRecording(recordingId, selectedOutputs);
+    },
+    onSuccess: () => {
+      setShowReanalyzeModal(false);
+      toast.success("Re-analysis started! The video will be re-transcribed and selected outputs will be regenerated. This may take a few minutes.");
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+        queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
+        queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
+        queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
+      }, 10000);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to start re-analysis. Please try again.");
     },
   });
 
@@ -501,6 +537,16 @@ export default function RecordingDetail() {
               </div>
             </PopoverContent>
           </Popover>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowReanalyzeModal(true)}
+            disabled={!recording?.videoUrl || reanalyzeMutation.isPending}
+            data-testid="button-reanalyze"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+            {reanalyzeMutation.isPending ? "Re-analyzing..." : "Re-analyze"}
+          </Button>
           <Button 
             variant="outline" 
             size="sm" 
@@ -1301,6 +1347,80 @@ export default function RecordingDetail() {
           documentContext: recording?.sopContent || undefined,
         }}
       />
+
+      <Dialog open={showReanalyzeModal} onOpenChange={setShowReanalyzeModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-primary" />
+              Re-analyze Recording
+            </DialogTitle>
+            <DialogDescription>
+              The video will be re-transcribed from scratch using AI. Select the outputs you want to regenerate from the new transcription.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {[
+              { key: "document", label: "Document", icon: FileText, description: "General document from transcript" },
+              { key: "sop", label: "SOP", icon: FileText, description: "Standard Operating Procedure" },
+              { key: "cro", label: "CRO", icon: Target, description: "Core Role Objective" },
+              { key: "flowchart", label: "Flowchart", icon: GitBranch, description: "Process flow diagram" },
+              { key: "transcript", label: "Transcript", icon: MessageSquare, description: "Full meeting transcript" },
+              { key: "meeting_notes", label: "Meeting Notes", icon: ClipboardList, description: "Structured meeting notes" },
+              { key: "meeting_record", label: "Meeting Record", icon: ScrollText, description: "Complete meeting record" },
+            ].map(({ key, label, icon: Icon, description }) => (
+              <label
+                key={key}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                data-testid={`reanalyze-option-${key}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={reanalyzeOutputs[key]}
+                  onChange={(e) =>
+                    setReanalyzeOutputs((prev) => ({
+                      ...prev,
+                      [key]: e.target.checked,
+                    }))
+                  }
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="text-xs text-muted-foreground">{description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowReanalyzeModal(false)}
+              data-testid="button-cancel-reanalyze"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => reanalyzeMutation.mutate()}
+              disabled={reanalyzeMutation.isPending || Object.values(reanalyzeOutputs).every((v) => !v)}
+              data-testid="button-confirm-reanalyze"
+            >
+              {reanalyzeMutation.isPending ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Re-analyze
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

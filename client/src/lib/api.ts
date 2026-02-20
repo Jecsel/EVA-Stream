@@ -118,6 +118,16 @@ export const api = {
     return response.json();
   },
 
+  async reanalyzeRecording(id: string, outputs: string[]): Promise<{ success: boolean; message: string; recordingId: string; selectedOutputs: string[] }> {
+    const response = await fetch(`${API_BASE}/recordings/${id}/reanalyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputs }),
+    });
+    if (!response.ok) throw new Error("Failed to start re-analysis");
+    return response.json();
+  },
+
   async generateFlowchart(sopContent: string, meetingId?: string): Promise<{ mermaidCode: string }> {
     const response = await fetch(`${API_BASE}/generate-flowchart`, {
       method: "POST",

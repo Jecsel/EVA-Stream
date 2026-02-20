@@ -270,6 +270,7 @@ export interface IStorage {
   getLatestScrumMeetingRecordForSeries(meetingSeriesId: string, excludeMeetingId?: string): Promise<ScrumMeetingRecord | undefined>;
   getPreviousScrumMeetingRecord(meetingId: string): Promise<ScrumMeetingRecord | undefined>;
   updateScrumMeetingRecord(id: string, data: Partial<InsertScrumMeetingRecord>): Promise<ScrumMeetingRecord | undefined>;
+  deleteScrumMeetingRecord(id: string): Promise<boolean>;
 
   // Agent Team Tasks
   createAgentTeamTask(task: InsertAgentTeamTask): Promise<AgentTeamTask>;
@@ -1314,6 +1315,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(scrumMeetingRecords.id, id))
       .returning();
     return result;
+  }
+
+  async deleteScrumMeetingRecord(id: string): Promise<boolean> {
+    const result = await db.delete(scrumMeetingRecords).where(eq(scrumMeetingRecords.id, id)).returning();
+    return result.length > 0;
   }
 
   // Agent Team Tasks
