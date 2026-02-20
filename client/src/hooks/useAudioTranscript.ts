@@ -14,7 +14,7 @@ interface UseAudioTranscriptOptions {
   chunkIntervalMs?: number;
 }
 
-const CHUNK_INTERVAL = 5000;
+const CHUNK_INTERVAL = 15000;
 
 export function useAudioTranscript({
   meetingId,

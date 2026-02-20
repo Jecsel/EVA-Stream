@@ -123,11 +123,36 @@ export const recordings = pgTable("recordings", {
   storedVideoPath: text("stored_video_path"),
   shareToken: text("share_token").unique(),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  reanalysisJob: jsonb("reanalysis_job").$type<{
+    status: string;
+    step: string;
+    progress: number;
+    completed: boolean;
+    error?: string;
+    errorCode?: "no_audio" | "network_error" | "processing_error" | "partial_failure";
+    outputs: Record<string, "pending" | "in_progress" | "done" | "error">;
+    startedAt: string;
+    updatedAt: string;
+  } | null>(),
 });
+
+const reanalysisJobSchema = z.object({
+  status: z.string(),
+  step: z.string(),
+  progress: z.number(),
+  completed: z.boolean(),
+  error: z.string().optional(),
+  errorCode: z.enum(["no_audio", "network_error", "processing_error", "partial_failure"]).optional(),
+  outputs: z.record(z.enum(["pending", "in_progress", "done", "error"])),
+  startedAt: z.string(),
+  updatedAt: z.string(),
+}).nullable();
 
 export const insertRecordingSchema = createInsertSchema(recordings).omit({
   id: true,
   recordedAt: true,
+}).extend({
+  reanalysisJob: reanalysisJobSchema.optional(),
 });
 
 export type InsertRecording = z.infer<typeof insertRecordingSchema>;

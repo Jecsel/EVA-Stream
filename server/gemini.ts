@@ -551,169 +551,182 @@ export async function transcribeRecording(
 ): Promise<RecordingTranscript> {
   const emitStatus = onStatus || (() => {});
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      return {
-        fullTranscript: "",
-        segments: [],
-        summary: "Transcription unavailable (no API key configured).",
-        actionItems: [],
-        keyTopics: [],
-      };
-    }
-
-    console.log(`Starting AI transcription for recording: ${meetingTitle || "Unknown"}`);
+    console.log(`Starting Whisper transcription for recording: ${meetingTitle || "Unknown"}`);
     console.log(`Video URL: ${videoUrl.substring(0, 100)}...`);
 
-    const prompt = `You are a professional transcription service. Transcribe this video/audio recording with the following requirements:
-
-1. **Speaker Identification**: Identify different speakers as "Speaker 1", "Speaker 2", etc. If you can identify names from context, use those instead.
-2. **Timestamps**: Provide approximate timestamps in MM:SS format for each speaker change.
-3. **Accuracy**: Transcribe speech accurately, including filler words only if significant.
-4. **Structure**: Format as a natural conversation with clear speaker labels.
-
-After the transcription, also provide:
-- A concise summary (2-3 paragraphs)
-- Key action items mentioned
-- Main topics discussed
-
-Meeting Title: ${meetingTitle || "Unknown Meeting"}
-
-Respond in the following JSON format:
-{
-  "fullTranscript": "Complete transcription as continuous text with speaker labels",
-  "segments": [
-    {"speaker": "Speaker 1", "timestamp": "00:00", "text": "What they said..."},
-    {"speaker": "Speaker 2", "timestamp": "00:15", "text": "Their response..."}
-  ],
-  "summary": "Meeting summary...",
-  "actionItems": ["Action 1", "Action 2"],
-  "keyTopics": ["Topic 1", "Topic 2"]
-}`;
-
-    const mimeType = videoUrl.includes(".mp4") ? "video/mp4" : 
-                     videoUrl.includes(".webm") ? "video/webm" :
-                     videoUrl.includes(".mp3") ? "audio/mpeg" :
-                     videoUrl.includes(".wav") ? "audio/wav" :
-                     "video/mp4";
-
-    let response;
-    
-    emitStatus("Downloading video recording...");
-    console.log(`[Transcription] Downloading video to temp file...`);
-    
     const fs = await import("fs");
     const os = await import("os");
     const path = await import("path");
-    
-    const ext = mimeType.includes("mp4") ? ".mp4" : mimeType.includes("webm") ? ".webm" : ".mp4";
-    const tempFilePath = path.join(os.tmpdir(), `gemini-upload-${Date.now()}${ext}`);
-    
+    const { spawn } = await import("child_process");
+
+    const tempVideoPath = path.join(os.tmpdir(), `whisper-video-${Date.now()}.mp4`);
+    const tempAudioPath = path.join(os.tmpdir(), `whisper-audio-${Date.now()}.wav`);
+    const tempChunkDir = path.join(os.tmpdir(), `whisper-chunks-${Date.now()}`);
+    const tempFiles = [tempVideoPath, tempAudioPath];
+
     try {
+      // Step 1: Download video
+      emitStatus("Downloading video recording...");
+      console.log(`[Transcription] Downloading video...`);
+
       const videoResponse = await fetch(videoUrl);
       if (!videoResponse.ok) {
         throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
       }
-      
-      const arrayBuffer = await videoResponse.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      fs.writeFileSync(tempFilePath, buffer);
-      
-      const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(1);
+
+      const fileStream = fs.createWriteStream(tempVideoPath);
+      const reader = videoResponse.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to get response body reader");
+      }
+      let bytesWritten = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fileStream.write(Buffer.from(value));
+        bytesWritten += value.byteLength;
+      }
+      await new Promise<void>((resolve, reject) => {
+        fileStream.on('finish', resolve);
+        fileStream.on('error', reject);
+        fileStream.end();
+      });
+
+      const fileSizeMB = (bytesWritten / (1024 * 1024)).toFixed(1);
       console.log(`[Transcription] Video downloaded: ${fileSizeMB}MB`);
-      emitStatus(`Video downloaded (${fileSizeMB}MB). Uploading to AI service...`);
-      
-      const uploadedFile = await ai.files.upload({
-        file: tempFilePath,
-        config: { mimeType },
-      });
-      
-      console.log(`[Transcription] File uploaded to Gemini: ${uploadedFile.name}`);
-      emitStatus("Video uploaded. Waiting for AI processing...");
-      
-      let file = await ai.files.get({ name: uploadedFile.name! });
-      let pollAttempts = 0;
-      const maxPolls = 120;
-      
-      while (file.state === "PROCESSING" && pollAttempts < maxPolls) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        file = await ai.files.get({ name: uploadedFile.name! });
-        pollAttempts++;
-        if (pollAttempts % 5 === 0) {
-          emitStatus(`AI is processing video... (${pollAttempts * 3}s elapsed)`);
-        }
-      }
-      
-      if (file.state === "FAILED") {
-        throw new Error("Gemini video processing failed");
-      }
-      
-      if (file.state === "PROCESSING") {
-        throw new Error("Gemini video processing timed out");
-      }
-      
-      console.log(`[Transcription] File ready, state: ${file.state}`);
-      emitStatus("Transcribing video with AI...");
-      
-      const { createPartFromUri } = await import("@google/genai");
-      
-      response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          {
-            parts: [
-              createPartFromUri(file.uri!, mimeType),
-              { text: prompt },
-            ],
-          },
-        ],
-      });
-      
-      try {
-        await ai.files.delete({ name: uploadedFile.name! });
-        console.log(`[Transcription] Cleaned up uploaded file`);
-      } catch (cleanupErr) {
-        console.warn(`[Transcription] Failed to clean up uploaded file:`, cleanupErr);
-      }
-    } finally {
-      try {
-        if (fs.existsSync(tempFilePath)) {
-          fs.unlinkSync(tempFilePath);
-          console.log(`[Transcription] Cleaned up temp file`);
-        }
-      } catch (cleanupErr) {
-        console.warn(`[Transcription] Failed to clean up temp file:`, cleanupErr);
-      }
-    }
+      emitStatus(`Video downloaded (${fileSizeMB}MB). Extracting audio...`);
 
-    const text = response.text || "";
-    console.log(`Received transcription response: ${text.substring(0, 200)}...`);
-    emitStatus("Parsing transcription results...");
-    
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
+      // Step 2: Extract audio to WAV using ffmpeg
+      await new Promise<void>((resolve, reject) => {
+        const ffmpeg = spawn("ffmpeg", [
+          "-i", tempVideoPath,
+          "-vn",
+          "-f", "wav",
+          "-ar", "16000",
+          "-ac", "1",
+          "-acodec", "pcm_s16le",
+          "-y",
+          tempAudioPath,
+        ]);
+        ffmpeg.stderr.on("data", () => {});
+        ffmpeg.on("close", (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ffmpeg audio extraction failed with code ${code}`));
+        });
+        ffmpeg.on("error", reject);
+      });
+
+      if (!fs.existsSync(tempAudioPath)) {
+        throw new Error("Audio extraction failed - no output file");
+      }
+
+      const audioBuffer = fs.readFileSync(tempAudioPath);
+      const audioSizeMB = audioBuffer.length / (1024 * 1024);
+      console.log(`[Transcription] Audio extracted: ${audioSizeMB.toFixed(1)}MB`);
+      emitStatus(`Audio extracted (${audioSizeMB.toFixed(1)}MB). Transcribing with Whisper...`);
+
+      // Step 3: Transcribe with Whisper (chunk if > 24MB)
+      if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY && !process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
+        throw new Error("OpenAI API key not configured. Whisper transcription requires OpenAI credentials.");
+      }
+
+      const CHUNK_SIZE_MB = 24;
+      let fullWhisperTranscript = "";
+
+      if (audioSizeMB <= CHUNK_SIZE_MB) {
+        // Single chunk — send directly
+        const { speechToText, ensureCompatibleFormat } = await import('./replit_integrations/audio/client');
+        const { buffer: compatBuffer, format: compatFormat } = await ensureCompatibleFormat(audioBuffer);
+        fullWhisperTranscript = await speechToText(compatBuffer, compatFormat);
+        console.log(`[Transcription] Whisper transcription complete: ${fullWhisperTranscript.length} chars`);
+      } else {
+        // Split into chunks using ffmpeg
+        fs.mkdirSync(tempChunkDir, { recursive: true });
+        tempFiles.push(tempChunkDir);
+
+        const chunkDurationSec = Math.floor((CHUNK_SIZE_MB / audioSizeMB) * (audioBuffer.length / (16000 * 2)));
+        const safeDuration = Math.max(chunkDurationSec, 120);
+        console.log(`[Transcription] Audio too large (${audioSizeMB.toFixed(1)}MB), splitting into ${safeDuration}s chunks...`);
+        emitStatus(`Audio too large. Splitting into chunks for transcription...`);
+
+        await new Promise<void>((resolve, reject) => {
+          const ffmpeg = spawn("ffmpeg", [
+            "-i", tempAudioPath,
+            "-f", "segment",
+            "-segment_time", String(safeDuration),
+            "-c", "copy",
+            "-y",
+            path.join(tempChunkDir, "chunk_%03d.wav"),
+          ]);
+          ffmpeg.stderr.on("data", () => {});
+          ffmpeg.on("close", (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`ffmpeg chunk split failed with code ${code}`));
+          });
+          ffmpeg.on("error", reject);
+        });
+
+        const chunkFiles = fs.readdirSync(tempChunkDir)
+          .filter((f: string) => f.endsWith(".wav"))
+          .sort();
+        console.log(`[Transcription] Split into ${chunkFiles.length} chunks`);
+
+        const { speechToText } = await import('./replit_integrations/audio/client');
+        const transcriptParts: string[] = [];
+
+        for (let i = 0; i < chunkFiles.length; i++) {
+          emitStatus(`Transcribing chunk ${i + 1}/${chunkFiles.length}...`);
+          const chunkBuffer = fs.readFileSync(path.join(tempChunkDir, chunkFiles[i]));
+          const chunkText = await speechToText(chunkBuffer, "wav");
+          transcriptParts.push(chunkText);
+          console.log(`[Transcription] Chunk ${i + 1}/${chunkFiles.length}: ${chunkText.length} chars`);
+        }
+
+        fullWhisperTranscript = transcriptParts.join(" ");
+        console.log(`[Transcription] Combined Whisper transcript: ${fullWhisperTranscript.length} chars`);
+      }
+
+      if (!fullWhisperTranscript || fullWhisperTranscript.trim().length === 0) {
+        console.error(`[Transcription] Whisper returned empty transcript`);
         return {
-          fullTranscript: parsed.fullTranscript || "",
-          segments: Array.isArray(parsed.segments) ? parsed.segments : [],
-          summary: parsed.summary || "No summary generated.",
-          actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
-          keyTopics: Array.isArray(parsed.keyTopics) ? parsed.keyTopics : [],
+          fullTranscript: "",
+          segments: [],
+          summary: "Error transcribing recording.",
+          actionItems: [],
+          keyTopics: [],
         };
-      } catch (parseError) {
-        console.error("JSON parse error:", parseError);
       }
-    }
 
-    return {
-      fullTranscript: text,
-      segments: [{ speaker: "Speaker", timestamp: "00:00", text }],
-      summary: "Transcription complete.",
-      actionItems: [],
-      keyTopics: [],
-    };
+      emitStatus("Whisper transcription complete.");
+      console.log(`[Transcription] Whisper transcription complete. Returning transcript.`);
+
+      return {
+        fullTranscript: fullWhisperTranscript,
+        segments: [{ speaker: "Speaker", timestamp: "00:00", text: fullWhisperTranscript }],
+        summary: "Transcription complete.",
+        actionItems: [],
+        keyTopics: [],
+      };
+    } finally {
+      // Clean up all temp files
+      for (const f of tempFiles) {
+        try {
+          if (fs.existsSync(f)) {
+            const stat = fs.statSync(f);
+            if (stat.isDirectory()) {
+              fs.rmSync(f, { recursive: true, force: true });
+            } else {
+              fs.unlinkSync(f);
+            }
+          }
+        } catch (cleanupErr) {
+          console.warn(`[Transcription] Failed to clean up ${f}:`, cleanupErr);
+        }
+      }
+      console.log(`[Transcription] Cleaned up temp files`);
+    }
   } catch (error) {
-    console.error("Gemini recording transcription error:", error);
+    console.error("Whisper transcription error:", error);
     emitStatus("Transcription failed. Check video URL and try again.");
     return {
       fullTranscript: "",
