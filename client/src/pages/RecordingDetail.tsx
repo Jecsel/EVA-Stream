@@ -233,6 +233,57 @@ export default function RecordingDetail() {
     },
   });
 
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<{
+    active: boolean;
+    status?: string;
+    step?: string;
+    progress?: number;
+    completed?: boolean;
+    error?: string;
+  }>({ active: false });
+
+  useEffect(() => {
+    if (!recordingId) return;
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch(`/api/recordings/${recordingId}/reanalyze-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setReanalyzeStatus(data);
+        if (data.active && data.completed) {
+          if (!data.error) {
+            toast.success("Re-analysis completed!");
+            queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
+            queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
+            queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
+            queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
+          } else {
+            toast.error(data.status || "Re-analysis failed");
+          }
+          if (interval) clearInterval(interval);
+          setTimeout(() => {
+            if (!cancelled) setReanalyzeStatus({ active: false });
+          }, 5000);
+        }
+      } catch {
+      }
+    };
+
+    pollStatus();
+    interval = setInterval(pollStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [recordingId, meetingId, queryClient]);
+
+  const isReanalyzing = reanalyzeStatus.active && !reanalyzeStatus.completed;
+
   const reanalyzeMutation = useMutation({
     mutationFn: async () => {
       const selectedOutputs = Object.entries(reanalyzeOutputs)
@@ -245,13 +296,7 @@ export default function RecordingDetail() {
     },
     onSuccess: () => {
       setShowReanalyzeModal(false);
-      toast.success("Re-analysis started! The video will be re-transcribed and selected outputs will be regenerated. This may take a few minutes.");
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["recording", recordingId] });
-        queryClient.invalidateQueries({ queryKey: ["jaasTranscriptions", meetingId] });
-        queryClient.invalidateQueries({ queryKey: ["localTranscripts", meetingId] });
-        queryClient.invalidateQueries({ queryKey: ["chatMessages", meetingId] });
-      }, 10000);
+      setReanalyzeStatus({ active: true, status: "Starting re-analysis...", step: "starting", progress: 0, completed: false });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to start re-analysis. Please try again.");
@@ -541,11 +586,11 @@ export default function RecordingDetail() {
             variant="outline"
             size="sm"
             onClick={() => setShowReanalyzeModal(true)}
-            disabled={!recording?.videoUrl || reanalyzeMutation.isPending}
+            disabled={!recording?.videoUrl || reanalyzeMutation.isPending || isReanalyzing}
             data-testid="button-reanalyze"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
-            {reanalyzeMutation.isPending ? "Re-analyzing..." : "Re-analyze"}
+            <RefreshCw className={`w-4 h-4 mr-2 ${isReanalyzing || reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+            {isReanalyzing ? "Re-analyzing..." : reanalyzeMutation.isPending ? "Starting..." : "Re-analyze"}
           </Button>
           <Button 
             variant="outline" 
@@ -788,6 +833,35 @@ export default function RecordingDetail() {
         </div>
 
         {meetingId && <ScrumSummaryPanel meetingId={meetingId} />}
+
+        {reanalyzeStatus.active && (
+          <div className="mb-4 bg-card border border-border rounded-xl p-4" data-testid="reanalyze-status-banner">
+            <div className="flex items-center gap-3 mb-2">
+              <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
+              <div className="flex-1">
+                <div className="text-sm font-medium">
+                  {reanalyzeStatus.completed
+                    ? reanalyzeStatus.error
+                      ? "Re-analysis Failed"
+                      : "Re-analysis Complete"
+                    : "Re-analyzing Recording"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{reanalyzeStatus.status}</div>
+              </div>
+              {reanalyzeStatus.completed && !reanalyzeStatus.error && (
+                <Check className="w-5 h-5 text-green-500" />
+              )}
+            </div>
+            {!reanalyzeStatus.completed && reanalyzeStatus.progress != null && (
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${Math.max(reanalyzeStatus.progress, 3)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4">

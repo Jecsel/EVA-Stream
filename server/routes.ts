@@ -690,6 +690,8 @@ export async function registerRoutes(
     }
   });
 
+  const reanalysisStatus = new Map<string, { status: string; step: string; progress: number; completed: boolean; error?: string }>();
+
   app.post("/api/recordings/:id/reanalyze", async (req, res) => {
     try {
       const recording = await storage.getRecording(req.params.id);
@@ -717,16 +719,50 @@ export async function registerRoutes(
         return;
       }
 
+      const existingStatus = reanalysisStatus.get(recording.id);
+      if (existingStatus && !existingStatus.completed) {
+        res.status(409).json({ error: "Re-analysis is already in progress for this recording" });
+        return;
+      }
+
       const meeting = await storage.getMeeting(recording.meetingId);
       const meetingTitle = meeting?.title || recording.title || "Meeting";
+
+      reanalysisStatus.set(recording.id, {
+        status: "Starting re-analysis...",
+        step: "starting",
+        progress: 0,
+        completed: false,
+      });
 
       processReanalysis(
         recording.id,
         recording.videoUrl,
         recording.meetingId,
         meetingTitle,
-        selectedOutputs
-      ).catch(err => console.error("Re-analysis error:", err));
+        selectedOutputs,
+        (status: string, step: string, progress: number) => {
+          reanalysisStatus.set(recording.id, { status, step, progress, completed: false });
+        }
+      ).then(() => {
+        reanalysisStatus.set(recording.id, {
+          status: "Re-analysis completed successfully!",
+          step: "done",
+          progress: 100,
+          completed: true,
+        });
+        setTimeout(() => reanalysisStatus.delete(recording.id), 60000);
+      }).catch(err => {
+        console.error("Re-analysis error:", err);
+        reanalysisStatus.set(recording.id, {
+          status: "Re-analysis failed. Please try again.",
+          step: "error",
+          progress: 0,
+          completed: true,
+          error: err.message,
+        });
+        setTimeout(() => reanalysisStatus.delete(recording.id), 60000);
+      });
 
       res.json({
         success: true,
@@ -738,6 +774,15 @@ export async function registerRoutes(
       console.error("Failed to start re-analysis:", error);
       res.status(500).json({ error: "Failed to start re-analysis" });
     }
+  });
+
+  app.get("/api/recordings/:id/reanalyze-status", (req, res) => {
+    const status = reanalysisStatus.get(req.params.id);
+    if (!status) {
+      res.json({ active: false });
+      return;
+    }
+    res.json({ active: true, ...status });
   });
 
   // Trigger AI transcription for a recording
@@ -4208,22 +4253,29 @@ async function processReanalysis(
   videoUrl: string,
   meetingId: string,
   meetingTitle: string,
-  selectedOutputs: string[]
+  selectedOutputs: string[],
+  onProgress?: (status: string, step: string, progress: number) => void
 ): Promise<void> {
+  const emit = onProgress || (() => {});
   try {
     console.log(`[Re-analysis] Starting for recording ${recordingId}, outputs: ${selectedOutputs.join(", ")}`);
 
+    emit("Downloading and transcribing video...", "transcribing", 10);
     console.log(`[Re-analysis] Re-transcribing video from scratch...`);
-    const transcription = await transcribeRecording(videoUrl, meetingTitle);
+    const transcription = await transcribeRecording(videoUrl, meetingTitle, (status) => {
+      emit(status, "transcribing", 15);
+    });
 
     if (!transcription.fullTranscript && transcription.segments.length === 0) {
       console.error(`[Re-analysis] Video transcription returned empty for recording ${recordingId}`);
+      emit("Re-analysis failed - no audio detected.", "error", 0);
       await storage.updateRecording(recordingId, {
         summary: "Re-analysis failed - no audio detected or unable to process video.",
       });
       return;
     }
 
+    emit("Transcription complete. Saving transcript...", "saving_transcript", 35);
     console.log(`[Re-analysis] Transcription complete: ${transcription.segments.length} segments`);
 
     const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
@@ -4244,16 +4296,23 @@ async function processReanalysis(
     });
     console.log(`[Re-analysis] Transcript saved`);
 
+    const totalSteps = selectedOutputs.filter(o => o !== "transcript").length;
+    let currentStep = 0;
+    const getProgress = () => 40 + Math.round((currentStep / Math.max(totalSteps, 1)) * 55);
+
     if (selectedOutputs.includes("sop") || selectedOutputs.includes("document")) {
+      emit("Generating SOP document...", "generating_sop", getProgress());
       console.log(`[Re-analysis] Generating SOP document...`);
       const sopContent = await generateSOPFromTranscript(transcription.fullTranscript, meetingTitle);
       if (sopContent) {
         updateData.sopContent = sopContent;
         console.log(`[Re-analysis] SOP generated (${sopContent.length} chars)`);
       }
+      currentStep++;
     }
 
     if (selectedOutputs.includes("cro")) {
+      emit("Generating CRO document...", "generating_cro", getProgress());
       console.log(`[Re-analysis] Generating CRO document...`);
       const chatMessages = transcription.segments.map(seg => ({
         role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
@@ -4271,9 +4330,11 @@ async function processReanalysis(
         updateData.croContent = croContent;
         console.log(`[Re-analysis] CRO generated (${croContent.length} chars)`);
       }
+      currentStep++;
     }
 
     if (selectedOutputs.includes("flowchart")) {
+      emit("Generating flowchart...", "generating_flowchart", getProgress());
       const sopForFlowchart = updateData.sopContent || (await storage.getRecording(recordingId))?.sopContent;
       if (sopForFlowchart) {
         console.log(`[Re-analysis] Generating flowchart...`);
@@ -4283,9 +4344,11 @@ async function processReanalysis(
           console.log(`[Re-analysis] Flowchart generated (${flowchartCode.length} chars)`);
         }
       }
+      currentStep++;
     }
 
     if (selectedOutputs.includes("meeting_notes")) {
+      emit("Generating meeting notes...", "generating_notes", getProgress());
       console.log(`[Re-analysis] Generating meeting notes...`);
       const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcription.fullTranscript.slice(0, 30000)}`;
       const notesResponse = await analyzeChat(notesPrompt, "", false);
@@ -4297,9 +4360,11 @@ async function processReanalysis(
         });
         console.log(`[Re-analysis] Meeting notes saved`);
       }
+      currentStep++;
     }
 
     if (selectedOutputs.includes("meeting_record")) {
+      emit("Generating meeting record...", "generating_record", getProgress());
       console.log(`[Re-analysis] Generating meeting record...`);
       try {
         const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
@@ -4315,8 +4380,10 @@ async function processReanalysis(
       } catch (recordError) {
         console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
       }
+      currentStep++;
     }
 
+    emit("Saving results...", "saving", 95);
     await storage.updateRecording(recordingId, updateData);
     console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed successfully`);
   } catch (error) {

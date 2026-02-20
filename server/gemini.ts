@@ -546,8 +546,10 @@ export interface RecordingTranscript {
 
 export async function transcribeRecording(
   videoUrl: string,
-  meetingTitle?: string
+  meetingTitle?: string,
+  onStatus?: (status: string) => void
 ): Promise<RecordingTranscript> {
+  const emitStatus = onStatus || (() => {});
   try {
     if (!process.env.GEMINI_API_KEY) {
       return {
@@ -588,33 +590,105 @@ Respond in the following JSON format:
   "keyTopics": ["Topic 1", "Topic 2"]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          parts: [
-            {
-              fileData: {
-                fileUri: videoUrl,
-                mimeType: videoUrl.includes(".mp4") ? "video/mp4" : 
-                         videoUrl.includes(".webm") ? "video/webm" :
-                         videoUrl.includes(".mp3") ? "audio/mpeg" :
-                         videoUrl.includes(".wav") ? "audio/wav" :
-                         "video/mp4"
-              }
-            },
-            {
-              text: prompt
-            }
-          ]
+    const mimeType = videoUrl.includes(".mp4") ? "video/mp4" : 
+                     videoUrl.includes(".webm") ? "video/webm" :
+                     videoUrl.includes(".mp3") ? "audio/mpeg" :
+                     videoUrl.includes(".wav") ? "audio/wav" :
+                     "video/mp4";
+
+    let response;
+    
+    emitStatus("Downloading video recording...");
+    console.log(`[Transcription] Downloading video to temp file...`);
+    
+    const fs = await import("fs");
+    const os = await import("os");
+    const path = await import("path");
+    
+    const ext = mimeType.includes("mp4") ? ".mp4" : mimeType.includes("webm") ? ".webm" : ".mp4";
+    const tempFilePath = path.join(os.tmpdir(), `gemini-upload-${Date.now()}${ext}`);
+    
+    try {
+      const videoResponse = await fetch(videoUrl);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
+      }
+      
+      const arrayBuffer = await videoResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(tempFilePath, buffer);
+      
+      const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(1);
+      console.log(`[Transcription] Video downloaded: ${fileSizeMB}MB`);
+      emitStatus(`Video downloaded (${fileSizeMB}MB). Uploading to AI service...`);
+      
+      const uploadedFile = await ai.files.upload({
+        file: tempFilePath,
+        config: { mimeType },
+      });
+      
+      console.log(`[Transcription] File uploaded to Gemini: ${uploadedFile.name}`);
+      emitStatus("Video uploaded. Waiting for AI processing...");
+      
+      let file = await ai.files.get({ name: uploadedFile.name! });
+      let pollAttempts = 0;
+      const maxPolls = 120;
+      
+      while (file.state === "PROCESSING" && pollAttempts < maxPolls) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        file = await ai.files.get({ name: uploadedFile.name! });
+        pollAttempts++;
+        if (pollAttempts % 5 === 0) {
+          emitStatus(`AI is processing video... (${pollAttempts * 3}s elapsed)`);
         }
-      ]
-    });
+      }
+      
+      if (file.state === "FAILED") {
+        throw new Error("Gemini video processing failed");
+      }
+      
+      if (file.state === "PROCESSING") {
+        throw new Error("Gemini video processing timed out");
+      }
+      
+      console.log(`[Transcription] File ready, state: ${file.state}`);
+      emitStatus("Transcribing video with AI...");
+      
+      const { createPartFromUri } = await import("@google/genai");
+      
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            parts: [
+              createPartFromUri(file.uri!, mimeType),
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+      
+      try {
+        await ai.files.delete({ name: uploadedFile.name! });
+        console.log(`[Transcription] Cleaned up uploaded file`);
+      } catch (cleanupErr) {
+        console.warn(`[Transcription] Failed to clean up uploaded file:`, cleanupErr);
+      }
+    } finally {
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+          console.log(`[Transcription] Cleaned up temp file`);
+        }
+      } catch (cleanupErr) {
+        console.warn(`[Transcription] Failed to clean up temp file:`, cleanupErr);
+      }
+    }
 
     const text = response.text || "";
     console.log(`Received transcription response: ${text.substring(0, 200)}...`);
+    emitStatus("Parsing transcription results...");
     
-    // Parse JSON response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -631,7 +705,6 @@ Respond in the following JSON format:
       }
     }
 
-    // Fallback: treat entire response as transcript
     return {
       fullTranscript: text,
       segments: [{ speaker: "Speaker", timestamp: "00:00", text }],
@@ -641,6 +714,7 @@ Respond in the following JSON format:
     };
   } catch (error) {
     console.error("Gemini recording transcription error:", error);
+    emitStatus("Transcription failed. Check video URL and try again.");
     return {
       fullTranscript: "",
       segments: [],
