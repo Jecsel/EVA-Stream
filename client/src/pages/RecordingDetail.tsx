@@ -1914,7 +1914,7 @@ export default function RecordingDetail() {
               {recording?.summary && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground">Updated Summary</h4>
-                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto overflow-x-hidden break-words">
                     {recording.summary.length > 500 ? recording.summary.slice(0, 500) + "..." : recording.summary}
                   </div>
                 </div>
@@ -1926,7 +1926,7 @@ export default function RecordingDetail() {
                     <ClipboardList className="w-3.5 h-3.5" />
                     SOP Highlights
                   </h4>
-                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto prose prose-invert prose-sm max-w-none">
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-40 overflow-y-auto overflow-x-hidden break-words prose prose-invert prose-sm max-w-none [&_*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-all">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {recording.sopContent.length > 800 ? recording.sopContent.slice(0, 800) + "\n\n*...view full SOP in the SOP tab*" : recording.sopContent}
                     </ReactMarkdown>
@@ -1940,7 +1940,7 @@ export default function RecordingDetail() {
                     <Target className="w-3.5 h-3.5" />
                     CRO Preview
                   </h4>
-                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto prose prose-invert prose-sm max-w-none">
+                  <div className="text-sm text-foreground bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto overflow-x-hidden break-words prose prose-invert prose-sm max-w-none [&_*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-all">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {recording.croContent.length > 500 ? recording.croContent.slice(0, 500) + "\n\n*...view full CRO in the CRO tab*" : recording.croContent}
                     </ReactMarkdown>
