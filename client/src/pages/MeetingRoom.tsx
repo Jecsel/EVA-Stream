@@ -94,6 +94,8 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [wantsModerator, setWantsModerator] = useState(false);
   const [moderatorCode, setModeratorCode] = useState("");
   const [showModeratorCodeInput, setShowModeratorCodeInput] = useState(false);
+  const [guestDisplayName, setGuestDisplayName] = useState("");
+  const effectiveName = user?.displayName || guestDisplayName.trim() || "Guest";
   const modCodeFromUrlRef = useRef<string | null>(null);
   const meetingStartTime = useRef(Date.now());
   
@@ -309,7 +311,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         headers,
         body: JSON.stringify({
           roomName: `VideoAI-${roomId}`,
-          userName: user?.displayName || "User",
+          userName: effectiveName,
           wantsModerator: wantsModerator,
           moderatorCode: moderatorCode || undefined,
         }),
@@ -1129,7 +1131,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
                <JitsiMeeting 
                  key={`jitsi-${roomId}-${jaasToken.isModerator ? 'mod' : 'user'}-${jaasToken.token.slice(-8)}`}
                  roomName={`VideoAI-${roomId}`}
-                 displayName="User"
+                 displayName={effectiveName}
                  onApiReady={handleJitsiApiReady}
                  onTranscriptionReceived={handleTranscriptionReceived}
                  className="bg-zinc-900"
@@ -1150,7 +1152,29 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
              {!hasJoinedMeeting && (
                <div className="absolute bottom-4 left-4 z-20">
                  <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg min-w-[240px]">
-                   <div className="flex items-center gap-3">
+                   {/* Name input — required before joining */}
+                   <div className="mb-3">
+                     <label htmlFor="display-name" className="text-xs text-muted-foreground block mb-1.5">
+                       Your name
+                     </label>
+                     {user?.displayName ? (
+                       <div className="w-full px-3 py-2 text-sm bg-muted border border-border rounded-md text-muted-foreground select-none">
+                         {user.displayName}
+                       </div>
+                     ) : (
+                       <input
+                         id="display-name"
+                         type="text"
+                         value={guestDisplayName}
+                         onChange={(e) => setGuestDisplayName(e.target.value)}
+                         placeholder="Enter your name"
+                         maxLength={50}
+                         className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                         data-testid="input-display-name"
+                       />
+                     )}
+                   </div>
+                   <div className="border-t border-border pt-3 flex items-center gap-3">
                      <Switch
                        id="moderator-toggle"
                        checked={wantsModerator}
