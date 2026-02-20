@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
 import admin from "firebase-admin";
 import { runDevAgent, type AgentMessage } from "./dev-agent";
-import { downloadAndStoreVideo } from "./video-storage";
+import { downloadAndStoreVideo, fixStoredVideoContentType } from "./video-storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 // Initialize Firebase Admin SDK for token verification
@@ -709,7 +709,15 @@ export async function registerRoutes(
         return;
       }
 
-      if (recording.storageStatus === "stored") {
+      const forceRebackup = req.body?.force === true;
+      if (recording.storageStatus === "stored" && !forceRebackup) {
+        if (recording.storedVideoPath) {
+          const fixed = await fixStoredVideoContentType(recording.storedVideoPath);
+          if (fixed) {
+            res.json({ message: "Video content type fixed", storedVideoPath: recording.storedVideoPath });
+            return;
+          }
+        }
         res.json({ message: "Recording already backed up", storedVideoPath: recording.storedVideoPath });
         return;
       }

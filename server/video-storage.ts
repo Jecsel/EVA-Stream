@@ -42,10 +42,10 @@ export async function downloadAndStoreVideo(
       throw new Error("No response body received from JaaS");
     }
 
-    const contentType = response.headers.get("content-type") || "video/mp4";
     const contentLength = response.headers.get("content-length");
     const fileSizeMB = contentLength ? (parseInt(contentLength) / (1024 * 1024)).toFixed(1) : "unknown";
-    emit(`Streaming video (${fileSizeMB} MB, type: ${contentType}) to storage...`);
+    const videoContentType = "video/mp4";
+    emit(`Streaming video (${fileSizeMB} MB) to storage as ${videoContentType}...`);
 
     const privateDir = objectStorageService.getPrivateObjectDir();
     const objectPath = `${privateDir}/recordings/${recordingId}.mp4`;
@@ -55,7 +55,7 @@ export async function downloadAndStoreVideo(
     const file = bucket.file(objectName);
 
     const writeStream = file.createWriteStream({
-      contentType,
+      contentType: videoContentType,
       metadata: {
         metadata: {
           recordingId,
@@ -76,6 +76,23 @@ export async function downloadAndStoreVideo(
     return { storedVideoPath };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function fixStoredVideoContentType(storedVideoPath: string): Promise<boolean> {
+  try {
+    const file = await getStoredVideoFile(storedVideoPath);
+    const [metadata] = await file.getMetadata();
+
+    if (metadata.contentType !== "video/mp4") {
+      console.log(`[VideoStorage] Fixing content type from "${metadata.contentType}" to "video/mp4" for ${storedVideoPath}`);
+      await file.setMetadata({ contentType: "video/mp4" });
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error(`[VideoStorage] Failed to fix content type for ${storedVideoPath}:`, error);
+    return false;
   }
 }
 
