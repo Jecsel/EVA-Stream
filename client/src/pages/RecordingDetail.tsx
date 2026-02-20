@@ -1860,7 +1860,7 @@ export default function RecordingDetail() {
       </Dialog>
 
       <Dialog open={showReanalyzeResults} onOpenChange={setShowReanalyzeResults}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
