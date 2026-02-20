@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
+    "@google-cloud/storage": "^7.19.0",
     "@google/genai": "^1.35.0",
     "@hookform/resolvers": "^3.10.0",
     "@jitsi/react-sdk": "^1.4.4",
@@ -53,6 +54,10 @@
     "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/uuid": "^10.0.0",
+    "@uppy/aws-s3": "^5.1.0",
+    "@uppy/core": "^5.2.0",
+    "@uppy/dashboard": "^5.1.1",
+    "@uppy/react": "^5.2.0",
     "@xyflow/react": "^12.10.0",
     "bcrypt": "^6.0.0",
     "class-variance-authority": "^0.7.1",

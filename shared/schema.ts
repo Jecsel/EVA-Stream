@@ -118,6 +118,9 @@ export const recordings = pgTable("recordings", {
   croContent: text("cro_content"),
   flowchartCode: text("flowchart_code"),
   videoUrl: text("video_url"),
+  originalVideoUrl: text("original_video_url"),
+  storageStatus: text("storage_status").notNull().default("pending"),
+  storedVideoPath: text("stored_video_path"),
   shareToken: text("share_token").unique(),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 });
