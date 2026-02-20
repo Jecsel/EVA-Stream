@@ -3,7 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
-import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload, WifiOff, ServerCrash, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Clock, Calendar, FileText, GitBranch, Play, Pause, Sparkles, Download, Edit2, Save, X, Trash2, CheckCircle, AlertCircle, Target, MessageSquare, User, Bot, Video, Volume2, VolumeX, Maximize, ClipboardList, Share2, Check, Plus, Eye, ScrollText, Zap, CalendarPlus, RefreshCw, HardDrive, CloudOff, Loader2, Upload, WifiOff, ServerCrash, TriangleAlert, ChevronRight } from "lucide-react";
 import { ScheduleMeetingDialog } from "@/components/ScheduleMeetingDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -120,6 +120,7 @@ export default function RecordingDetail() {
   });
 
   const meetingId = recording?.meetingId;
+
   const { data: chatMessages = [] } = useQuery({
     queryKey: ["chatMessages", meetingId],
     queryFn: () => api.getChatMessages(meetingId!),
@@ -148,6 +149,13 @@ export default function RecordingDetail() {
     queryKey: ["agents"],
     queryFn: () => api.listAgents(),
   });
+
+  const hasScrumMaster = !!(meeting?.selectedAgents && agents.length > 0 &&
+    meeting.selectedAgents.some((agentId: string) => {
+      const agent = agents.find((a: any) => a.id?.toString() === agentId);
+      return agent?.type === "scrum";
+    })
+  );
 
   const cloudTranscriptions = jaasTranscriptions.filter(
     (t) => t.fqn !== `recording-${recordingId}`
@@ -1265,37 +1273,56 @@ export default function RecordingDetail() {
           </div>
         )}
 
+        {hasScrumMaster && meetingId && activeTab !== "meeting-record" && (
+          <button
+            onClick={() => setActiveTab("meeting-record")}
+            className="w-full mb-4 p-4 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-xl flex items-center gap-3 hover:from-indigo-500/15 hover:to-purple-500/15 transition-all text-left"
+            data-testid="btn-scrum-meeting-record-banner"
+          >
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+              <ScrollText className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold text-foreground">Scrum Meeting Record</h4>
+              <p className="text-xs text-muted-foreground">View the generated Daily Scrum meeting record for this session</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+          </button>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
-              <FileText className="w-4 h-4" />
-              SOP
-            </TabsTrigger>
-            {activeCroContent && (
-              <TabsTrigger value="cro" className="flex items-center gap-2" data-testid="tab-cro">
-                <Target className="w-4 h-4" />
-                CRO
+          <div className="overflow-x-auto mb-4 -mx-1 px-1">
+            <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
+              <TabsTrigger value="sop" className="flex items-center gap-2" data-testid="tab-sop">
+                <FileText className="w-4 h-4" />
+                SOP
               </TabsTrigger>
-            )}
-            <TabsTrigger value="flowchart" className="flex items-center gap-2" data-testid="tab-flowchart">
-              <GitBranch className="w-4 h-4" />
-              Flowchart
-            </TabsTrigger>
-            <TabsTrigger value="transcript" className="flex items-center gap-2" data-testid="tab-transcript">
-              <MessageSquare className="w-4 h-4" />
-              Transcript
-            </TabsTrigger>
-            <TabsTrigger value="notes" className="flex items-center gap-2" data-testid="tab-notes">
-              <ClipboardList className="w-4 h-4" />
-              Meeting Notes
-            </TabsTrigger>
-            {meetingId && (
-              <TabsTrigger value="meeting-record" className="flex items-center gap-2" data-testid="tab-meeting-record">
-                <ScrollText className="w-4 h-4" />
-                Meeting Record
+              {activeCroContent && (
+                <TabsTrigger value="cro" className="flex items-center gap-2" data-testid="tab-cro">
+                  <Target className="w-4 h-4" />
+                  CRO
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="flowchart" className="flex items-center gap-2" data-testid="tab-flowchart">
+                <GitBranch className="w-4 h-4" />
+                Flowchart
               </TabsTrigger>
-            )}
-          </TabsList>
+              <TabsTrigger value="transcript" className="flex items-center gap-2" data-testid="tab-transcript">
+                <MessageSquare className="w-4 h-4" />
+                Transcript
+              </TabsTrigger>
+              <TabsTrigger value="notes" className="flex items-center gap-2" data-testid="tab-notes">
+                <ClipboardList className="w-4 h-4" />
+                Notes
+              </TabsTrigger>
+              {meetingId && (
+                <TabsTrigger value="meeting-record" className="flex items-center gap-2" data-testid="tab-meeting-record">
+                  <ScrollText className="w-4 h-4" />
+                  Meeting Record
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
 
           <TabsContent value="sop" className="mt-0">
             <div className="bg-card border border-border rounded-xl overflow-hidden">
