@@ -137,6 +137,12 @@ export default function RecordingDetail() {
     enabled: !!meetingId,
   });
 
+  // AI re-analyzed transcription — identified by fqn = "recording-{recordingId}"
+  // This takes display priority over live capture segments since it's higher quality
+  const aiTranscription = jaasTranscriptions.find(
+    (t) => t.fqn === `recording-${recordingId}`
+  );
+
   const { data: meeting } = useQuery({
     queryKey: ["meeting", meetingId],
     queryFn: () => api.getMeeting(meetingId!),
@@ -1490,17 +1496,17 @@ export default function RecordingDetail() {
                 <h2 className="text-sm font-medium flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-primary" />
                   Meeting Transcript
-                  {(localTranscripts.length > 0 || jaasTranscriptions.length > 0 || chatMessages.length > 0) && (
+                  {(jaasTranscriptions.length > 0 || localTranscripts.length > 0 || chatMessages.length > 0) && (
                     <span className="text-xs text-muted-foreground">
-                      {localTranscripts.length > 0 
-                        ? `(${localTranscripts.length} segments)` 
-                        : jaasTranscriptions.length > 0 
-                          ? '(AI transcription available)' 
-                          : `(${chatMessages.length} messages)`}
+                      {jaasTranscriptions.length > 0
+                        ? `(${(aiTranscription?.parsedTranscript as any[])?.length ?? jaasTranscriptions.length} segments)`
+                        : localTranscripts.length > 0
+                        ? `(${localTranscripts.length} segments)`
+                        : `(${chatMessages.length} messages)`}
                     </span>
                   )}
                 </h2>
-                {recording?.videoUrl && localTranscripts.length === 0 && jaasTranscriptions.length === 0 && (
+                {recording?.videoUrl && !aiTranscription && localTranscripts.length === 0 && jaasTranscriptions.length === 0 && (
                   <Button
                     size="sm"
                     onClick={() => transcribeMutation.mutate()}
@@ -1515,8 +1521,104 @@ export default function RecordingDetail() {
               </div>
               <ScrollArea className="h-[calc(100vh-350px)]">
                 <div className="p-4 space-y-4" data-testid="content-transcript">
-                  {localTranscripts.length > 0 ? (
+                  {jaasTranscriptions.length > 0 ? (
+                    // Priority 1: JaaS transcriptions — includes AI re-analyzed (newest first) and JaaS cloud records
+                    <div className="space-y-6">
+                      {jaasTranscriptions.map((transcription) => {
+                        const isAiReanalyzed = transcription.fqn === `recording-${recordingId}`;
+                        return (
+                          <div key={transcription.id} className="space-y-4">
+                            <div className="flex items-center gap-2">
+                              {isAiReanalyzed ? (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/30">
+                                  <Sparkles className="w-3 h-3" />
+                                  AI Re-analyzed
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                                  <Volume2 className="w-3 h-3" />
+                                  JaaS Cloud
+                                </span>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {isAiReanalyzed ? "Transcribed from video recording" : "Provided by JaaS transcription service"}
+                              </span>
+                            </div>
+                            {transcription.aiSummary && (
+                              <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Sparkles className="w-4 h-4 text-primary" />
+                                  <span className="text-sm font-medium text-primary">AI Transcription Summary</span>
+                                </div>
+                                <p className="text-sm text-foreground">{transcription.aiSummary}</p>
+                              </div>
+                            )}
+                            {(() => {
+                              const items = transcription.actionItems;
+                              if (!items || !Array.isArray(items) || items.length === 0) return null;
+                              return (
+                                <div className="bg-accent/10 border border-accent/20 rounded-xl p-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Target className="w-4 h-4 text-accent" />
+                                    <span className="text-sm font-medium text-accent">Action Items</span>
+                                  </div>
+                                  <ul className="space-y-1">
+                                    {(items as any[]).map((item, idx) => (
+                                      <li key={idx} className="flex items-start gap-2 text-sm">
+                                        <CheckCircle className="w-3 h-3 text-accent mt-1 flex-shrink-0" />
+                                        <span>{String(item)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })()}
+                            {transcription.parsedTranscript && Array.isArray(transcription.parsedTranscript) && transcription.parsedTranscript.length > 0 ? (
+                              <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-muted-foreground">Full Transcript</h3>
+                                {(transcription.parsedTranscript as { speaker: string; text: string; timestamp: string }[]).map((segment, idx) => (
+                                  <div key={idx} className="flex gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                                      <User className="w-4 h-4 text-foreground" />
+                                    </div>
+                                    <div className="flex-1 bg-muted/50 border border-border rounded-xl p-3">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-medium">{segment.speaker}</span>
+                                        {segment.timestamp && (
+                                          <span className="text-xs opacity-60">{segment.timestamp}</span>
+                                        )}
+                                      </div>
+                                      <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : transcription.rawTranscript ? (
+                              <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-muted-foreground">Full Transcript</h3>
+                                <div className="bg-muted/50 border border-border rounded-xl p-4">
+                                  <pre className="text-sm whitespace-pre-wrap font-sans">{transcription.rawTranscript}</pre>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center py-4">
+                                <p className="text-sm text-muted-foreground">Transcription is being processed...</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : localTranscripts.length > 0 ? (
+                    // Priority 2: Live capture segments (recorded in real-time during the meeting)
                     <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                          <MessageSquare className="w-3 h-3" />
+                          Live Capture
+                        </span>
+                        <span className="text-xs text-muted-foreground">Captured in real-time during meeting</span>
+                      </div>
                       {localTranscripts.map((segment) => (
                         <div key={segment.id} className="flex gap-3">
                           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
@@ -1531,76 +1633,6 @@ export default function RecordingDetail() {
                             </div>
                             <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : jaasTranscriptions.length > 0 ? (
-                    <div className="space-y-6">
-                      {jaasTranscriptions.map((transcription) => (
-                        <div key={transcription.id} className="space-y-4">
-                          {transcription.aiSummary && (
-                            <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Sparkles className="w-4 h-4 text-primary" />
-                                <span className="text-sm font-medium text-primary">AI Transcription Summary</span>
-                              </div>
-                              <p className="text-sm text-foreground">{transcription.aiSummary}</p>
-                            </div>
-                          )}
-                          
-                          {(() => {
-                            const items = transcription.actionItems;
-                            if (!items || !Array.isArray(items) || items.length === 0) return null;
-                            return (
-                              <div className="bg-accent/10 border border-accent/20 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Target className="w-4 h-4 text-accent" />
-                                  <span className="text-sm font-medium text-accent">Action Items</span>
-                                </div>
-                                <ul className="space-y-1">
-                                  {items.map((item, idx) => (
-                                    <li key={idx} className="flex items-start gap-2 text-sm">
-                                      <CheckCircle className="w-3 h-3 text-accent mt-1 flex-shrink-0" />
-                                      <span>{String(item)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })()}
-
-                          {transcription.parsedTranscript && Array.isArray(transcription.parsedTranscript) && transcription.parsedTranscript.length > 0 ? (
-                            <div className="space-y-2">
-                              <h3 className="text-sm font-medium text-muted-foreground">Full Transcript</h3>
-                              {(transcription.parsedTranscript as { speaker: string; text: string; timestamp: string }[]).map((segment, idx) => (
-                                <div key={idx} className="flex gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                                    <User className="w-4 h-4 text-foreground" />
-                                  </div>
-                                  <div className="flex-1 bg-muted/50 border border-border rounded-xl p-3">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-xs font-medium">{segment.speaker}</span>
-                                      {segment.timestamp && (
-                                        <span className="text-xs opacity-60">{segment.timestamp}</span>
-                                      )}
-                                    </div>
-                                    <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : transcription.rawTranscript ? (
-                            <div className="space-y-2">
-                              <h3 className="text-sm font-medium text-muted-foreground">Full Transcript</h3>
-                              <div className="bg-muted/50 border border-border rounded-xl p-4">
-                                <pre className="text-sm whitespace-pre-wrap font-sans">{transcription.rawTranscript}</pre>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-center py-4">
-                              <p className="text-sm text-muted-foreground">Transcription is being processed...</p>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
