@@ -80,6 +80,8 @@ Start discussing role responsibilities, daily tasks, and pain points to generate
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState<"idle" | "connecting" | "transcribing" | "error">("idle");
   const [transcripts, setTranscripts] = useState<Array<{id: string; text: string; speaker: string; timestamp: Date; isFinal: boolean;}>>([]);
+  const transcriptBufferRef = useRef<{ speaker: string; texts: string[]; timer: ReturnType<typeof setTimeout> | null }>({ speaker: "", texts: [], timer: null });
+  const flushTranscriptBufferRef = useRef<((speaker: string, text: string) => Promise<void>) | null>(null);
   const evaConnectedRef = useRef(false);
   const [jitsiApi, setJitsiApi] = useState<any>(null);
   const [isJitsiTranscribing, setIsJitsiTranscribing] = useState(false);
@@ -440,8 +442,27 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
   }, []);
 
   useEffect(() => {
+    const flushBufferSync = () => {
+      const buf = transcriptBufferRef.current;
+      if (buf.texts.length > 0 && meetingIdRef.current) {
+        if (buf.timer) clearTimeout(buf.timer);
+        const pendingText = buf.texts.join(" ").trim();
+        const pendingSpeaker = buf.speaker;
+        buf.texts = [];
+        buf.speaker = "";
+        buf.timer = null;
+        if (pendingText.length > 2) {
+          navigator.sendBeacon(
+            `/api/meetings/${meetingIdRef.current}/transcripts`,
+            new Blob([JSON.stringify({ text: pendingText, speaker: pendingSpeaker, isFinal: true })], { type: "application/json" })
+          );
+        }
+      }
+    };
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!hasEndedMeetingRef.current && meetingIdRef.current && meetingActiveRef.current) {
+        flushBufferSync();
         autoSaveMeeting();
         e.preventDefault();
         e.returnValue = 'Your meeting recording may not be saved. Click "End Call" to save properly.';
@@ -451,6 +472,7 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
 
     const handlePageHide = (e: PageTransitionEvent) => {
       if (!e.persisted) {
+        flushBufferSync();
         autoSaveMeeting();
       }
     };
@@ -469,6 +491,29 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     
     setIsEndingMeeting(true);
     try {
+      const buf = transcriptBufferRef.current;
+      if (buf.texts.length > 0) {
+        if (buf.timer) clearTimeout(buf.timer);
+        const pendingSpeaker = buf.speaker;
+        const pendingText = buf.texts.join(" ");
+        buf.texts = [];
+        buf.speaker = "";
+        buf.timer = null;
+        if (flushTranscriptBufferRef.current) {
+          await flushTranscriptBufferRef.current(pendingSpeaker, pendingText);
+        } else if (pendingText.trim().length > 2 && meeting?.id) {
+          try {
+            await api.createTranscriptSegment(meeting.id, {
+              text: pendingText.trim(),
+              speaker: pendingSpeaker,
+              isFinal: true,
+            });
+          } catch (e) {
+            console.error("Failed to flush transcript buffer on end:", e);
+          }
+        }
+      }
+
       stopObserving();
       stopScreenCapture();
       stopAppCapture();
@@ -724,6 +769,16 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
         }
       },
       videoConferenceLeft: () => {
+        const buf = transcriptBufferRef.current;
+        if (buf.texts.length > 0) {
+          if (buf.timer) clearTimeout(buf.timer);
+          const pendingSpeaker = buf.speaker;
+          const pendingText = buf.texts.join(" ");
+          buf.texts = [];
+          buf.speaker = "";
+          buf.timer = null;
+          flushTranscriptBufferRef.current?.(pendingSpeaker, pendingText);
+        }
         setHasJoinedMeeting(false);
         stopObserving();
         stopScreenCapture();
@@ -744,21 +799,60 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
     });
   };
 
-  // Handle Jitsi transcription and save to database
+  const TRANSCRIPT_MERGE_DELAY = 3000;
+
+  const flushTranscriptBuffer = useCallback(async (speaker: string, mergedText: string) => {
+    if (!meeting?.id || !mergedText.trim() || mergedText.trim().length <= 2) return;
+
+    try {
+      await api.createTranscriptSegment(meeting.id, {
+        text: mergedText.trim(),
+        speaker,
+        isFinal: true,
+      });
+
+      const isConnected = evaConnectedRef.current;
+      const currentSopState = sopGeneratorStateRef.current;
+      const currentCroState = croGeneratorStateRef.current;
+      const isTeamActive = isTeamActiveRef.current;
+
+      const isSopGeneratorRunning = currentSopState === "running";
+      const isCroGeneratorRunning = currentCroState === "running";
+      const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
+      const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
+
+      console.log(`[Transcript] Flushed merged segment: "${mergedText.trim().substring(0, 60)}..." by ${speaker}`);
+      console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}, teamActive=${isTeamActive}`);
+
+      if (isConnected && (shouldSendToSop || shouldSendToCro || isTeamActive)) {
+        if (shouldSendToSop) setIsSopUpdating(true);
+        if (shouldSendToCro) setIsCroUpdating(true);
+        sendTranscript(mergedText.trim(), speaker, shouldSendToSop, shouldSendToCro);
+        console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}, team=${isTeamActive}`);
+      }
+    } catch (error) {
+      console.error("Failed to save merged transcript segment:", error);
+    }
+  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
+
+  flushTranscriptBufferRef.current = flushTranscriptBuffer;
+
+  // Handle Jitsi transcription — buffers consecutive segments from the same speaker
+  // and merges them into a single segment after a pause
   const handleTranscriptionReceived = useCallback(async (text: string, participant: string, isFinal: boolean) => {
     if (!meeting?.id || !text.trim()) return;
-    
+
+    const speaker = participant || "Unknown";
+
     const transcriptEntry = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       text: text.trim(),
-      speaker: participant || "Unknown",
+      speaker,
       timestamp: new Date(),
       isFinal,
     };
-    
-    // Update local state for LiveTranscriptPanel display
+
     setTranscripts(prev => {
-      // If not final, update existing interim transcript for this speaker
       if (!isFinal) {
         const existingIndex = prev.findIndex(t => !t.isFinal && t.speaker === participant);
         if (existingIndex >= 0) {
@@ -769,53 +863,41 @@ Start sharing your screen and EVA will automatically generate an SOP based on wh
       }
       return [...prev.filter(t => t.isFinal || t.speaker !== participant), transcriptEntry];
     });
-    
+
     if (isScrumMasterEnabled) {
       setLatestScrumTranscript({
         text: text.trim(),
-        speaker: participant || "Unknown",
+        speaker,
         timestamp: Date.now(),
         isFinal,
       });
     }
 
     if (isFinal && text.trim().length > 2) {
-      try {
-        await api.createTranscriptSegment(meeting.id, {
-          text: text.trim(),
-          speaker: participant || "Unknown",
-          isFinal: true,
-        });
-        
-        // Send transcript to EVA for processing (SOP/CRO generation or Agent Team)
-        // Use refs to get latest status (callbacks may have stale closures)
-        const isConnected = evaConnectedRef.current;
-        const currentSopState = sopGeneratorStateRef.current;
-        const currentCroState = croGeneratorStateRef.current;
-        const isTeamActive = isTeamActiveRef.current;
-        
-        // Check if either generator is in "running" state (active generation)
-        const isSopGeneratorRunning = currentSopState === "running";
-        const isCroGeneratorRunning = currentCroState === "running";
-        const shouldSendToSop = isScreenObserverEnabled && isSopGeneratorRunning;
-        const shouldSendToCro = isCROEnabled && isCroGeneratorRunning;
-        
-        console.log(`[Transcript] evaConnected=${isConnected}, sopState=${currentSopState}, croState=${currentCroState}, teamActive=${isTeamActive}`);
-        console.log(`[Transcript] shouldSendToSop=${shouldSendToSop}, shouldSendToCro=${shouldSendToCro}`);
-        
-        if (isConnected && (shouldSendToSop || shouldSendToCro || isTeamActive)) {
-          if (shouldSendToSop) setIsSopUpdating(true);
-          if (shouldSendToCro) setIsCroUpdating(true);
-          sendTranscript(text.trim(), participant || "Unknown", shouldSendToSop, shouldSendToCro);
-          console.log(`[Transcript] Sent to EVA with SOP=${shouldSendToSop}, CRO=${shouldSendToCro}, team=${isTeamActive}`);
-        } else {
-          console.log(`[Transcript] NOT sent - EVA not connected or no active processors`);
-        }
-      } catch (error) {
-        console.error("Failed to save transcript segment:", error);
+      const buf = transcriptBufferRef.current;
+
+      if (buf.speaker !== speaker && buf.texts.length > 0) {
+        if (buf.timer) clearTimeout(buf.timer);
+        const prevSpeaker = buf.speaker;
+        const prevText = buf.texts.join(" ");
+        buf.texts = [];
+        buf.timer = null;
+        flushTranscriptBuffer(prevSpeaker, prevText);
       }
+
+      buf.speaker = speaker;
+      buf.texts.push(text.trim());
+
+      if (buf.timer) clearTimeout(buf.timer);
+      buf.timer = setTimeout(() => {
+        const mergedText = buf.texts.join(" ");
+        buf.texts = [];
+        buf.speaker = "";
+        buf.timer = null;
+        flushTranscriptBuffer(speaker, mergedText);
+      }, TRANSCRIPT_MERGE_DELAY);
     }
-  }, [meeting?.id, sendTranscript, isScreenObserverEnabled, isCROEnabled]);
+  }, [meeting?.id, flushTranscriptBuffer, isScrumMasterEnabled]);
 
   const handleSendMessage = async (content: string) => {
     if (!meeting?.id) return;
