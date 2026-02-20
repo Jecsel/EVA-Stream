@@ -3549,6 +3549,25 @@ Format the response as JSON with these fields:
     }
   });
 
+  app.post("/api/transcribe/whisper", express.json({ limit: '50mb' }), async (req, res) => {
+    try {
+      const { audio } = req.body;
+      if (!audio) {
+        res.status(400).json({ error: "Audio data (base64) is required" });
+        return;
+      }
+
+      const { ensureCompatibleFormat, speechToText } = await import('./replit_integrations/audio/client');
+      const rawBuffer = Buffer.from(audio, 'base64');
+      const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
+      const transcript = await speechToText(audioBuffer, inputFormat);
+      res.json({ text: transcript });
+    } catch (error: any) {
+      console.error("Whisper transcription error:", error);
+      res.status(500).json({ error: error.message || "Failed to transcribe audio" });
+    }
+  });
+
   // Ask EVA - AI chat endpoint
   app.post("/api/eva/ask", async (req, res) => {
     try {

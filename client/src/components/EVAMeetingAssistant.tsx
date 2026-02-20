@@ -485,10 +485,10 @@ export function EVAMeetingAssistant({
             const base64Audio = (reader.result as string).split(',')[1];
             
             try {
-              const response = await fetch('/api/eva/stt', {
+              const response = await fetch('/api/transcribe/whisper', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audio: base64Audio, mimeType: 'audio/webm' }),
+                body: JSON.stringify({ audio: base64Audio }),
               });
               
               if (response.ok) {
