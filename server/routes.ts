@@ -754,14 +754,15 @@ export async function registerRoutes(
         setTimeout(() => reanalysisStatus.delete(recording.id), 60000);
       }).catch(err => {
         console.error("Re-analysis error:", err);
+        const failMessage = err.message || "Re-analysis failed. Please try again.";
         reanalysisStatus.set(recording.id, {
-          status: "Re-analysis failed. Please try again.",
+          status: failMessage,
           step: "error",
           progress: 0,
           completed: true,
-          error: err.message,
+          error: failMessage,
         });
-        setTimeout(() => reanalysisStatus.delete(recording.id), 60000);
+        setTimeout(() => reanalysisStatus.delete(recording.id), 120000);
       });
 
       res.json({
@@ -4287,10 +4288,132 @@ async function processReanalysis(
 
     if (!transcription.fullTranscript && transcription.segments.length === 0) {
       console.error(`[Re-analysis] Video transcription returned empty for recording ${recordingId}`);
-      emit("Re-analysis failed - no audio detected.", "error", 0);
-      await storage.updateRecording(recordingId, {
-        summary: "Re-analysis failed - no audio detected or unable to process video.",
+      emit("Video transcription failed. Trying live transcript fallback...", "fallback", 20);
+      console.log(`[Re-analysis] Attempting live transcript fallback for recording ${recordingId}`);
+
+      const liveTranscripts = await storage.getTranscriptsByMeeting(meetingId);
+      const validSegments = liveTranscripts.filter(s => s.text && s.text.trim().length > 0);
+
+      if (validSegments.length === 0) {
+        console.error(`[Re-analysis] No live transcript segments available for fallback`);
+        throw new Error("Re-analysis failed - video transcription failed and no live transcripts available as fallback.");
+      }
+
+      console.log(`[Re-analysis] Found ${validSegments.length} live transcript segments for fallback`);
+      emit("Using live transcripts for re-analysis...", "fallback", 25);
+
+      const transcriptText = validSegments
+        .map(segment => `${segment.speaker}: ${segment.text}`)
+        .join('\n');
+
+      const startTime = validSegments.length > 0 ? new Date(validSegments[0].createdAt) : undefined;
+      const parsedSegments = validSegments.map(s => ({
+        speaker: s.speaker,
+        timestamp: formatTimestamp(new Date(s.createdAt), startTime),
+        text: s.text
+      }));
+
+      const deletedTranscriptions = await storage.deleteTranscriptionBySessionId(recordingId);
+      console.log(`[Re-analysis] Cleared ${deletedTranscriptions} existing transcription(s)`);
+
+      const analysis = await analyzeTranscription(transcriptText, meetingTitle);
+      if (!analysis.summary || analysis.summary === "Error analyzing transcription.") {
+        throw new Error("Re-analysis failed - could not generate summary from live transcripts.");
+      }
+
+      const updateData: Record<string, any> = {
+        summary: analysis.summary,
+      };
+
+      await storage.createMeetingTranscription({
+        meetingId,
+        sessionId: recordingId,
+        fqn: `recording-${recordingId}`,
+        rawTranscript: transcriptText,
+        parsedTranscript: parsedSegments,
+        aiSummary: analysis.summary,
+        actionItems: analysis.actionItems,
       });
+      console.log(`[Re-analysis] Fallback transcript saved`);
+
+      const totalSteps = selectedOutputs.filter(o => o !== "transcript").length;
+      let currentStep = 0;
+      const getProgress = () => 40 + Math.round((currentStep / Math.max(totalSteps, 1)) * 55);
+
+      if (selectedOutputs.includes("sop") || selectedOutputs.includes("document")) {
+        emit("Generating SOP document...", "generating_sop", getProgress());
+        const sopContent = await generateSOPFromTranscript(transcriptText, meetingTitle);
+        if (sopContent) {
+          updateData.sopContent = sopContent;
+          console.log(`[Re-analysis] SOP generated from fallback (${sopContent.length} chars)`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("cro")) {
+        emit("Generating CRO document...", "generating_cro", getProgress());
+        const chatMessages = parsedSegments.map(seg => ({
+          role: seg.speaker?.toLowerCase().includes("speaker 1") ? "user" : "ai",
+          content: seg.text,
+        }));
+        if (chatMessages.length < 3) {
+          chatMessages.push(
+            { role: "user", content: transcriptText.slice(0, 5000) },
+            { role: "ai", content: "Analyzing the discussion..." },
+            { role: "user", content: transcriptText.slice(5000, 10000) || "continued..." }
+          );
+        }
+        const croContent = await generateCROFromChatMessages(chatMessages, meetingTitle);
+        if (croContent) {
+          updateData.croContent = croContent;
+          console.log(`[Re-analysis] CRO generated from fallback (${croContent.length} chars)`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("flowchart")) {
+        emit("Generating flowchart...", "generating_flowchart", getProgress());
+        const sopForFlowchart = updateData.sopContent || (await storage.getRecording(recordingId))?.sopContent;
+        if (sopForFlowchart) {
+          const flowchartCode = await generateMermaidFlowchart(sopForFlowchart);
+          if (flowchartCode) {
+            updateData.flowchartCode = flowchartCode;
+            console.log(`[Re-analysis] Flowchart generated from fallback (${flowchartCode.length} chars)`);
+          }
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("meeting_notes")) {
+        emit("Generating meeting notes...", "generating_notes", getProgress());
+        const notesPrompt = `Based on this meeting transcript, generate comprehensive meeting notes in markdown format with sections for Key Decisions, Action Items, Discussion Points, and Next Steps.\n\nMeeting: ${meetingTitle}\n\nTranscript:\n${transcriptText.slice(0, 30000)}`;
+        const notesResponse = await analyzeChat(notesPrompt, "", false);
+        if (notesResponse?.message) {
+          await storage.createChatMessage({ meetingId, role: "ai", content: notesResponse.message });
+          console.log(`[Re-analysis] Meeting notes saved from fallback`);
+        }
+        currentStep++;
+      }
+
+      if (selectedOutputs.includes("meeting_record")) {
+        emit("Generating meeting record...", "generating_record", getProgress());
+        try {
+          const existingRecord = await storage.getScrumMeetingRecordByMeeting(meetingId);
+          if (existingRecord) {
+            await storage.deleteScrumMeetingRecord(existingRecord.id);
+          }
+          const { generateScrumMeetingRecord } = await import("./scrum-master");
+          await generateScrumMeetingRecord(meetingId);
+          console.log(`[Re-analysis] Meeting record generated from fallback`);
+        } catch (recordError) {
+          console.error(`[Re-analysis] Meeting record generation failed:`, recordError);
+        }
+        currentStep++;
+      }
+
+      emit("Saving results...", "saving", 95);
+      await storage.updateRecording(recordingId, updateData);
+      console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed via live transcript fallback`);
       return;
     }
 
@@ -4407,13 +4530,15 @@ async function processReanalysis(
     console.log(`[Re-analysis] Recording ${recordingId} re-analysis completed successfully`);
   } catch (error) {
     console.error(`[Re-analysis] Error for recording ${recordingId}:`, error);
+    const errorMessage = error instanceof Error ? error.message : "Re-analysis failed - an error occurred during processing.";
     try {
       await storage.updateRecording(recordingId, {
-        summary: "Re-analysis failed - an error occurred during processing.",
+        summary: errorMessage.startsWith("Re-analysis failed") ? errorMessage : `Re-analysis failed - ${errorMessage}`,
       });
     } catch (updateError) {
       console.error(`[Re-analysis] Failed to update recording with error status:`, updateError);
     }
+    throw error;
   }
 }
 

@@ -479,6 +479,10 @@ export default function RecordingDetail() {
   }
 
   const summaryData = parseSummaryHighlights(recording.summary || "");
+  const isFailedAnalysis = recording.summary && (
+    recording.summary.startsWith("Re-analysis failed") ||
+    recording.summary.startsWith("Transcription failed")
+  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -665,9 +669,13 @@ export default function RecordingDetail() {
 
       {reanalyzeStatus.active && (
         <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-4" data-testid="reanalyze-status-banner">
-          <div className="bg-card border border-border rounded-xl p-4">
+          <div className={`bg-card border ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'border-destructive/30' : 'border-border'} rounded-xl p-4`}>
             <div className="flex items-center gap-3 mb-2">
-              <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
+              {reanalyzeStatus.completed && reanalyzeStatus.error ? (
+                <AlertCircle className="w-5 h-5 text-destructive" />
+              ) : (
+                <RefreshCw className={`w-5 h-5 text-primary ${!reanalyzeStatus.completed ? 'animate-spin' : ''}`} />
+              )}
               <div className="flex-1">
                 <div className="text-sm font-medium">
                   {reanalyzeStatus.completed
@@ -676,7 +684,7 @@ export default function RecordingDetail() {
                       : "Re-analysis Complete"
                     : "Re-analyzing Recording"}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{reanalyzeStatus.status}</div>
+                <div className={`text-xs mt-0.5 ${reanalyzeStatus.completed && reanalyzeStatus.error ? 'text-destructive/80' : 'text-muted-foreground'}`}>{reanalyzeStatus.status}</div>
               </div>
               {reanalyzeStatus.completed && !reanalyzeStatus.error && (
                 <Check className="w-5 h-5 text-green-500" />
@@ -798,20 +806,48 @@ export default function RecordingDetail() {
           </div>
         )}
 
-        <div className="bg-gradient-to-br from-card via-card to-primary/5 border border-border rounded-xl p-5 mb-6" data-testid="section-ai-summary">
+        <div className={`bg-gradient-to-br ${isFailedAnalysis ? 'from-card via-card to-destructive/10 border-destructive/30' : 'from-card via-card to-primary/5 border-border'} border rounded-xl p-5 mb-6`} data-testid="section-ai-summary">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className={`w-10 h-10 rounded-xl ${isFailedAnalysis ? 'bg-gradient-to-br from-destructive/80 to-destructive' : 'bg-gradient-to-br from-primary via-accent to-secondary'} flex items-center justify-center flex-shrink-0 shadow-lg`}>
+              {isFailedAnalysis ? <AlertCircle className="w-5 h-5 text-white" /> : <Sparkles className="w-5 h-5 text-white" />}
             </div>
             <div className="flex-1 space-y-4">
               <div>
-                <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
-                  AI Meeting Summary
-                  <span className="px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full">Auto-generated</span>
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
-                  {recording.summary || "No summary available for this recording."}
-                </p>
+                {isFailedAnalysis ? (
+                  <>
+                    <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                      Analysis Failed
+                      <span className="px-2 py-0.5 text-xs bg-destructive/20 text-destructive rounded-full">Error</span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                      {recording.summary}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      This can happen when the video file is too large or there was a network issue during processing. You can try re-analyzing the recording.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 border-destructive/30 hover:bg-destructive/10"
+                      onClick={() => setShowReanalyzeModal(true)}
+                      disabled={isReanalyzing}
+                      data-testid="button-retry-reanalyze"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Retry Re-analyze
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                      AI Meeting Summary
+                      <span className="px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full">Auto-generated</span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-ai-summary">
+                      {recording.summary || "No summary available for this recording."}
+                    </p>
+                  </>
+                )}
               </div>
               
               {summaryData.hasStructure && (
